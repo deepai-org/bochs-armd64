@@ -427,6 +427,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
           BX_INFO(("poly_ud: emulated aarch64 openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_aarch64_x2, (long long) RAX));
         }
+        else if (bx_poly_aarch64_x8 == 57) {
+          Bit64u fd = RAX;
+          RAX = fd == 3 ? 0 : (Bit64u) -9;
+          BX_INFO(("poly_ud: emulated aarch64 close fd=%llu result=%lld", (unsigned long long) fd, (long long) RAX));
+        }
         else if (bx_poly_aarch64_x8 == 113 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_aarch64_x1, 123);
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + 8), 456789);
@@ -721,6 +726,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           path[n] = '\0';
           RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
           BX_INFO(("poly_ud: emulated riscv openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_riscv_a2, (long long) RAX));
+        }
+        else if (bx_poly_riscv_a7 == 57) {
+          Bit64u fd = RAX;
+          RAX = fd == 3 ? 0 : (Bit64u) -9;
+          BX_INFO(("poly_ud: emulated riscv close fd=%llu result=%lld", (unsigned long long) fd, (long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 113 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_riscv_a1, 123);
