@@ -488,12 +488,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       RIP = next_rip;
       return true;
     case 0xf2:
+    {
+      Bit8u call_target = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       bx_poly_return_mode = bx_poly_current_mode;
-      bx_poly_current_mode = BX_POLY_MODE_AARCH64;
+      bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
       bx_poly_call_active = true;
-      BX_INFO(("poly_ud: call mode=%u return=%u", bx_poly_current_mode, bx_poly_return_mode));
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64) {
+        bx_poly_aarch64_x1 = 0;
+        bx_poly_aarch64_x2 = 0;
+        bx_poly_aarch64_x8 = 0;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV) {
+        bx_poly_riscv_a1 = 0;
+        bx_poly_riscv_a2 = 0;
+        bx_poly_riscv_a7 = 0;
+      }
+      BX_INFO(("poly_ud: call target=%c mode=%u return=%u", call_target, bx_poly_current_mode, bx_poly_return_mode));
       RIP = next_rip;
       return true;
+    }
     case 0xf3:
       if (bx_poly_call_active) {
         bx_poly_current_mode = bx_poly_return_mode;
