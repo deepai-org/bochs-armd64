@@ -47,14 +47,14 @@ enum {
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
+static const Bit64u BX_POLY_CALL_FRAME_TAG = BX_CONST64(0x504f4c5900000000); // "POLY" plus caller mode.
+static const Bit64u BX_POLY_CALL_FRAME_MASK = BX_CONST64(0xffffffff00000000);
+static const Bit64u BX_POLY_CALL_FRAME_MODE_MASK = BX_CONST64(0x00000000000000ff);
 
-static const unsigned BX_POLY_CALL_STACK_DEPTH = 8;
 static const unsigned BX_POLY_REG_STATE_SLOTS = 16;
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_raw_owner_cr3 = 0;
-static Bit32u bx_poly_return_mode_stack[BX_POLY_CALL_STACK_DEPTH];
-static Bit32u bx_poly_call_depth = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
 static Bit64u bx_poly_foreign_insn_count = 0;
 static Bit64u bx_poly_foreign_syscall_count = 0;
@@ -1665,35 +1665,39 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     case 0xf2:
     {
       Bit8u call_target = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
-      if (bx_poly_call_depth >= BX_POLY_CALL_STACK_DEPTH) {
-        RAX = 0xca110000 | bx_poly_call_depth;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: call stack overflow depth=%u", bx_poly_call_depth));
-        return true;
-      }
-      Bit32u caller_mode = bx_poly_call_depth == 0 ? BX_POLY_MODE_X86 : bx_poly_current_mode;
-      bx_poly_return_mode_stack[bx_poly_call_depth++] = caller_mode;
+      Bit64u saved_rax = RAX;
+      Bit64u top_frame = read_virtual_qword(BX_SEG_REG_SS, RSP);
+      Bit32u caller_mode = ((top_frame & BX_POLY_CALL_FRAME_MASK) == BX_POLY_CALL_FRAME_TAG) ?
+        bx_poly_current_mode : BX_POLY_MODE_X86;
+      RSP -= 8;
+      write_virtual_qword(BX_SEG_REG_SS, RSP, BX_POLY_CALL_FRAME_TAG | caller_mode);
+      RAX = saved_rax;
       bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
       bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
         bx_poly_reset_aarch64_regs();
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
         bx_poly_reset_riscv_regs();
-      BX_INFO(("poly_ud: call target=%c mode=%u depth=%u", call_target, bx_poly_current_mode, bx_poly_call_depth));
+      BX_INFO(("poly_ud: call target=%c caller_mode=%u mode=%u frame_rsp=%llx", call_target, caller_mode, bx_poly_current_mode, (unsigned long long) RSP));
       RIP = next_rip;
       return true;
     }
-    case 0xf3:
-      if (bx_poly_call_depth > 0) {
-        bx_poly_current_mode = bx_poly_return_mode_stack[--bx_poly_call_depth];
+    case 0xf3: {
+      Bit64u saved_rax = RAX;
+      Bit64u frame = read_virtual_qword(BX_SEG_REG_SS, RSP);
+      if ((frame & BX_POLY_CALL_FRAME_MASK) == BX_POLY_CALL_FRAME_TAG) {
+        bx_poly_current_mode = (Bit32u) (frame & BX_POLY_CALL_FRAME_MODE_MASK);
+        RSP += 8;
       }
       else {
         bx_poly_current_mode = BX_POLY_MODE_X86;
         bx_poly_raw_owner_cr3 = 0;
       }
-      BX_INFO(("poly_ud: return mode=%u depth=%u", bx_poly_current_mode, bx_poly_call_depth));
+      RAX = saved_rax;
+      BX_INFO(("poly_ud: return mode=%u frame=%llx rsp=%llx", bx_poly_current_mode, (unsigned long long) frame, (unsigned long long) RSP));
       RIP = next_rip;
       return true;
+    }
     case 0x67: {
       Bit32u insn =
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 3)) |
