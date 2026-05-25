@@ -451,6 +451,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 4242;
           BX_INFO(("poly_ud: emulated aarch64 getpid pid=%llu", (unsigned long long) RAX));
         }
+        else if (bx_poly_aarch64_x8 == 173) {
+          RAX = 4241;
+          BX_INFO(("poly_ud: emulated aarch64 getppid ppid=%llu", (unsigned long long) RAX));
+        }
         else if (bx_poly_aarch64_x8 == 174) {
           RAX = 1000;
           BX_INFO(("poly_ud: emulated aarch64 getuid uid=%llu", (unsigned long long) RAX));
@@ -466,6 +470,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         else if (bx_poly_aarch64_x8 == 177) {
           RAX = 1000;
           BX_INFO(("poly_ud: emulated aarch64 getegid egid=%llu", (unsigned long long) RAX));
+        }
+        else if (bx_poly_aarch64_x8 == 178) {
+          RAX = 4243;
+          BX_INFO(("poly_ud: emulated aarch64 gettid tid=%llu", (unsigned long long) RAX));
         }
         else if (bx_poly_aarch64_x8 == 93) {
           Bit64u exit_code = RAX;
@@ -768,6 +776,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 4242;
           BX_INFO(("poly_ud: emulated riscv getpid pid=%llu", (unsigned long long) RAX));
         }
+        else if (bx_poly_riscv_a7 == 173) {
+          RAX = 4241;
+          BX_INFO(("poly_ud: emulated riscv getppid ppid=%llu", (unsigned long long) RAX));
+        }
         else if (bx_poly_riscv_a7 == 174) {
           RAX = 1000;
           BX_INFO(("poly_ud: emulated riscv getuid uid=%llu", (unsigned long long) RAX));
@@ -783,6 +795,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         else if (bx_poly_riscv_a7 == 177) {
           RAX = 1000;
           BX_INFO(("poly_ud: emulated riscv getegid egid=%llu", (unsigned long long) RAX));
+        }
+        else if (bx_poly_riscv_a7 == 178) {
+          RAX = 4243;
+          BX_INFO(("poly_ud: emulated riscv gettid tid=%llu", (unsigned long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 93) {
           Bit64u exit_code = RAX;
