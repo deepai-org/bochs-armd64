@@ -287,6 +287,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 add x0,x0,x1 value=%llu", (unsigned long long) bx_poly_aarch64_x1));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0x9b017c00) {
+        RAX *= bx_poly_aarch64_x1;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 mul x0,x0,x1 value=%llu", (unsigned long long) bx_poly_aarch64_x1));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xfc000000) == 0x14000000) {
         Bit64s guest_offset = bx_poly_sign_extend(insn & 0x03ffffff, 26) << 2;
         Bit64s marker_offset = bx_poly_marker_offset(guest_offset);
@@ -447,6 +453,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX += bx_poly_riscv_a1;
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv add a0,a0,a1 value=%llu", (unsigned long long) bx_poly_riscv_a1));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0xfe00707f) == 0x02000033) {
+        Bit32u rd = (insn >> 7) & 0x1f;
+        Bit32u rs1 = (insn >> 15) & 0x1f;
+        Bit32u rs2 = (insn >> 20) & 0x1f;
+        if (rd != 10 || rs1 != 10 || rs2 != 11)
+          break;
+        RAX *= bx_poly_riscv_a1;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv mul a0,a0,a1 value=%llu", (unsigned long long) bx_poly_riscv_a1));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && ((insn & 0x0000707f) == 0x00000063 || (insn & 0x0000707f) == 0x00001063)) {
