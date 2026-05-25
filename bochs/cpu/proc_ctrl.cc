@@ -52,6 +52,14 @@ static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_libcall_number = 0;
 static Bit32u bx_poly_riscv_a7 = 0;
 
+static Bit64s bx_poly_sign_extend(Bit32u value, unsigned bits)
+{
+  Bit64s extended = value & ((BX_CONST64(1) << bits) - 1);
+  if (extended & (BX_CONST64(1) << (bits - 1)))
+    extended -= BX_CONST64(1) << bits;
+  return extended;
+}
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
   unsigned ia_opcode = i->getIaOpcode();
@@ -209,16 +217,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4) << 8) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5) << 16) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0xd2800540) {
-        RAX = 42;
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd2800000) {
+        Bit32u imm16 = (insn >> 5) & 0xffff;
+        RAX = imm16;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 movz x0,#42"));
+        BX_INFO(("poly_ud: emulated aarch64 movz x0,#%u", imm16));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0x91000400) {
-        RAX += 1;
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0x91000000) {
+        Bit32u imm12 = (insn >> 10) & 0xfff;
+        RAX += imm12;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 add x0,x0,#1"));
+        BX_INFO(("poly_ud: emulated aarch64 add x0,x0,#%u", imm12));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4000001) {
@@ -247,16 +257,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4) << 8) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5) << 16) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x01100513) {
-        RAX = 17;
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000513) {
+        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+        RAX = (Bit64u) imm12;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a0,x0,17"));
+        BX_INFO(("poly_ud: emulated riscv addi a0,x0,%lld", (long long) imm12));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00550513) {
-        RAX += 5;
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00050513) {
+        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+        RAX = (Bit64u) ((Bit64s) RAX + imm12);
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a0,a0,5"));
+        BX_INFO(("poly_ud: emulated riscv addi a0,a0,%lld", (long long) imm12));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000893) {
