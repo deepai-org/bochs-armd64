@@ -70,6 +70,39 @@ static Bit64s bx_poly_marker_offset(Bit64s guest_offset)
   return (guest_offset / 4) * 8;
 }
 
+struct bx_poly_scalar_syscall_entry {
+  Bit32u number;
+  Bit64u result;
+  const char *name;
+  const char *result_name;
+  bool require_arg0_zero;
+};
+
+static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
+  { 155, 4242, "getpgid", "pgid", true },
+  { 156, 4242, "getsid", "sid", true },
+  { 172, 4242, "getpid", "pid", false },
+  { 173, 4241, "getppid", "ppid", false },
+  { 174, 1000, "getuid", "uid", false },
+  { 175, 1000, "geteuid", "euid", false },
+  { 176, 1000, "getgid", "gid", false },
+  { 177, 1000, "getegid", "egid", false },
+  { 178, 4243, "gettid", "tid", false }
+};
+
+static bool bx_poly_lookup_scalar_syscall(Bit32u number, Bit64u arg0, const bx_poly_scalar_syscall_entry **entry)
+{
+  for (unsigned n = 0; n < sizeof(bx_poly_scalar_syscalls) / sizeof(bx_poly_scalar_syscalls[0]); n++) {
+    if (bx_poly_scalar_syscalls[n].number != number)
+      continue;
+    if (bx_poly_scalar_syscalls[n].require_arg0_zero && arg0 != 0)
+      return false;
+    *entry = &bx_poly_scalar_syscalls[n];
+    return true;
+  }
+  return false;
+}
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
   unsigned ia_opcode = i->getIaOpcode();
@@ -378,6 +411,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4000001) {
         Bit32u syscall_id = (insn >> 5) & 0xffff;
+        const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_aarch64_x8 ? bx_poly_aarch64_x8 : syscall_id;
         if (bx_poly_aarch64_x8 == 17) {
@@ -443,13 +477,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 0;
           BX_INFO(("poly_ud: emulated aarch64 clock_gettime clk=0 addr=%llx sec=123 nsec=456789", (unsigned long long) bx_poly_aarch64_x1));
         }
-        else if (bx_poly_aarch64_x8 == 155 && RAX == 0) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated aarch64 getpgid pid=0 pgid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 156 && RAX == 0) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated aarch64 getsid pid=0 sid=%llu", (unsigned long long) RAX));
+        else if (bx_poly_lookup_scalar_syscall(bx_poly_aarch64_x8, RAX, &scalar_syscall)) {
+          RAX = scalar_syscall->result;
+          BX_INFO(("poly_ud: emulated aarch64 %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
         }
         else if (bx_poly_aarch64_x8 == 165 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_aarch64_x1, 321);
@@ -478,34 +508,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         else if (bx_poly_aarch64_x8 == 222 && RAX == 0) {
           RAX = RDI;
           BX_INFO(("poly_ud: emulated aarch64 mmap addr=0 len=%llu result=%llx", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 172) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated aarch64 getpid pid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 173) {
-          RAX = 4241;
-          BX_INFO(("poly_ud: emulated aarch64 getppid ppid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 174) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated aarch64 getuid uid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 175) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated aarch64 geteuid euid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 176) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated aarch64 getgid gid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 177) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated aarch64 getegid egid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 178) {
-          RAX = 4243;
-          BX_INFO(("poly_ud: emulated aarch64 gettid tid=%llu", (unsigned long long) RAX));
         }
         else if (bx_poly_aarch64_x8 == 93) {
           Bit64u exit_code = RAX;
@@ -735,6 +737,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00000073) {
+        const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_riscv_a7;
         if (bx_poly_riscv_a7 == 17) {
@@ -800,13 +803,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 0;
           BX_INFO(("poly_ud: emulated riscv clock_gettime clk=0 addr=%llx sec=123 nsec=456789", (unsigned long long) bx_poly_riscv_a1));
         }
-        else if (bx_poly_riscv_a7 == 155 && RAX == 0) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated riscv getpgid pid=0 pgid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 156 && RAX == 0) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated riscv getsid pid=0 sid=%llu", (unsigned long long) RAX));
+        else if (bx_poly_lookup_scalar_syscall(bx_poly_riscv_a7, RAX, &scalar_syscall)) {
+          RAX = scalar_syscall->result;
+          BX_INFO(("poly_ud: emulated riscv %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 165 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_riscv_a1, 321);
@@ -835,34 +834,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         else if (bx_poly_riscv_a7 == 222 && RAX == 0) {
           RAX = RDI;
           BX_INFO(("poly_ud: emulated riscv mmap addr=0 len=%llu result=%llx", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 172) {
-          RAX = 4242;
-          BX_INFO(("poly_ud: emulated riscv getpid pid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 173) {
-          RAX = 4241;
-          BX_INFO(("poly_ud: emulated riscv getppid ppid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 174) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated riscv getuid uid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 175) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated riscv geteuid euid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 176) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated riscv getgid gid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 177) {
-          RAX = 1000;
-          BX_INFO(("poly_ud: emulated riscv getegid egid=%llu", (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 178) {
-          RAX = 4243;
-          BX_INFO(("poly_ud: emulated riscv gettid tid=%llu", (unsigned long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 93) {
           Bit64u exit_code = RAX;
