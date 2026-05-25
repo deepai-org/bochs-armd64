@@ -442,6 +442,19 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0x9f000000) == 0x10000000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u immlo = (insn >> 29) & 0x3;
+    Bit32u immhi = (insn >> 5) & 0x7ffff;
+    Bit64s offset = bx_poly_sign_extend((immhi << 2) | immlo, 21);
+    Bit64u result = (Bit64u) ((Bit64s) pc + offset);
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 adr x%u,offset=%lld result=%llx", rd, (long long) offset, (unsigned long long) result));
+    return true;
+  }
+
   if ((insn & 0xff800000) == 0x92800000 ||
       (insn & 0xff800000) == 0xd2800000 ||
       (insn & 0xff800000) == 0xf2800000) {
@@ -594,13 +607,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if (insn == 0xd65f03c0) {
-    bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
-    RSP += 8;
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
-    RIP = ret_addr;
-    BX_DEBUG(("poly_raw: emulated aarch64 ret rip=%llx", (unsigned long long) ret_addr));
+  if ((insn & 0xfffffc1f) == 0xd65f0000) {
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit64u ret_addr = 0;
+    if (!read_poly_aarch64_reg(rn, &ret_addr))
+      return false;
+    RIP = (bx_address) ret_addr;
+    BX_DEBUG(("poly_raw: emulated aarch64 ret x%u target=%llx", rn, (unsigned long long) ret_addr));
     return true;
   }
 
@@ -1062,16 +1075,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     RIP = (bx_address) ((Bit64s) pc + guest_offset);
     BX_DEBUG(("poly_raw: emulated riscv jal x%u offset=%lld link=%llx", rd, (long long) guest_offset, (unsigned long long) next_rip));
-    return true;
-  }
-
-  if (insn == 0x00008067) {
-    bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
-    RSP += 8;
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
-    RIP = ret_addr;
-    BX_DEBUG(("poly_raw: emulated riscv jalr ret rip=%llx", (unsigned long long) ret_addr));
     return true;
   }
 
