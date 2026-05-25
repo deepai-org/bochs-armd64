@@ -218,6 +218,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 add x0,x0,#1"));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0xd4000001) {
+        bx_poly_last_syscall_mode = bx_poly_current_mode;
+        bx_poly_last_syscall_number = 0;
+        RAX = 0x53000000 | bx_poly_current_mode;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 svc #0 mode=%u", bx_poly_current_mode));
+        return true;
+      }
       break;
     }
     case 0x26: {
@@ -236,6 +244,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX += 5;
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv addi a0,a0,5"));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00000073) {
+        bx_poly_last_syscall_mode = bx_poly_current_mode;
+        bx_poly_last_syscall_number = 0;
+        RAX = 0x53000000 | bx_poly_current_mode;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv ecall mode=%u", bx_poly_current_mode));
         return true;
       }
       break;
