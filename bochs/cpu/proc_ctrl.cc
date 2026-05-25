@@ -292,9 +292,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         Bit32u libcall_id = (insn >> 5) & 0xffff;
         bx_poly_last_libcall_mode = bx_poly_current_mode;
         bx_poly_last_libcall_number = libcall_id;
-        RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
+        if (libcall_id == 1) {
+          RAX = 0;
+          while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
+            RAX++;
+          BX_INFO(("poly_ud: emulated aarch64 brk strlen addr=%llx len=%llu", (unsigned long long) RDI, (unsigned long long) RAX));
+        }
+        else {
+          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
+          BX_INFO(("poly_ud: emulated aarch64 brk #%u libcall mode=%u", libcall_id, bx_poly_current_mode));
+        }
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 brk #%u libcall mode=%u", libcall_id, bx_poly_current_mode));
         return true;
       }
       break;
@@ -379,9 +387,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00100073) {
         bx_poly_last_libcall_mode = bx_poly_current_mode;
         bx_poly_last_libcall_number = bx_poly_riscv_a7;
-        RAX = 0x4c000000 | (bx_poly_current_mode << 8) | bx_poly_riscv_a7;
+        if (bx_poly_riscv_a7 == 1) {
+          RAX = 0;
+          while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
+            RAX++;
+          BX_INFO(("poly_ud: emulated riscv ebreak strlen addr=%llx len=%llu", (unsigned long long) RDI, (unsigned long long) RAX));
+        }
+        else {
+          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | bx_poly_riscv_a7;
+          BX_INFO(("poly_ud: emulated riscv ebreak a7=%u libcall mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
+        }
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv ebreak a7=%u libcall mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
         return true;
       }
       break;
