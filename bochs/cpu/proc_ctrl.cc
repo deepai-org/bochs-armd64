@@ -166,6 +166,20 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
+bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_number)
+{
+  if (syscall_number != 93)
+    return false;
+
+  Bit64u exit_code = RAX;
+  bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
+  RSP += 8;
+  RAX = exit_code;
+  RIP = ret_addr;
+  BX_INFO(("poly_ud: emulated %s exit code=%llu rip=%llx", arch_name, (unsigned long long) exit_code, (unsigned long long) ret_addr));
+  return true;
+}
+
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   Bit32u libcall_id, Bit64u arg1, Bit64u arg2)
 {
@@ -606,13 +620,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = scalar_syscall->result;
           BX_INFO(("poly_ud: emulated aarch64 %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
         }
-        else if (bx_poly_aarch64_x8 == 93) {
-          Bit64u exit_code = RAX;
-          bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
-          RSP += 8;
-          RAX = exit_code;
-          RIP = ret_addr;
-          BX_INFO(("poly_ud: emulated aarch64 exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
+        else if (handle_poly_exit_syscall("aarch64", bx_poly_aarch64_x8)) {
           return true;
         }
         else {
@@ -796,13 +804,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = scalar_syscall->result;
           BX_INFO(("poly_ud: emulated riscv %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
         }
-        else if (bx_poly_riscv_a7 == 93) {
-          Bit64u exit_code = RAX;
-          bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
-          RSP += 8;
-          RAX = exit_code;
-          RIP = ret_addr;
-          BX_INFO(("poly_ud: emulated riscv exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
+        else if (handle_poly_exit_syscall("riscv", bx_poly_riscv_a7)) {
           return true;
         }
         else {
