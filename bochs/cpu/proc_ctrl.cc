@@ -187,6 +187,33 @@ void BX_CPU_C::handle_poly_unknown_syscall(const char *arch_name, const char *tr
   BX_INFO(("poly_ud: emulated %s %s %s%u mode=%u", arch_name, trap_name, number_prefix, syscall_number, bx_poly_current_mode));
 }
 
+bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
+  const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
+  Bit32u unknown_number, Bit64u arg0, Bit64u arg1, Bit64u arg2, bx_address next_rip)
+{
+  const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
+  bx_poly_last_syscall_mode = bx_poly_current_mode;
+  bx_poly_last_syscall_number = status_number;
+
+  if (handle_poly_file_syscall(arch_name, dispatch_number, arg0, arg1, arg2)) {
+  }
+  else if (handle_poly_memory_syscall(arch_name, dispatch_number, arg0, arg1, arg2)) {
+  }
+  else if (bx_poly_lookup_scalar_syscall(dispatch_number, arg0, &scalar_syscall)) {
+    RAX = scalar_syscall->result;
+    BX_INFO(("poly_ud: emulated %s %s %s=%llu", arch_name, scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
+  }
+  else if (handle_poly_exit_syscall(arch_name, dispatch_number)) {
+    return true;
+  }
+  else {
+    handle_poly_unknown_syscall(arch_name, trap_name, number_prefix, unknown_number);
+  }
+
+  RIP = next_rip;
+  return true;
+}
+
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   Bit32u libcall_id, Bit64u arg1, Bit64u arg2)
 {
@@ -616,25 +643,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4000001) {
         Bit32u syscall_id = (insn >> 5) & 0xffff;
-        const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
-        bx_poly_last_syscall_mode = bx_poly_current_mode;
-        bx_poly_last_syscall_number = bx_poly_aarch64_x8 ? bx_poly_aarch64_x8 : syscall_id;
-        if (handle_poly_file_syscall("aarch64", bx_poly_aarch64_x8, RAX, bx_poly_aarch64_x1, bx_poly_aarch64_x2)) {
-        }
-        else if (handle_poly_memory_syscall("aarch64", bx_poly_aarch64_x8, RAX, bx_poly_aarch64_x1, bx_poly_aarch64_x2)) {
-        }
-        else if (bx_poly_lookup_scalar_syscall(bx_poly_aarch64_x8, RAX, &scalar_syscall)) {
-          RAX = scalar_syscall->result;
-          BX_INFO(("poly_ud: emulated aarch64 %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
-        }
-        else if (handle_poly_exit_syscall("aarch64", bx_poly_aarch64_x8)) {
-          return true;
-        }
-        else {
-          handle_poly_unknown_syscall("aarch64", "svc", "#", syscall_id);
-        }
-        RIP = next_rip;
-        return true;
+        Bit32u status_number = bx_poly_aarch64_x8 ? bx_poly_aarch64_x8 : syscall_id;
+        return handle_poly_foreign_syscall("aarch64", "svc", "#", bx_poly_aarch64_x8,
+          status_number, syscall_id, RAX, bx_poly_aarch64_x1, bx_poly_aarch64_x2, next_rip);
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4200000) {
         Bit32u libcall_id = (insn >> 5) & 0xffff;
@@ -799,25 +810,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00000073) {
-        const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
-        bx_poly_last_syscall_mode = bx_poly_current_mode;
-        bx_poly_last_syscall_number = bx_poly_riscv_a7;
-        if (handle_poly_file_syscall("riscv", bx_poly_riscv_a7, RAX, bx_poly_riscv_a1, bx_poly_riscv_a2)) {
-        }
-        else if (handle_poly_memory_syscall("riscv", bx_poly_riscv_a7, RAX, bx_poly_riscv_a1, bx_poly_riscv_a2)) {
-        }
-        else if (bx_poly_lookup_scalar_syscall(bx_poly_riscv_a7, RAX, &scalar_syscall)) {
-          RAX = scalar_syscall->result;
-          BX_INFO(("poly_ud: emulated riscv %s %s=%llu", scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
-        }
-        else if (handle_poly_exit_syscall("riscv", bx_poly_riscv_a7)) {
-          return true;
-        }
-        else {
-          handle_poly_unknown_syscall("riscv", "ecall", "a7=", bx_poly_riscv_a7);
-        }
-        RIP = next_rip;
-        return true;
+        return handle_poly_foreign_syscall("riscv", "ecall", "a7=", bx_poly_riscv_a7,
+          bx_poly_riscv_a7, bx_poly_riscv_a7, RAX, bx_poly_riscv_a1, bx_poly_riscv_a2, next_rip);
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00100073) {
         handle_poly_libcall("riscv", "ebreak", bx_poly_riscv_a7, bx_poly_riscv_a1, bx_poly_riscv_a2);
