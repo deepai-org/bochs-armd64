@@ -395,13 +395,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
             RAX = needed;
           }
         }
-        else if (bx_poly_aarch64_x8 == 63 && RAX == 0) {
-          const Bit8u input[] = {'R', 'X', '!', '!'};
-          Bit64u count = bx_poly_aarch64_x2 < sizeof(input) ? bx_poly_aarch64_x2 : sizeof(input);
+        else if (bx_poly_aarch64_x8 == 63 && (RAX == 0 || RAX == 3)) {
+          Bit64u fd = RAX;
+          const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
+          const Bit8u file_input[] = {'F', 'D', '!', '!'};
+          const Bit8u *input = fd == 3 ? file_input : stdin_input;
+          const Bit64u input_size = 4;
+          Bit64u count = bx_poly_aarch64_x2 < input_size ? bx_poly_aarch64_x2 : input_size;
           for (Bit64u n = 0; n < count; n++)
             write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n), input[n]);
           RAX = count;
-          BX_INFO(("poly_ud: emulated aarch64 read fd=0 addr=%llx count=%llu", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count));
+          BX_INFO(("poly_ud: emulated aarch64 read fd=%llu addr=%llx count=%llu", (unsigned long long) fd, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count));
         }
         else if (bx_poly_aarch64_x8 == 64 && RAX == 1) {
           Bit64u checksum = 0;
@@ -686,13 +690,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
             RAX = needed;
           }
         }
-        else if (bx_poly_riscv_a7 == 63 && RAX == 0) {
-          const Bit8u input[] = {'R', 'X', '!', '!'};
-          Bit64u count = bx_poly_riscv_a2 < sizeof(input) ? bx_poly_riscv_a2 : sizeof(input);
+        else if (bx_poly_riscv_a7 == 63 && (RAX == 0 || RAX == 3)) {
+          Bit64u fd = RAX;
+          const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
+          const Bit8u file_input[] = {'F', 'D', '!', '!'};
+          const Bit8u *input = fd == 3 ? file_input : stdin_input;
+          const Bit64u input_size = 4;
+          Bit64u count = bx_poly_riscv_a2 < input_size ? bx_poly_riscv_a2 : input_size;
           for (Bit64u n = 0; n < count; n++)
             write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n), input[n]);
           RAX = count;
-          BX_INFO(("poly_ud: emulated riscv read fd=0 addr=%llx count=%llu", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count));
+          BX_INFO(("poly_ud: emulated riscv read fd=%llu addr=%llx count=%llu", (unsigned long long) fd, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count));
         }
         else if (bx_poly_riscv_a7 == 64 && RAX == 1) {
           Bit64u checksum = 0;
