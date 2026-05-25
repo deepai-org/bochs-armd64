@@ -50,6 +50,7 @@ static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_libcall_number = 0;
+static Bit32u bx_poly_riscv_a7 = 0;
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
@@ -182,6 +183,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       bx_poly_current_mode =
         (prefix == 0x64) ? BX_POLY_MODE_X86 :
         (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
+        bx_poly_riscv_a7 = 0;
       BX_INFO(("poly_ud: mode switch to %u", bx_poly_current_mode));
       RIP = next_rip;
       return true;
@@ -218,20 +221,22 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 add x0,x0,#1"));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0xd4000001) {
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4000001) {
+        Bit32u syscall_id = (insn >> 5) & 0xffff;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
-        bx_poly_last_syscall_number = 0;
-        RAX = 0x53000000 | bx_poly_current_mode;
+        bx_poly_last_syscall_number = syscall_id;
+        RAX = 0x53000000 | (syscall_id << 8) | bx_poly_current_mode;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 svc #0 mode=%u", bx_poly_current_mode));
+        BX_INFO(("poly_ud: emulated aarch64 svc #%u mode=%u", syscall_id, bx_poly_current_mode));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && insn == 0xd4200000) {
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4200000) {
+        Bit32u libcall_id = (insn >> 5) & 0xffff;
         bx_poly_last_libcall_mode = bx_poly_current_mode;
-        bx_poly_last_libcall_number = 0;
-        RAX = 0x4c000000 | (bx_poly_current_mode << 8);
+        bx_poly_last_libcall_number = libcall_id;
+        RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 brk #0 libcall mode=%u", bx_poly_current_mode));
+        BX_INFO(("poly_ud: emulated aarch64 brk #%u libcall mode=%u", libcall_id, bx_poly_current_mode));
         return true;
       }
       break;
@@ -254,20 +259,26 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated riscv addi a0,a0,5"));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000893) {
+        bx_poly_riscv_a7 = (insn >> 20) & 0xfff;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv addi a7,x0,%u", bx_poly_riscv_a7));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00000073) {
         bx_poly_last_syscall_mode = bx_poly_current_mode;
-        bx_poly_last_syscall_number = 0;
-        RAX = 0x53000000 | bx_poly_current_mode;
+        bx_poly_last_syscall_number = bx_poly_riscv_a7;
+        RAX = 0x53000000 | (bx_poly_riscv_a7 << 8) | bx_poly_current_mode;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv ecall mode=%u", bx_poly_current_mode));
+        BX_INFO(("poly_ud: emulated riscv ecall a7=%u mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00100073) {
         bx_poly_last_libcall_mode = bx_poly_current_mode;
-        bx_poly_last_libcall_number = 0;
-        RAX = 0x4c000000 | (bx_poly_current_mode << 8);
+        bx_poly_last_libcall_number = bx_poly_riscv_a7;
+        RAX = 0x4c000000 | (bx_poly_current_mode << 8) | bx_poly_riscv_a7;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv ebreak libcall mode=%u", bx_poly_current_mode));
+        BX_INFO(("poly_ud: emulated riscv ebreak a7=%u libcall mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
         return true;
       }
       break;
