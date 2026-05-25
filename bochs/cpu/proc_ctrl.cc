@@ -50,6 +50,8 @@ static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit64u BX_POLY_CALL_FRAME_TAG = BX_CONST64(0x504f4c5900000000); // "POLY" plus caller mode.
 static const Bit64u BX_POLY_CALL_FRAME_MASK = BX_CONST64(0xffffffff00000000);
 static const Bit64u BX_POLY_CALL_FRAME_MODE_MASK = BX_CONST64(0x00000000000000ff);
+static const Bit64u BX_POLY_CALL_FRAME_ABI_NATIVE = BX_CONST64(1);
+static const unsigned BX_POLY_CALL_FRAME_SIZE = 16;
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 
@@ -1708,8 +1710,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit64u top_frame = read_virtual_qword(BX_SEG_REG_SS, RSP);
       Bit32u caller_mode = ((top_frame & BX_POLY_CALL_FRAME_MASK) == BX_POLY_CALL_FRAME_TAG) ?
         bx_poly_current_mode : BX_POLY_MODE_X86;
-      RSP -= 8;
+      RSP -= BX_POLY_CALL_FRAME_SIZE;
       write_virtual_qword(BX_SEG_REG_SS, RSP, BX_POLY_CALL_FRAME_TAG | caller_mode);
+      write_virtual_qword(BX_SEG_REG_SS, RSP + 8, BX_POLY_CALL_FRAME_ABI_NATIVE);
       RAX = saved_rax;
       bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
       bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
@@ -1726,7 +1729,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit64u frame = read_virtual_qword(BX_SEG_REG_SS, RSP);
       if ((frame & BX_POLY_CALL_FRAME_MASK) == BX_POLY_CALL_FRAME_TAG) {
         bx_poly_current_mode = (Bit32u) (frame & BX_POLY_CALL_FRAME_MODE_MASK);
-        RSP += 8;
+        RSP += BX_POLY_CALL_FRAME_SIZE;
       }
       else {
         bx_poly_current_mode = BX_POLY_MODE_X86;
