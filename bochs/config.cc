@@ -704,6 +704,10 @@ void bx_init_options()
       "Don't put CPU to sleep state by MWAIT",
       0);
 #endif
+  new bx_param_bool_c(cpu_param,
+      "poly_enabled", "Enable dormant poly instruction scaffold",
+      "Enable the dormant poly instruction scaffold for controlled probe runs",
+      0);
 #if BX_CONFIGURE_MSRS
   new bx_param_filename_c(cpu_param,
       "msrs",
@@ -3623,6 +3627,7 @@ int bx_write_configuration(const char *rc, int overwrite)
 #if BX_SUPPORT_MONITOR_MWAIT
   fprintf(fp, ", mwait_is_nop=%d", SIM->get_param_bool(BXPN_MWAIT_IS_NOP)->get());
 #endif
+  fprintf(fp, ", poly_enabled=%d", SIM->get_param_bool(BXPN_POLY_ENABLED)->get());
 #if BX_CONFIGURE_MSRS
   sparam = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH);
   if (!sparam->isempty())

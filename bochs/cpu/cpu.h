@@ -1487,6 +1487,7 @@ public: // for now...
   BX_SMF void POLYCALL(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYRET(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF bool handle_poly_ud(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF void PUSHA32(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void PUSHA16(bxInstruction_c *) BX_CPP_AttrRegparmN(1);

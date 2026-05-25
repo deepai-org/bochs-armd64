@@ -41,6 +41,11 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
   unsigned ia_opcode = i->getIaOpcode();
 
+  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i)) {
+    BX_DEBUG(("poly opcode emulated from #UD"));
+    return;
+  }
+
   if (ia_opcode == BX_IA_ERROR) {
     BX_DEBUG(("BxError: Encountered an unknown instruction (signalling #UD)"));
 
@@ -60,6 +65,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
 {
+  if (BX_CPU_THIS_PTR poly_feature_enabled) {
+    BX_INFO(("UndefinedOpcode(poly): CPL=%u prev_rip=%llx rip=%llx", CPL, (unsigned long long) BX_CPU_THIS_PTR prev_rip, (unsigned long long) RIP));
+  }
+
+  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i)) {
+    BX_DEBUG(("poly opcode emulated from #UD"));
+    return;
+  }
+
   BX_DEBUG(("UndefinedOpcode: generate #UD exception"));
   exception(BX_UD_EXCEPTION, 0);
 
@@ -84,6 +98,66 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYRET(bxInstruction_c *i)
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 {
   BX_NEXT_INSTR(i);
+}
+
+bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
+{
+  (void) i;
+
+  if (!BX_CPU_THIS_PTR poly_feature_enabled)
+    return false;
+
+  if (CPL != 3) {
+    BX_INFO(("poly_ud: reject CPL=%u", CPL));
+    return false;
+  }
+
+  Bit8u opcode0 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP);
+  Bit8u opcode1 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 1);
+  Bit8u opcode2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 2);
+  Bit8u opcode_m1 = 0;
+  Bit8u opcode_m2 = 0;
+  if (PREV_RIP > 0)
+    opcode_m1 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP - 1);
+  if (PREV_RIP > 1)
+    opcode_m2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP - 2);
+
+  BX_INFO(("poly_ud: bytes=%02x %02x %02x prev=%02x prev2=%02x", opcode0, opcode1, opcode2, opcode_m1, opcode_m2));
+
+  Bit8u window[6];
+  for (unsigned n = 0; n < 6; n++)
+    window[n] = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + (Bit64u)n - 3);
+
+  for (unsigned n = 0; n < 4; n++) {
+    Bit8u prefix = window[n];
+    if (window[n + 1] != 0x0f || window[n + 2] != 0x0b)
+      continue;
+
+    bx_address next_rip = PREV_RIP + (bx_address)n - 3 + 8;
+
+    if (prefix == 0x2e) {
+      BX_INFO(("poly_ud: matched syscall prefix window %02x %02x %02x %02x %02x %02x", window[0], window[1], window[2], window[3], window[4], window[5]));
+      RAX = 0;
+      RIP = next_rip;
+      return true;
+    }
+
+    switch (prefix) {
+    case 0x64:
+    case 0x65:
+    case 0x66:
+    case 0xf2:
+    case 0xf3:
+      BX_INFO(("poly_ud: matched no-op prefix %02x in window %02x %02x %02x %02x %02x %02x", prefix, window[0], window[1], window[2], window[3], window[4], window[5]));
+      RIP = next_rip;
+      return true;
+    default:
+      break;
+    }
+  }
+
+  BX_INFO(("poly_ud: reject prefix window %02x %02x %02x %02x %02x %02x", window[0], window[1], window[2], window[3], window[4], window[5]));
+  return false;
 }
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::NOP(bxInstruction_c *i)

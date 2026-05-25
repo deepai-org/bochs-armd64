@@ -242,7 +242,7 @@ void BX_CPU_C::initialize(void)
   BX_CPU_THIS_PTR ignore_bad_msrs = SIM->get_param_bool(BXPN_IGNORE_BAD_MSRS)->get();
 #endif
 
-  BX_CPU_THIS_PTR poly_feature_enabled = bx_poly_feature_enabled;
+  BX_CPU_THIS_PTR poly_feature_enabled = SIM->get_param_bool(BXPN_POLY_ENABLED)->get();
 
   init_SMRAM();
 

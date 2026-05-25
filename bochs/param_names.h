@@ -49,6 +49,7 @@
 #define BXPN_CONFIGURABLE_MSRS_PATH      "cpu.msrs"
 #define BXPN_CPUID_LIMIT_WINNT           "cpu.cpuid_limit_winnt"
 #define BXPN_MWAIT_IS_NOP                "cpu.mwait_is_nop"
+#define BXPN_POLY_ENABLED                "cpu.poly_enabled"
 #define BXPN_BRAND_STRING                "cpu.brand_string"
 #define BXPN_MEMORY                      "memory.standard.ram"
 #define BXPN_MEM_SIZE                    "memory.standard.ram.guest"
