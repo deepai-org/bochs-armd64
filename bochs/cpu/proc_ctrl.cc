@@ -49,6 +49,7 @@ static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 
 static const unsigned BX_POLY_CALL_STACK_DEPTH = 8;
+static const unsigned BX_POLY_REG_STATE_SLOTS = 16;
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_raw_owner_cr3 = 0;
@@ -66,6 +67,21 @@ static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
+
+struct bx_poly_reg_state_t {
+  bool valid;
+  bx_address cr3;
+  Bit64u age;
+  Bit64u aarch64_x[32];
+  bool aarch64_x_valid[32];
+  Bit64u riscv_x[32];
+  bool riscv_x_valid[32];
+};
+
+static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
+static bool bx_poly_loaded_reg_state_valid = false;
+static bx_address bx_poly_loaded_reg_state_cr3 = 0;
+static Bit64u bx_poly_reg_state_age = 1;
 
 static Bit64s bx_poly_sign_extend(Bit32u value, unsigned bits)
 {
@@ -117,8 +133,80 @@ static void bx_poly_reset_riscv_regs()
   }
 }
 
+static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3)
+{
+  unsigned victim = 0;
+  Bit64u oldest_age = ~BX_CONST64(0);
+
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    if (bx_poly_reg_states[n].valid && bx_poly_reg_states[n].cr3 == cr3)
+      return n;
+  }
+
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    if (!bx_poly_reg_states[n].valid) {
+      victim = n;
+      break;
+    }
+    if (bx_poly_reg_states[n].age < oldest_age) {
+      oldest_age = bx_poly_reg_states[n].age;
+      victim = n;
+    }
+  }
+
+  bx_poly_reg_states[victim].valid = true;
+  bx_poly_reg_states[victim].cr3 = cr3;
+  bx_poly_reg_states[victim].age = bx_poly_reg_state_age++;
+  for (unsigned n = 0; n < 32; n++) {
+    bx_poly_reg_states[victim].aarch64_x[n] = 0;
+    bx_poly_reg_states[victim].aarch64_x_valid[n] = false;
+    bx_poly_reg_states[victim].riscv_x[n] = 0;
+    bx_poly_reg_states[victim].riscv_x_valid[n] = false;
+  }
+  return victim;
+}
+
+static void bx_poly_save_current_reg_state(bx_address cr3)
+{
+  unsigned slot = bx_poly_find_or_alloc_reg_state(cr3);
+  bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
+  for (unsigned n = 0; n < 32; n++) {
+    bx_poly_reg_states[slot].aarch64_x[n] = bx_poly_aarch64_x[n];
+    bx_poly_reg_states[slot].aarch64_x_valid[n] = bx_poly_aarch64_x_valid[n];
+    bx_poly_reg_states[slot].riscv_x[n] = bx_poly_riscv_x[n];
+    bx_poly_reg_states[slot].riscv_x_valid[n] = bx_poly_riscv_x_valid[n];
+  }
+}
+
+static void bx_poly_load_reg_state(bx_address cr3)
+{
+  unsigned slot = bx_poly_find_or_alloc_reg_state(cr3);
+  bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
+  for (unsigned n = 0; n < 32; n++) {
+    bx_poly_aarch64_x[n] = bx_poly_reg_states[slot].aarch64_x[n];
+    bx_poly_aarch64_x_valid[n] = bx_poly_reg_states[slot].aarch64_x_valid[n];
+    bx_poly_riscv_x[n] = bx_poly_reg_states[slot].riscv_x[n];
+    bx_poly_riscv_x_valid[n] = bx_poly_reg_states[slot].riscv_x_valid[n];
+  }
+}
+
+static void bx_poly_bind_reg_state(bx_address cr3)
+{
+  if (bx_poly_loaded_reg_state_valid && bx_poly_loaded_reg_state_cr3 == cr3)
+    return;
+
+  if (bx_poly_loaded_reg_state_valid)
+    bx_poly_save_current_reg_state(bx_poly_loaded_reg_state_cr3);
+
+  bx_poly_load_reg_state(cr3);
+  bx_poly_loaded_reg_state_valid = true;
+  bx_poly_loaded_reg_state_cr3 = cr3;
+}
+
 bool BX_CPU_C::read_poly_aarch64_reg(Bit32u reg, Bit64u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
+
   switch (reg) {
   case 0:
     *value = RAX;
@@ -140,6 +228,8 @@ bool BX_CPU_C::read_poly_aarch64_reg(Bit32u reg, Bit64u *value)
 
 bool BX_CPU_C::write_poly_aarch64_reg(Bit32u reg, Bit64u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
+
   switch (reg) {
   case 0:
     RAX = value;
@@ -158,6 +248,8 @@ bool BX_CPU_C::write_poly_aarch64_reg(Bit32u reg, Bit64u value)
 
 bool BX_CPU_C::read_poly_riscv_reg(Bit32u reg, Bit64u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
+
   switch (reg) {
   case 0:
     *value = 0;
@@ -179,6 +271,8 @@ bool BX_CPU_C::read_poly_riscv_reg(Bit32u reg, Bit64u *value)
 
 bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
+
   switch (reg) {
   case 0:
     return true;
@@ -1433,6 +1527,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         bx_poly_raw_owner_cr3 = 0;
       }
       bx_poly_mode_switch_count++;
+      bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 || bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
         bx_poly_reset_aarch64_regs();
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV || bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
@@ -1454,6 +1549,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit32u caller_mode = bx_poly_call_depth == 0 ? BX_POLY_MODE_X86 : bx_poly_current_mode;
       bx_poly_return_mode_stack[bx_poly_call_depth++] = caller_mode;
       bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
+      bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3);
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
         bx_poly_reset_aarch64_regs();
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
