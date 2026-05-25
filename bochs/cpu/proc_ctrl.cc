@@ -606,6 +606,24 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 mul x0,x0,x1 value=%llu", (unsigned long long) bx_poly_aarch64_x1));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 &&
+          (insn == 0xca010000 || insn == 0x8a010000 || insn == 0xaa010000)) {
+        const char *op_name = "orr";
+        if (insn == 0xca010000) {
+          RAX ^= bx_poly_aarch64_x1;
+          op_name = "eor";
+        }
+        else if (insn == 0x8a010000) {
+          RAX &= bx_poly_aarch64_x1;
+          op_name = "and";
+        }
+        else {
+          RAX |= bx_poly_aarch64_x1;
+        }
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 %s x0,x0,x1 value=%llu", op_name, (unsigned long long) bx_poly_aarch64_x1));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xfc000000) == 0x14000000) {
         Bit64s guest_offset = bx_poly_sign_extend(insn & 0x03ffffff, 26) << 2;
         Bit64s marker_offset = bx_poly_marker_offset(guest_offset);
@@ -765,6 +783,24 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX *= bx_poly_riscv_a1;
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv mul a0,a0,a1 value=%llu", (unsigned long long) bx_poly_riscv_a1));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV &&
+          (insn == 0x00b54533 || insn == 0x00b57533 || insn == 0x00b56533)) {
+        const char *op_name = "or";
+        if (insn == 0x00b54533) {
+          RAX ^= bx_poly_riscv_a1;
+          op_name = "xor";
+        }
+        else if (insn == 0x00b57533) {
+          RAX &= bx_poly_riscv_a1;
+          op_name = "and";
+        }
+        else {
+          RAX |= bx_poly_riscv_a1;
+        }
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv %s a0,a0,a1 value=%llu", op_name, (unsigned long long) bx_poly_riscv_a1));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && ((insn & 0x0000707f) == 0x00000063 || (insn & 0x0000707f) == 0x00001063)) {
