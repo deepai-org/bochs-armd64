@@ -410,6 +410,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = bx_poly_aarch64_x2;
           BX_INFO(("poly_ud: emulated aarch64 write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) bx_poly_aarch64_x2, (unsigned long long) checksum));
         }
+        else if (bx_poly_aarch64_x8 == 56) {
+          Bit64u dirfd = RAX;
+          char path[16];
+          unsigned n;
+          for (n = 0; n < sizeof(path) - 1; n++) {
+            path[n] = (char) read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
+            if (path[n] == '\0')
+              break;
+          }
+          path[n] = '\0';
+          RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
+          BX_INFO(("poly_ud: emulated aarch64 openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_aarch64_x2, (long long) RAX));
+        }
         else if (bx_poly_aarch64_x8 == 113 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_aarch64_x1, 123);
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + 8), 456789);
@@ -687,6 +700,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
             checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
           RAX = bx_poly_riscv_a2;
           BX_INFO(("poly_ud: emulated riscv write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) bx_poly_riscv_a2, (unsigned long long) checksum));
+        }
+        else if (bx_poly_riscv_a7 == 56) {
+          Bit64u dirfd = RAX;
+          char path[16];
+          unsigned n;
+          for (n = 0; n < sizeof(path) - 1; n++) {
+            path[n] = (char) read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
+            if (path[n] == '\0')
+              break;
+          }
+          path[n] = '\0';
+          RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
+          BX_INFO(("poly_ud: emulated riscv openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_riscv_a2, (long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 113 && RAX == 0) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_riscv_a1, 123);
