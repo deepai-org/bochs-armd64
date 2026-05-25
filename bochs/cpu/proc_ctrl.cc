@@ -397,6 +397,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 4242;
           BX_INFO(("poly_ud: emulated aarch64 getpid pid=%llu", (unsigned long long) RAX));
         }
+        else if (bx_poly_aarch64_x8 == 174) {
+          RAX = 1000;
+          BX_INFO(("poly_ud: emulated aarch64 getuid uid=%llu", (unsigned long long) RAX));
+        }
         else if (bx_poly_aarch64_x8 == 93) {
           Bit64u exit_code = RAX;
           bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
@@ -639,6 +643,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         else if (bx_poly_riscv_a7 == 172) {
           RAX = 4242;
           BX_INFO(("poly_ud: emulated riscv getpid pid=%llu", (unsigned long long) RAX));
+        }
+        else if (bx_poly_riscv_a7 == 174) {
+          RAX = 1000;
+          BX_INFO(("poly_ud: emulated riscv getuid uid=%llu", (unsigned long long) RAX));
         }
         else if (bx_poly_riscv_a7 == 93) {
           Bit64u exit_code = RAX;
