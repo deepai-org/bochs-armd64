@@ -43,6 +43,12 @@ enum {
   BX_POLY_MODE_RAW_RISCV = 4
 };
 
+enum {
+  BX_POLY_TRAP_NONE = 0,
+  BX_POLY_TRAP_SYSCALL = 1,
+  BX_POLY_TRAP_BREAK = 2
+};
+
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 
@@ -59,6 +65,11 @@ static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_libcall_number = 0;
+static Bit32u bx_poly_last_trap_reason = BX_POLY_TRAP_NONE;
+static Bit32u bx_poly_last_trap_mode = BX_POLY_MODE_X86;
+static Bit32u bx_poly_last_trap_number = 0;
+static bx_address bx_poly_last_trap_pc = 0;
+static Bit64u bx_poly_last_trap_args[6];
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_riscv_x[32];
@@ -113,6 +124,22 @@ static Bit64s bx_poly_sign_extend(Bit32u value, unsigned bits)
 static Bit64s bx_poly_marker_offset(Bit64s guest_offset)
 {
   return (guest_offset / 4) * 8;
+}
+
+static void bx_poly_record_trap(Bit32u reason, Bit32u mode, Bit32u number,
+  bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
+  Bit64u arg4, Bit64u arg5)
+{
+  bx_poly_last_trap_reason = reason;
+  bx_poly_last_trap_mode = mode;
+  bx_poly_last_trap_number = number;
+  bx_poly_last_trap_pc = pc;
+  bx_poly_last_trap_args[0] = arg0;
+  bx_poly_last_trap_args[1] = arg1;
+  bx_poly_last_trap_args[2] = arg2;
+  bx_poly_last_trap_args[3] = arg3;
+  bx_poly_last_trap_args[4] = arg4;
+  bx_poly_last_trap_args[5] = arg5;
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -779,7 +806,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u arg1 = 0, arg2 = 0;
     if (!read_poly_aarch64_reg(2, &arg1) || !read_poly_aarch64_reg(3, &arg2))
       return false;
-    handle_poly_libcall("aarch64", "brk", libcall_id, arg1, arg2);
+    handle_poly_libcall("aarch64", "brk", libcall_id, pc, arg1, arg2);
     RIP = next_rip;
     return true;
   }
@@ -1339,7 +1366,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(12, &arg1) ||
         !read_poly_riscv_reg(13, &arg2))
       return false;
-    handle_poly_libcall("riscv", "ebreak", (Bit32u) libcall_id, arg1, arg2);
+    handle_poly_libcall("riscv", "ebreak", (Bit32u) libcall_id, pc, arg1, arg2);
     RIP = next_rip;
     return true;
   }
@@ -1507,6 +1534,8 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   bx_poly_last_syscall_mode = bx_poly_current_mode;
   bx_poly_last_syscall_number = status_number;
   bx_poly_foreign_syscall_count++;
+  bx_poly_record_trap(BX_POLY_TRAP_SYSCALL, bx_poly_current_mode, status_number,
+    RIP, arg0, arg1, arg2, arg3, arg4, arg5);
 
   if (handle_poly_file_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
   }
@@ -1528,11 +1557,13 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
 }
 
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
-  Bit32u libcall_id, Bit64u arg1, Bit64u arg2)
+  Bit32u libcall_id, bx_address trap_pc, Bit64u arg1, Bit64u arg2)
 {
   bx_poly_last_libcall_mode = bx_poly_current_mode;
   bx_poly_last_libcall_number = libcall_id;
   bx_poly_foreign_libcall_count++;
+  bx_poly_record_trap(BX_POLY_TRAP_BREAK, bx_poly_current_mode, libcall_id,
+    trap_pc, RDI, arg1, arg2, 0, 0, 0);
 
   if (libcall_id == 1) {
     RAX = 0;
@@ -1802,6 +1833,31 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX = bx_poly_current_mode;
       RIP = next_rip;
       BX_INFO(("poly_ud: switch status id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu libcalls=%llu", status_id, bx_poly_current_mode, (unsigned long long) bx_poly_mode_switch_count, (unsigned long long) bx_poly_foreign_insn_count, (unsigned long long) bx_poly_foreign_syscall_count, (unsigned long long) bx_poly_foreign_libcall_count));
+      return true;
+    }
+
+    if (prefix == 0x36) {
+      Bit8u trap3 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 3);
+      Bit8u trap4 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4);
+      Bit8u trap5 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5);
+      Bit8u trap6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
+      Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (trap3 != 'T' || trap4 != 'R' || trap5 != 'A' || trap6 != 'P')
+        break;
+      if (status_id >= '0' && status_id <= '9')
+        status_id -= '0';
+      if (status_id == 0)
+        RAX = bx_poly_last_trap_reason;
+      else if (status_id == 1)
+        RAX = bx_poly_last_trap_mode;
+      else if (status_id == 2)
+        RAX = bx_poly_last_trap_number;
+      else if (status_id >= 3 && status_id <= 8)
+        RAX = bx_poly_last_trap_args[status_id - 3];
+      else
+        RAX = bx_poly_last_trap_pc;
+      RIP = next_rip;
+      BX_INFO(("poly_ud: trap status id=%u reason=%u mode=%u number=%u pc=%llx", status_id, bx_poly_last_trap_reason, bx_poly_last_trap_mode, bx_poly_last_trap_number, (unsigned long long) bx_poly_last_trap_pc));
       return true;
     }
 
