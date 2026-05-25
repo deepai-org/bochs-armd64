@@ -353,7 +353,15 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         Bit32u syscall_id = (insn >> 5) & 0xffff;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_aarch64_x8 ? bx_poly_aarch64_x8 : syscall_id;
-        if (bx_poly_aarch64_x8 == 64 && RAX == 1) {
+        if (bx_poly_aarch64_x8 == 63 && RAX == 0) {
+          const Bit8u input[] = {'R', 'X', '!', '!'};
+          Bit64u count = bx_poly_aarch64_x2 < sizeof(input) ? bx_poly_aarch64_x2 : sizeof(input);
+          for (Bit64u n = 0; n < count; n++)
+            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n), input[n]);
+          RAX = count;
+          BX_INFO(("poly_ud: emulated aarch64 read fd=0 addr=%llx count=%llu", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count));
+        }
+        else if (bx_poly_aarch64_x8 == 64 && RAX == 1) {
           Bit64u checksum = 0;
           for (Bit64u n = 0; n < bx_poly_aarch64_x2 && n < 4096; n++)
             checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
@@ -559,7 +567,15 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00000073) {
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_riscv_a7;
-        if (bx_poly_riscv_a7 == 64 && RAX == 1) {
+        if (bx_poly_riscv_a7 == 63 && RAX == 0) {
+          const Bit8u input[] = {'R', 'X', '!', '!'};
+          Bit64u count = bx_poly_riscv_a2 < sizeof(input) ? bx_poly_riscv_a2 : sizeof(input);
+          for (Bit64u n = 0; n < count; n++)
+            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n), input[n]);
+          RAX = count;
+          BX_INFO(("poly_ud: emulated riscv read fd=0 addr=%llx count=%llu", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count));
+        }
+        else if (bx_poly_riscv_a7 == 64 && RAX == 1) {
           Bit64u checksum = 0;
           for (Bit64u n = 0; n < bx_poly_riscv_a2 && n < 4096; n++)
             checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
