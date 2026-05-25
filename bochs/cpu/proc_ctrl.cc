@@ -217,6 +217,85 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   return true;
 }
 
+bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_number,
+  Bit64u arg0, Bit64u arg1, Bit64u arg2)
+{
+  if (syscall_number == 17) {
+    const char cwd[] = "/poly";
+    Bit64u needed = sizeof(cwd);
+    if (arg1 < needed) {
+      RAX = (Bit64u) -34;
+      BX_INFO(("poly_ud: emulated %s getcwd range addr=%llx size=%llu needed=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) needed));
+    }
+    else {
+      for (unsigned n = 0; n < sizeof(cwd); n++)
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), (Bit8u) cwd[n]);
+      RAX = needed;
+      BX_INFO(("poly_ud: emulated %s getcwd addr=%llx size=%llu cwd=%s", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, cwd));
+    }
+    return true;
+  }
+
+  if (syscall_number == 63 && (arg0 == 0 || arg0 == 3)) {
+    const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
+    const Bit8u file_input[] = {'F', 'D', '!', '!'};
+    const Bit8u *input = arg0 == 3 ? file_input : stdin_input;
+    const Bit64u input_size = 4;
+    Bit64u count = arg2 < input_size ? arg2 : input_size;
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), input[n]);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s read fd=%llu addr=%llx count=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) count));
+    return true;
+  }
+
+  if (syscall_number == 64 && arg0 == 1) {
+    Bit64u checksum = 0;
+    for (Bit64u n = 0; n < arg2 && n < 4096; n++)
+      checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+    RAX = arg2;
+    BX_INFO(("poly_ud: emulated %s write fd=1 addr=%llx count=%llu checksum=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) checksum));
+    return true;
+  }
+
+  if (syscall_number == 56) {
+    char path[16];
+    unsigned n;
+    for (n = 0; n < sizeof(path) - 1; n++) {
+      path[n] = (char) read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+      if (path[n] == '\0')
+        break;
+    }
+    path[n] = '\0';
+    RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
+    BX_INFO(("poly_ud: emulated %s openat dirfd=%llu path=%s flags=%llu result=%lld", arch_name, (unsigned long long) arg0, path, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 57) {
+    RAX = arg0 == 3 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s close fd=%llu result=%lld", arch_name, (unsigned long long) arg0, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 62) {
+    RAX = (arg0 == 3 && arg2 <= 2) ? arg1 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s lseek fd=%llu offset=%llu whence=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 160) {
+    const char sysname[] = "Linux";
+    for (unsigned n = 0; n < sizeof(sysname); n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), (Bit8u) sysname[n]);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s uname addr=%llx sysname=%s", arch_name, (unsigned long long) arg0, sysname));
+    return true;
+  }
+
+  return false;
+}
+
 bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2)
 {
@@ -519,62 +598,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_aarch64_x8 ? bx_poly_aarch64_x8 : syscall_id;
-        if (bx_poly_aarch64_x8 == 17) {
-          const char cwd[] = "/poly";
-          Bit64u addr = RAX;
-          Bit64u needed = sizeof(cwd);
-          if (bx_poly_aarch64_x1 < needed) {
-            RAX = (Bit64u) -34;
-            BX_INFO(("poly_ud: emulated aarch64 getcwd range addr=%llx size=%llu needed=%llu", (unsigned long long) addr, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) needed));
-          }
-          else {
-            for (unsigned n = 0; n < sizeof(cwd); n++)
-              write_virtual_byte(BX_SEG_REG_DS, (bx_address) (addr + n), (Bit8u) cwd[n]);
-            BX_INFO(("poly_ud: emulated aarch64 getcwd addr=%llx size=%llu cwd=%s", (unsigned long long) addr, (unsigned long long) bx_poly_aarch64_x1, cwd));
-            RAX = needed;
-          }
-        }
-        else if (bx_poly_aarch64_x8 == 63 && (RAX == 0 || RAX == 3)) {
-          Bit64u fd = RAX;
-          const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
-          const Bit8u file_input[] = {'F', 'D', '!', '!'};
-          const Bit8u *input = fd == 3 ? file_input : stdin_input;
-          const Bit64u input_size = 4;
-          Bit64u count = bx_poly_aarch64_x2 < input_size ? bx_poly_aarch64_x2 : input_size;
-          for (Bit64u n = 0; n < count; n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n), input[n]);
-          RAX = count;
-          BX_INFO(("poly_ud: emulated aarch64 read fd=%llu addr=%llx count=%llu", (unsigned long long) fd, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count));
-        }
-        else if (bx_poly_aarch64_x8 == 64 && RAX == 1) {
-          Bit64u checksum = 0;
-          for (Bit64u n = 0; n < bx_poly_aarch64_x2 && n < 4096; n++)
-            checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
-          RAX = bx_poly_aarch64_x2;
-          BX_INFO(("poly_ud: emulated aarch64 write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) bx_poly_aarch64_x2, (unsigned long long) checksum));
-        }
-        else if (bx_poly_aarch64_x8 == 56) {
-          Bit64u dirfd = RAX;
-          char path[16];
-          unsigned n;
-          for (n = 0; n < sizeof(path) - 1; n++) {
-            path[n] = (char) read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
-            if (path[n] == '\0')
-              break;
-          }
-          path[n] = '\0';
-          RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
-          BX_INFO(("poly_ud: emulated aarch64 openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_aarch64_x2, (long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 57) {
-          Bit64u fd = RAX;
-          RAX = fd == 3 ? 0 : (Bit64u) -9;
-          BX_INFO(("poly_ud: emulated aarch64 close fd=%llu result=%lld", (unsigned long long) fd, (long long) RAX));
-        }
-        else if (bx_poly_aarch64_x8 == 62) {
-          Bit64u fd = RAX;
-          RAX = (fd == 3 && bx_poly_aarch64_x2 <= 2) ? bx_poly_aarch64_x1 : (Bit64u) -9;
-          BX_INFO(("poly_ud: emulated aarch64 lseek fd=%llu offset=%llu whence=%llu result=%lld", (unsigned long long) fd, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) bx_poly_aarch64_x2, (long long) RAX));
+        if (handle_poly_file_syscall("aarch64", bx_poly_aarch64_x8, RAX, bx_poly_aarch64_x1, bx_poly_aarch64_x2)) {
         }
         else if (handle_poly_memory_syscall("aarch64", bx_poly_aarch64_x8, RAX, bx_poly_aarch64_x1, bx_poly_aarch64_x2)) {
         }
@@ -590,13 +614,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RIP = ret_addr;
           BX_INFO(("poly_ud: emulated aarch64 exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
           return true;
-        }
-        else if (bx_poly_aarch64_x8 == 160) {
-          const char sysname[] = "Linux";
-          for (unsigned n = 0; n < sizeof(sysname); n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RAX + n), (Bit8u) sysname[n]);
-          BX_INFO(("poly_ud: emulated aarch64 uname addr=%llx sysname=%s", (unsigned long long) RAX, sysname));
-          RAX = 0;
         }
         else {
           RAX = 0x53000000 | (syscall_id << 8) | bx_poly_current_mode;
@@ -771,62 +788,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
         bx_poly_last_syscall_number = bx_poly_riscv_a7;
-        if (bx_poly_riscv_a7 == 17) {
-          const char cwd[] = "/poly";
-          Bit64u addr = RAX;
-          Bit64u needed = sizeof(cwd);
-          if (bx_poly_riscv_a1 < needed) {
-            RAX = (Bit64u) -34;
-            BX_INFO(("poly_ud: emulated riscv getcwd range addr=%llx size=%llu needed=%llu", (unsigned long long) addr, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) needed));
-          }
-          else {
-            for (unsigned n = 0; n < sizeof(cwd); n++)
-              write_virtual_byte(BX_SEG_REG_DS, (bx_address) (addr + n), (Bit8u) cwd[n]);
-            BX_INFO(("poly_ud: emulated riscv getcwd addr=%llx size=%llu cwd=%s", (unsigned long long) addr, (unsigned long long) bx_poly_riscv_a1, cwd));
-            RAX = needed;
-          }
-        }
-        else if (bx_poly_riscv_a7 == 63 && (RAX == 0 || RAX == 3)) {
-          Bit64u fd = RAX;
-          const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
-          const Bit8u file_input[] = {'F', 'D', '!', '!'};
-          const Bit8u *input = fd == 3 ? file_input : stdin_input;
-          const Bit64u input_size = 4;
-          Bit64u count = bx_poly_riscv_a2 < input_size ? bx_poly_riscv_a2 : input_size;
-          for (Bit64u n = 0; n < count; n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n), input[n]);
-          RAX = count;
-          BX_INFO(("poly_ud: emulated riscv read fd=%llu addr=%llx count=%llu", (unsigned long long) fd, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count));
-        }
-        else if (bx_poly_riscv_a7 == 64 && RAX == 1) {
-          Bit64u checksum = 0;
-          for (Bit64u n = 0; n < bx_poly_riscv_a2 && n < 4096; n++)
-            checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
-          RAX = bx_poly_riscv_a2;
-          BX_INFO(("poly_ud: emulated riscv write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) bx_poly_riscv_a2, (unsigned long long) checksum));
-        }
-        else if (bx_poly_riscv_a7 == 56) {
-          Bit64u dirfd = RAX;
-          char path[16];
-          unsigned n;
-          for (n = 0; n < sizeof(path) - 1; n++) {
-            path[n] = (char) read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
-            if (path[n] == '\0')
-              break;
-          }
-          path[n] = '\0';
-          RAX = strcmp(path, "poly!") == 0 ? 3 : (Bit64u) -2;
-          BX_INFO(("poly_ud: emulated riscv openat dirfd=%llu path=%s flags=%llu result=%lld", (unsigned long long) dirfd, path, (unsigned long long) bx_poly_riscv_a2, (long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 57) {
-          Bit64u fd = RAX;
-          RAX = fd == 3 ? 0 : (Bit64u) -9;
-          BX_INFO(("poly_ud: emulated riscv close fd=%llu result=%lld", (unsigned long long) fd, (long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 62) {
-          Bit64u fd = RAX;
-          RAX = (fd == 3 && bx_poly_riscv_a2 <= 2) ? bx_poly_riscv_a1 : (Bit64u) -9;
-          BX_INFO(("poly_ud: emulated riscv lseek fd=%llu offset=%llu whence=%llu result=%lld", (unsigned long long) fd, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) bx_poly_riscv_a2, (long long) RAX));
+        if (handle_poly_file_syscall("riscv", bx_poly_riscv_a7, RAX, bx_poly_riscv_a1, bx_poly_riscv_a2)) {
         }
         else if (handle_poly_memory_syscall("riscv", bx_poly_riscv_a7, RAX, bx_poly_riscv_a1, bx_poly_riscv_a2)) {
         }
@@ -842,13 +804,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RIP = ret_addr;
           BX_INFO(("poly_ud: emulated riscv exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
           return true;
-        }
-        else if (bx_poly_riscv_a7 == 160) {
-          const char sysname[] = "Linux";
-          for (unsigned n = 0; n < sizeof(sysname); n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RAX + n), (Bit8u) sysname[n]);
-          BX_INFO(("poly_ud: emulated riscv uname addr=%llx sysname=%s", (unsigned long long) RAX, sysname));
-          RAX = 0;
         }
         else {
           RAX = 0x53000000 | (bx_poly_riscv_a7 << 8) | bx_poly_current_mode;

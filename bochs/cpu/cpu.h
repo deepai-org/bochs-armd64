@@ -1489,6 +1489,7 @@ public: // for now...
   BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_ud(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_libcall(const char *, const char *, Bit32u, Bit64u, Bit64u);
+  BX_SMF bool handle_poly_file_syscall(const char *, Bit32u, Bit64u, Bit64u, Bit64u);
   BX_SMF bool handle_poly_memory_syscall(const char *, Bit32u, Bit64u, Bit64u, Bit64u);
 
   BX_SMF void PUSHA32(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
