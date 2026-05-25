@@ -49,6 +49,9 @@ static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_return_mode_stack[BX_POLY_CALL_STACK_DEPTH];
 static Bit32u bx_poly_call_depth = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
+static Bit64u bx_poly_foreign_insn_count = 0;
+static Bit64u bx_poly_foreign_syscall_count = 0;
+static Bit64u bx_poly_foreign_libcall_count = 0;
 static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
@@ -356,6 +359,7 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
   bx_poly_last_syscall_mode = bx_poly_current_mode;
   bx_poly_last_syscall_number = status_number;
+  bx_poly_foreign_syscall_count++;
 
   if (handle_poly_file_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
   }
@@ -381,6 +385,7 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
 {
   bx_poly_last_libcall_mode = bx_poly_current_mode;
   bx_poly_last_libcall_number = libcall_id;
+  bx_poly_foreign_libcall_count++;
 
   if (libcall_id == 1) {
     RAX = 0;
@@ -626,9 +631,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       if (status_id >= '0' && status_id <= '9')
         status_id -= '0';
-      RAX = status_id == 0 ? bx_poly_mode_switch_count : bx_poly_current_mode;
+      if (status_id == 0)
+        RAX = bx_poly_mode_switch_count;
+      else if (status_id == 2)
+        RAX = bx_poly_foreign_insn_count;
+      else if (status_id == 3)
+        RAX = bx_poly_foreign_syscall_count;
+      else if (status_id == 4)
+        RAX = bx_poly_foreign_libcall_count;
+      else
+        RAX = bx_poly_current_mode;
       RIP = next_rip;
-      BX_INFO(("poly_ud: switch status id=%u mode=%u count=%llu", status_id, bx_poly_current_mode, (unsigned long long) bx_poly_mode_switch_count));
+      BX_INFO(("poly_ud: switch status id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu libcalls=%llu", status_id, bx_poly_current_mode, (unsigned long long) bx_poly_mode_switch_count, (unsigned long long) bx_poly_foreign_insn_count, (unsigned long long) bx_poly_foreign_syscall_count, (unsigned long long) bx_poly_foreign_libcall_count));
       return true;
     }
 
@@ -679,6 +693,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4) << 8) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5) << 16) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
+        bx_poly_foreign_insn_count++;
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe00000) == 0xd2800000) {
         Bit32u imm16 = (insn >> 5) & 0xffff;
         Bit32u rd = insn & 0x1f;
@@ -909,6 +925,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4) << 8) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5) << 16) |
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
+        bx_poly_foreign_insn_count++;
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00000013 &&
           (((insn >> 7) & 0x1f) == 13 || ((insn >> 7) & 0x1f) == 14 || ((insn >> 7) & 0x1f) == 15)) {
         Bit32u rd = (insn >> 7) & 0x1f;
