@@ -383,19 +383,60 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if ((insn & 0x0000707f) == 0x00000013) {
+  if ((insn & 0x0000007f) == 0x00000013) {
     Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit64u base = 0;
     Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+    Bit32u shamt = (insn >> 20) & 0x3f;
+    Bit32u shift_top = (insn >> 26) & 0x3f;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
     if (rs1 == 12 && (rd == 10 || rd == 11))
       base = RDI;
     else if (!read_poly_riscv_reg(rs1, &base))
       return false;
-    if (!write_poly_riscv_reg(rd, (Bit64u) ((Bit64s) base + imm12)))
+
+    if (funct3 == 0x0) {
+      op_name = "addi";
+      result = (Bit64u) ((Bit64s) base + imm12);
+    }
+    else if (funct3 == 0x4) {
+      op_name = "xori";
+      result = base ^ (Bit64u) imm12;
+    }
+    else if (funct3 == 0x6) {
+      op_name = "ori";
+      result = base | (Bit64u) imm12;
+    }
+    else if (funct3 == 0x7) {
+      op_name = "andi";
+      result = base & (Bit64u) imm12;
+    }
+    else if (funct3 == 0x1 && shift_top == 0x00) {
+      op_name = "slli";
+      result = base << shamt;
+    }
+    else if (funct3 == 0x5 && shift_top == 0x00) {
+      op_name = "srli";
+      result = base >> shamt;
+    }
+    else if (funct3 == 0x5 && shift_top == 0x10) {
+      op_name = "srai";
+      result = (Bit64u) ((Bit64s) base >> shamt);
+    }
+
+    if (op_name == 0)
+      return false;
+    if (!write_poly_riscv_reg(rd, result))
       return false;
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated riscv addi x%u,x%u,%lld", rd, rs1, (long long) imm12));
+    if (funct3 == 0x1 || funct3 == 0x5)
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,x%u,%u result=%llu", op_name, rd, rs1, shamt, (unsigned long long) result));
+    else
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,x%u,%lld result=%llu", op_name, rd, rs1, (long long) imm12, (unsigned long long) result));
     return true;
   }
 
@@ -1282,19 +1323,60 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
         bx_poly_foreign_insn_count++;
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00000013) {
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x00000013) {
         Bit32u rd = (insn >> 7) & 0x1f;
+        Bit32u funct3 = (insn >> 12) & 0x7;
         Bit32u rs1 = (insn >> 15) & 0x1f;
         Bit64u base = 0;
         Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+        Bit32u shamt = (insn >> 20) & 0x3f;
+        Bit32u shift_top = (insn >> 26) & 0x3f;
+        Bit64u result = 0;
+        const char *op_name = 0;
+
         if (rs1 == 12 && (rd == 10 || rd == 11))
           base = RDI;
         else if (!read_poly_riscv_reg(rs1, &base))
           break;
-        if (!write_poly_riscv_reg(rd, (Bit64u) ((Bit64s) base + imm12)))
+
+        if (funct3 == 0x0) {
+          op_name = "addi";
+          result = (Bit64u) ((Bit64s) base + imm12);
+        }
+        else if (funct3 == 0x4) {
+          op_name = "xori";
+          result = base ^ (Bit64u) imm12;
+        }
+        else if (funct3 == 0x6) {
+          op_name = "ori";
+          result = base | (Bit64u) imm12;
+        }
+        else if (funct3 == 0x7) {
+          op_name = "andi";
+          result = base & (Bit64u) imm12;
+        }
+        else if (funct3 == 0x1 && shift_top == 0x00) {
+          op_name = "slli";
+          result = base << shamt;
+        }
+        else if (funct3 == 0x5 && shift_top == 0x00) {
+          op_name = "srli";
+          result = base >> shamt;
+        }
+        else if (funct3 == 0x5 && shift_top == 0x10) {
+          op_name = "srai";
+          result = (Bit64u) ((Bit64s) base >> shamt);
+        }
+
+        if (op_name == 0)
+          break;
+        if (!write_poly_riscv_reg(rd, result))
           break;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi x%u,x%u,%lld", rd, rs1, (long long) imm12));
+        if (funct3 == 0x1 || funct3 == 0x5)
+          BX_INFO(("poly_ud: emulated riscv %s x%u,x%u,%u result=%llu", op_name, rd, rs1, shamt, (unsigned long long) result));
+        else
+          BX_INFO(("poly_ud: emulated riscv %s x%u,x%u,%lld result=%llu", op_name, rd, rs1, (long long) imm12, (unsigned long long) result));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x00000033) {
