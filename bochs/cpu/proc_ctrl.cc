@@ -51,6 +51,7 @@ enum {
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
+static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 
@@ -70,6 +71,9 @@ static Bit32u bx_poly_last_trap_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_trap_number = 0;
 static bx_address bx_poly_last_trap_pc = 0;
 static Bit64u bx_poly_last_trap_args[6];
+static bool bx_poly_return_cookie_valid = false;
+static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
+static bx_address bx_poly_return_cookie_rip = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_riscv_x[32];
@@ -493,6 +497,74 @@ bool BX_CPU_C::write_poly_riscv_fp64_reg(Bit32u reg, Bit64u value)
   return false;
 }
 
+bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_address return_rip)
+{
+  Bit64u arg0 = RDI;
+  Bit64u arg1 = RSI;
+  Bit64u arg2 = RDX;
+  Bit64u arg3 = RCX;
+  Bit64u arg4 = R8;
+  Bit64u arg5 = R9;
+
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+  bx_poly_current_mode = mode;
+  bx_poly_return_cookie_valid = true;
+  bx_poly_return_cookie_mode = mode;
+  bx_poly_return_cookie_rip = return_rip;
+
+  if (mode == BX_POLY_MODE_RAW_AARCH64) {
+    bx_poly_reset_aarch64_regs();
+    if (!write_poly_aarch64_reg(0, arg0) ||
+        !write_poly_aarch64_reg(1, arg1) ||
+        !write_poly_aarch64_reg(2, arg2) ||
+        !write_poly_aarch64_reg(3, arg3) ||
+        !write_poly_aarch64_reg(4, arg4) ||
+        !write_poly_aarch64_reg(5, arg5) ||
+        !write_poly_aarch64_reg(30, BX_POLY_RETURN_COOKIE))
+      return false;
+  }
+  else if (mode == BX_POLY_MODE_RAW_RISCV) {
+    bx_poly_reset_riscv_regs();
+    if (!write_poly_riscv_reg(10, arg0) ||
+        !write_poly_riscv_reg(11, arg1) ||
+        !write_poly_riscv_reg(12, arg2) ||
+        !write_poly_riscv_reg(13, arg3) ||
+        !write_poly_riscv_reg(14, arg4) ||
+        !write_poly_riscv_reg(15, arg5) ||
+        !write_poly_riscv_reg(1, BX_POLY_RETURN_COOKIE))
+      return false;
+  }
+  else {
+    bx_poly_return_cookie_valid = false;
+    return false;
+  }
+
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+  bx_poly_mode_switch_count++;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  RIP = target_rip;
+  BX_INFO(("poly_ud: pcall mode=%u target=%llx return=%llx", mode, (unsigned long long) target_rip, (unsigned long long) return_rip));
+  return true;
+}
+
+bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
+{
+  if (!bx_poly_return_cookie_valid ||
+      bx_poly_return_cookie_mode != mode ||
+      target_rip != (bx_address) BX_POLY_RETURN_COOKIE)
+    return false;
+
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+  bx_poly_return_cookie_valid = false;
+  bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
+  RIP = bx_poly_return_cookie_rip;
+  bx_poly_return_cookie_rip = 0;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  BX_INFO(("poly_raw: pcall return mode=%u rip=%llx", mode, (unsigned long long) RIP));
+  return true;
+}
+
 bool BX_CPU_C::poly_raw_mode_active(void)
 {
   if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
@@ -733,6 +805,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u ret_addr = 0;
     if (!read_poly_aarch64_reg(rn, &ret_addr))
       return false;
+    if (return_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
+      return true;
     RIP = (bx_address) ret_addr;
     BX_DEBUG(("poly_raw: emulated aarch64 ret x%u target=%llx", rn, (unsigned long long) ret_addr));
     return true;
@@ -1248,6 +1322,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     // The x86 envelope can place the raw stream at any host byte lane.
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
+    if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+      return true;
     target = (target & ~BX_CONST64(3)) | (pc & 0x3);
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
@@ -1859,6 +1935,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       RIP = next_rip;
       BX_INFO(("poly_ud: trap status id=%u reason=%u mode=%u number=%u pc=%llx", status_id, bx_poly_last_trap_reason, bx_poly_last_trap_mode, bx_poly_last_trap_number, (unsigned long long) bx_poly_last_trap_pc));
       return true;
+    }
+
+    if (prefix == 0x40) {
+      Bit8u call3 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 3);
+      Bit8u call4 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4);
+      Bit8u call5 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5);
+      Bit8u call6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
+      Bit8u call7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (call3 == 'P' && call4 == 'C' && call5 == 'A' && call6 == '6' && call7 == '4')
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) R10, (bx_address) R11);
+      if (call3 == 'P' && call4 == 'C' && call5 == 'R' && call6 == 'V' && call7 == '6')
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) R10, (bx_address) R11);
+      break;
     }
 
     switch (prefix) {
