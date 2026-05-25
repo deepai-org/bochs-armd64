@@ -171,14 +171,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
 
     if (prefix == 0x2e) {
       BX_INFO(("poly_ud: matched syscall prefix window %02x %02x %02x %02x %02x %02x", window[0], window[1], window[2], window[3], window[4], window[5]));
-      Bit8u syscall_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
-      if (syscall_id >= '0' && syscall_id <= '9')
-        syscall_id -= '0';
-      bx_poly_last_syscall_mode = bx_poly_current_mode;
-      bx_poly_last_syscall_number = syscall_id;
-      RAX = bx_poly_current_mode;
+      Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (status_id >= '0' && status_id <= '9')
+        status_id -= '0';
+      RAX = status_id == 1 ? bx_poly_last_syscall_number : bx_poly_current_mode;
       RIP = next_rip;
-      BX_INFO(("poly_ud: syscall mode=%u number=%u", bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
+      BX_INFO(("poly_ud: syscall status id=%u mode=%u number=%u", status_id, bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
       return true;
     }
 
