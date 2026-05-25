@@ -577,6 +577,21 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x0000007f) == 0x0000006f) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u imm =
+      (((insn >> 31) & 0x1) << 20) |
+      (((insn >> 21) & 0x3ff) << 1) |
+      (((insn >> 20) & 0x1) << 11) |
+      (((insn >> 12) & 0xff) << 12);
+    Bit64s guest_offset = bx_poly_sign_extend(imm, 21);
+    if (!write_poly_riscv_reg(rd, next_rip))
+      return false;
+    RIP = (bx_address) ((Bit64s) pc + guest_offset);
+    BX_DEBUG(("poly_raw: emulated riscv jal x%u offset=%lld link=%llx", rd, (long long) guest_offset, (unsigned long long) next_rip));
+    return true;
+  }
+
   if (insn == 0x00008067) {
     bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
     RSP += 8;
@@ -1628,6 +1643,21 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RIP = next_rip;
           BX_INFO(("poly_ud: emulated riscv %s x%u,x%u not-taken", op_name, rs1, rs2));
         }
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x0000006f) {
+        Bit32u rd = (insn >> 7) & 0x1f;
+        Bit32u imm =
+          (((insn >> 31) & 0x1) << 20) |
+          (((insn >> 21) & 0x3ff) << 1) |
+          (((insn >> 20) & 0x1) << 11) |
+          (((insn >> 12) & 0xff) << 12);
+        Bit64s guest_offset = bx_poly_sign_extend(imm, 21);
+        Bit64s marker_offset = bx_poly_marker_offset(guest_offset);
+        if (!write_poly_riscv_reg(rd, next_rip))
+          break;
+        RIP = (bx_address) ((Bit64s) marker_rip + marker_offset);
+        BX_INFO(("poly_ud: emulated riscv jal x%u offset=%lld marker_offset=%lld link=%llx", rd, (long long) guest_offset, (long long) marker_offset, (unsigned long long) next_rip));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00008067) {
