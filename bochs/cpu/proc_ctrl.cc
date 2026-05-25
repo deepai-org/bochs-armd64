@@ -602,6 +602,23 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x0000707f) == 0x00000067) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+    Bit64u base = 0;
+    if (!read_poly_riscv_reg(rs1, &base))
+      return false;
+    if (!write_poly_riscv_reg(rd, next_rip))
+      return false;
+    // The x86 envelope can place the raw stream at any host byte lane.
+    Bit64u target = (base + imm12) & ~BX_CONST64(1);
+    target = (target & ~BX_CONST64(3)) | (pc & 0x3);
+    RIP = (bx_address) target;
+    BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
+    return true;
+  }
+
   if ((insn & 0x0000707f) == 0x00003023) {
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit32u rs2 = (insn >> 20) & 0x1f;
