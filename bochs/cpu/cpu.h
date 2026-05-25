@@ -28,6 +28,8 @@
 
 #include "instrument.h"
 
+extern bool bx_poly_feature_enabled;
+
 const Bit64u BX_PHY_ADDRESS_MASK = ((((Bit64u)(1)) << BX_PHY_ADDRESS_WIDTH) - 1);
 
 const Bit64u BX_PHY_ADDRESS_RESERVED_BITS = (~BX_PHY_ADDRESS_MASK);
@@ -990,6 +992,7 @@ public: // for now...
   bx_address prev_ssp;
 #endif
   bool    speculative_rsp;
+  bool    poly_feature_enabled;
 
   Bit64u icount;
   Bit64u icount_last_sync;
@@ -1480,6 +1483,10 @@ public: // for now...
   BX_SMF void AAS(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void AAM(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void AAD(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void POLYSYSCALL(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void POLYCALL(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void POLYRET(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
 
   BX_SMF void PUSHA32(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void PUSHA16(bxInstruction_c *) BX_CPP_AttrRegparmN(1);

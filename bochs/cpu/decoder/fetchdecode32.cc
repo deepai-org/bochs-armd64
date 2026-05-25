@@ -55,6 +55,8 @@ extern const Bit64u *BxOpcodeTableVEX[];
 extern const Bit64u *BxOpcodeTableXOP[];
 #endif
 
+extern bool bx_poly_feature_enabled;
+
 #if BX_SUPPORT_EVEX
 extern const Bit64u *BxOpcodeTableEVEX[];
 #endif
@@ -2293,4 +2295,3 @@ const char *get_gas_disasm_opcode_name(Bit16u ia_opcode)
 
   return (ia_opcode < BX_IA_LAST) ? BxOpcodeNamesTable[ia_opcode] : 0;
 }
-

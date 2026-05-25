@@ -29,6 +29,8 @@
 #include "param_names.h"
 #include "cpustats.h"
 
+bool bx_poly_feature_enabled = false;
+
 #if BX_SUPPORT_APIC
 #include "apic.h"
 #endif
@@ -240,6 +242,8 @@ void BX_CPU_C::initialize(void)
   BX_CPU_THIS_PTR ignore_bad_msrs = SIM->get_param_bool(BXPN_IGNORE_BAD_MSRS)->get();
 #endif
 
+  BX_CPU_THIS_PTR poly_feature_enabled = bx_poly_feature_enabled;
+
   init_SMRAM();
 
 #if BX_SUPPORT_VMX
@@ -315,6 +319,7 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_SIMPLE(cpu, inhibit_mask);
   BXRS_HEX_PARAM_SIMPLE(cpu, inhibit_icount);
   BXRS_HEX_PARAM_SIMPLE(cpu, debug_trap);
+  BXRS_PARAM_BOOL(cpu, poly_feature_enabled, BX_CPU_THIS_PTR poly_feature_enabled);
   BXRS_DEC_PARAM_SIMPLE(cpu, icount);
   BXRS_DEC_PARAM_SIMPLE(cpu, icount_last_sync);
 

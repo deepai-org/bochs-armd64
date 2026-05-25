@@ -66,6 +66,26 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
   BX_NEXT_TRACE(i); // keep compiler happy
 }
 
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYSYSCALL(bxInstruction_c *i)
+{
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYCALL(bxInstruction_c *i)
+{
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYRET(bxInstruction_c *i)
+{
+  BX_NEXT_INSTR(i);
+}
+
+void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
+{
+  BX_NEXT_INSTR(i);
+}
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::NOP(bxInstruction_c *i)
 {
   // No operation.

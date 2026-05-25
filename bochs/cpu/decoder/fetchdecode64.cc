@@ -94,6 +94,8 @@ extern const Bit64u *BxOpcodeTableVEX[];
 extern const Bit64u *BxOpcodeTableXOP[];
 #endif
 
+extern bool bx_poly_feature_enabled;
+
 #if BX_SUPPORT_EVEX
 extern const Bit64u *BxOpcodeTableEVEX[];
 #endif
