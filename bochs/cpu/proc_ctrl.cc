@@ -180,6 +180,13 @@ bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_nu
   return true;
 }
 
+void BX_CPU_C::handle_poly_unknown_syscall(const char *arch_name, const char *trap_name,
+  const char *number_prefix, Bit32u syscall_number)
+{
+  RAX = 0x53000000 | (syscall_number << 8) | bx_poly_current_mode;
+  BX_INFO(("poly_ud: emulated %s %s %s%u mode=%u", arch_name, trap_name, number_prefix, syscall_number, bx_poly_current_mode));
+}
+
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   Bit32u libcall_id, Bit64u arg1, Bit64u arg2)
 {
@@ -624,8 +631,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           return true;
         }
         else {
-          RAX = 0x53000000 | (syscall_id << 8) | bx_poly_current_mode;
-          BX_INFO(("poly_ud: emulated aarch64 svc #%u mode=%u", syscall_id, bx_poly_current_mode));
+          handle_poly_unknown_syscall("aarch64", "svc", "#", syscall_id);
         }
         RIP = next_rip;
         return true;
@@ -808,8 +814,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           return true;
         }
         else {
-          RAX = 0x53000000 | (bx_poly_riscv_a7 << 8) | bx_poly_current_mode;
-          BX_INFO(("poly_ud: emulated riscv ecall a7=%u mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
+          handle_poly_unknown_syscall("riscv", "ecall", "a7=", bx_poly_riscv_a7);
         }
         RIP = next_rip;
         return true;
