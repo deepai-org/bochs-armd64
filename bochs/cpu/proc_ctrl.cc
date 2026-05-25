@@ -611,9 +611,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       if (status_id >= '0' && status_id <= '9')
         status_id -= '0';
-      RAX = status_id == 1 ? bx_poly_last_syscall_number : bx_poly_current_mode;
+      if (status_id == 1)
+        RAX = bx_poly_last_syscall_number;
+      else if (status_id == 2)
+        RAX = bx_poly_last_syscall_mode;
+      else
+        RAX = bx_poly_current_mode;
       RIP = next_rip;
-      BX_INFO(("poly_ud: syscall status id=%u mode=%u number=%u", status_id, bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
+      BX_INFO(("poly_ud: syscall status id=%u current_mode=%u last_mode=%u number=%u", status_id, bx_poly_current_mode, bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
       return true;
     }
 
@@ -621,9 +626,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       if (status_id >= '0' && status_id <= '9')
         status_id -= '0';
-      RAX = status_id == 1 ? bx_poly_last_libcall_number : 0x4c000000 | (bx_poly_current_mode << 8) | status_id;
+      if (status_id == 1)
+        RAX = bx_poly_last_libcall_number;
+      else if (status_id == 2)
+        RAX = bx_poly_last_libcall_mode;
+      else
+        RAX = 0x4c000000 | (bx_poly_current_mode << 8) | status_id;
       RIP = next_rip;
-      BX_INFO(("poly_ud: libcall status id=%u mode=%u number=%u", status_id, bx_poly_last_libcall_mode, bx_poly_last_libcall_number));
+      BX_INFO(("poly_ud: libcall status id=%u current_mode=%u last_mode=%u number=%u", status_id, bx_poly_current_mode, bx_poly_last_libcall_mode, bx_poly_last_libcall_number));
       return true;
     }
 
