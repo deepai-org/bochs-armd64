@@ -561,6 +561,32 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "mul";
       result = left * right;
     }
+    else if (funct7 == 0x01 && funct3 == 0x4) {
+      op_name = "div";
+      if (right == 0)
+        result = ~BX_CONST64(0);
+      else if (left == (BX_CONST64(1) << 63) && right == ~BX_CONST64(0))
+        result = left;
+      else
+        result = (Bit64u) ((Bit64s) left / (Bit64s) right);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x5) {
+      op_name = "divu";
+      result = right == 0 ? ~BX_CONST64(0) : left / right;
+    }
+    else if (funct7 == 0x01 && funct3 == 0x6) {
+      op_name = "rem";
+      if (right == 0)
+        result = left;
+      else if (left == (BX_CONST64(1) << 63) && right == ~BX_CONST64(0))
+        result = 0;
+      else
+        result = (Bit64u) ((Bit64s) left % (Bit64s) right);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x7) {
+      op_name = "remu";
+      result = right == 0 ? left : left % right;
+    }
     else if (funct7 == 0x00 && funct3 == 0x1) {
       op_name = "sll";
       result = left << (right & 0x3f);
@@ -628,6 +654,36 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x01 && funct3 == 0x0) {
       op_name = "mulw";
       result32 = (Bit32u) ((Bit64s) (Bit32s) (Bit32u) left * (Bit64s) (Bit32s) (Bit32u) right);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x4) {
+      op_name = "divw";
+      Bit32u right32 = (Bit32u) right;
+      if (right32 == 0)
+        result32 = 0xffffffff;
+      else if ((Bit32u) left == 0x80000000 && right32 == 0xffffffff)
+        result32 = 0x80000000;
+      else
+        result32 = (Bit32u) ((Bit32s) (Bit32u) left / (Bit32s) right32);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x5) {
+      op_name = "divuw";
+      Bit32u right32 = (Bit32u) right;
+      result32 = right32 == 0 ? 0xffffffff : (Bit32u) left / right32;
+    }
+    else if (funct7 == 0x01 && funct3 == 0x6) {
+      op_name = "remw";
+      Bit32u right32 = (Bit32u) right;
+      if (right32 == 0)
+        result32 = (Bit32u) left;
+      else if ((Bit32u) left == 0x80000000 && right32 == 0xffffffff)
+        result32 = 0;
+      else
+        result32 = (Bit32u) ((Bit32s) (Bit32u) left % (Bit32s) right32);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x7) {
+      op_name = "remuw";
+      Bit32u right32 = (Bit32u) right;
+      result32 = right32 == 0 ? (Bit32u) left : (Bit32u) left % right32;
     }
     else if (funct7 == 0x00 && funct3 == 0x1) {
       op_name = "sllw";
