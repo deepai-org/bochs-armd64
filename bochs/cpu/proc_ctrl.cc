@@ -117,6 +117,26 @@ static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u 
   }
 }
 
+static const char *bx_poly_aarch64_barrier_name(Bit32u insn)
+{
+  if ((insn & 0xfffff0ff) == 0xd503309f)
+    return "dsb";
+  if ((insn & 0xfffff0ff) == 0xd50330bf)
+    return "dmb";
+  if ((insn & 0xfffff0ff) == 0xd50330df)
+    return "isb";
+  return 0;
+}
+
+static const char *bx_poly_riscv_fence_name(Bit32u insn)
+{
+  if ((insn & 0x0000707f) == 0x0000000f)
+    return "fence";
+  if ((insn & 0x0000707f) == 0x0000100f)
+    return "fence.i";
+  return 0;
+}
+
 static void bx_poly_reset_aarch64_regs()
 {
   for (unsigned n = 0; n < 32; n++) {
@@ -374,6 +394,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
 
+  {
+    const char *barrier_name = bx_poly_aarch64_barrier_name(insn);
+    if (barrier_name != 0) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s as x86-tso no-op", barrier_name));
+      return true;
+    }
+  }
+
   if ((insn & 0xff800000) == 0x92800000 ||
       (insn & 0xff800000) == 0xd2800000 ||
       (insn & 0xff800000) == 0xf2800000) {
@@ -615,6 +644,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
+
+  {
+    const char *fence_name = bx_poly_riscv_fence_name(insn);
+    if (fence_name != 0) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s as x86-tso no-op", fence_name));
+      return true;
+    }
+  }
 
   if (insn == BX_POLY_RISCV_X86_ESCAPE) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -1664,6 +1702,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
         bx_poly_foreign_insn_count++;
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64) {
+        const char *barrier_name = bx_poly_aarch64_barrier_name(insn);
+        if (barrier_name != 0) {
+          RIP = next_rip;
+          BX_INFO(("poly_ud: emulated aarch64 %s as x86-tso no-op", barrier_name));
+          return true;
+        }
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 &&
           ((insn & 0xff800000) == 0x92800000 ||
            (insn & 0xff800000) == 0xd2800000 ||
@@ -1927,6 +1973,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
         bx_poly_foreign_insn_count++;
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV) {
+        const char *fence_name = bx_poly_riscv_fence_name(insn);
+        if (fence_name != 0) {
+          RIP = next_rip;
+          BX_INFO(("poly_ud: emulated riscv %s as x86-tso no-op", fence_name));
+          return true;
+        }
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV &&
           ((insn & 0x0000007f) == 0x00000037 ||
            (insn & 0x0000007f) == 0x00000017)) {
