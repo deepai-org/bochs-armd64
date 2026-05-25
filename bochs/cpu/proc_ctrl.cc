@@ -46,6 +46,7 @@ enum {
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_return_mode = BX_POLY_MODE_X86;
 static bool bx_poly_call_active = false;
+static Bit64u bx_poly_mode_switch_count = 0;
 static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
@@ -455,6 +456,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       return true;
     }
 
+    if (prefix == 0x4e) {
+      Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (status_id >= '0' && status_id <= '9')
+        status_id -= '0';
+      RAX = status_id == 0 ? bx_poly_mode_switch_count : bx_poly_current_mode;
+      RIP = next_rip;
+      BX_INFO(("poly_ud: switch status id=%u mode=%u count=%llu", status_id, bx_poly_current_mode, (unsigned long long) bx_poly_mode_switch_count));
+      return true;
+    }
+
     switch (prefix) {
     case 0x64:
     case 0x65:
@@ -462,6 +473,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       bx_poly_current_mode =
         (prefix == 0x64) ? BX_POLY_MODE_X86 :
         (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+      bx_poly_mode_switch_count++;
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64) {
         bx_poly_aarch64_x1 = 0;
         bx_poly_aarch64_x2 = 0;
