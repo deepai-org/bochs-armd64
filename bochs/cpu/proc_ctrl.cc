@@ -488,15 +488,45 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     }
   }
 
-  if ((insn & 0x0000707f) == 0x00000063 || (insn & 0x0000707f) == 0x00001063) {
+  if ((insn & 0x0000007f) == 0x00000063) {
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit32u rs2 = (insn >> 20) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
     Bit64u left = 0;
     Bit64u right = 0;
+    bool taken = false;
+    const char *op_name = 0;
     if (!read_poly_riscv_reg(rs1, &left) || !read_poly_riscv_reg(rs2, &right))
       return false;
-    bool bne = (insn & 0x0000707f) == 0x00001063;
-    bool taken = bne ? (left != right) : (left == right);
+
+    if (funct3 == 0x0) {
+      op_name = "beq";
+      taken = left == right;
+    }
+    else if (funct3 == 0x1) {
+      op_name = "bne";
+      taken = left != right;
+    }
+    else if (funct3 == 0x4) {
+      op_name = "blt";
+      taken = (Bit64s) left < (Bit64s) right;
+    }
+    else if (funct3 == 0x5) {
+      op_name = "bge";
+      taken = (Bit64s) left >= (Bit64s) right;
+    }
+    else if (funct3 == 0x6) {
+      op_name = "bltu";
+      taken = left < right;
+    }
+    else if (funct3 == 0x7) {
+      op_name = "bgeu";
+      taken = left >= right;
+    }
+    else {
+      return false;
+    }
+
     if (taken) {
       Bit32u imm =
         (((insn >> 31) & 0x1) << 12) |
@@ -505,11 +535,11 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         (((insn >> 8) & 0xf) << 1);
       Bit64s guest_offset = bx_poly_sign_extend(imm, 13);
       RIP = (bx_address) ((Bit64s) pc + guest_offset);
-      BX_DEBUG(("poly_raw: emulated riscv %s taken offset=%lld", bne ? "bne" : "beq", (long long) guest_offset));
+      BX_DEBUG(("poly_raw: emulated riscv %s taken offset=%lld", op_name, (long long) guest_offset));
     }
     else {
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated riscv %s not-taken", bne ? "bne" : "beq"));
+      BX_DEBUG(("poly_raw: emulated riscv %s not-taken", op_name));
     }
     return true;
   }
@@ -1477,28 +1507,59 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated riscv %s a0,a0,a1 value=%llu", op_name, (unsigned long long) bx_poly_riscv_x[11]));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && ((insn & 0x0000707f) == 0x00000063 || (insn & 0x0000707f) == 0x00001063)) {
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x00000063) {
         Bit32u rs1 = (insn >> 15) & 0x1f;
         Bit32u rs2 = (insn >> 20) & 0x1f;
         Bit32u funct3 = (insn >> 12) & 0x7;
+        Bit64u left = 0;
+        Bit64u right = 0;
+        bool taken = false;
+        const char *op_name = 0;
         Bit32u imm =
           (((insn >> 31) & 0x1) << 12) |
           (((insn >> 7) & 0x1) << 11) |
           (((insn >> 25) & 0x3f) << 5) |
           (((insn >> 8) & 0xf) << 1);
-        if (rs2 != 0 || (rs1 != 0 && rs1 != 10))
+        if (!read_poly_riscv_reg(rs1, &left) || !read_poly_riscv_reg(rs2, &right))
           break;
-        Bit64u rs1_value = rs1 == 10 ? RAX : 0;
-        bool taken = (funct3 == 0) ? (rs1_value == 0) : (rs1_value != 0);
+
+        if (funct3 == 0x0) {
+          op_name = "beq";
+          taken = left == right;
+        }
+        else if (funct3 == 0x1) {
+          op_name = "bne";
+          taken = left != right;
+        }
+        else if (funct3 == 0x4) {
+          op_name = "blt";
+          taken = (Bit64s) left < (Bit64s) right;
+        }
+        else if (funct3 == 0x5) {
+          op_name = "bge";
+          taken = (Bit64s) left >= (Bit64s) right;
+        }
+        else if (funct3 == 0x6) {
+          op_name = "bltu";
+          taken = left < right;
+        }
+        else if (funct3 == 0x7) {
+          op_name = "bgeu";
+          taken = left >= right;
+        }
+        else {
+          break;
+        }
+
         if (taken) {
           Bit64s guest_offset = bx_poly_sign_extend(imm, 13);
           Bit64s marker_offset = bx_poly_marker_offset(guest_offset);
           RIP = (bx_address) ((Bit64s) marker_rip + marker_offset);
-          BX_INFO(("poly_ud: emulated riscv %s %s,x0 taken offset=%lld marker_offset=%lld", funct3 == 0 ? "beq" : "bne", rs1 == 10 ? "a0" : "x0", (long long) guest_offset, (long long) marker_offset));
+          BX_INFO(("poly_ud: emulated riscv %s x%u,x%u taken offset=%lld marker_offset=%lld", op_name, rs1, rs2, (long long) guest_offset, (long long) marker_offset));
         }
         else {
           RIP = next_rip;
-          BX_INFO(("poly_ud: emulated riscv %s %s,x0 not-taken", funct3 == 0 ? "beq" : "bne", rs1 == 10 ? "a0" : "x0"));
+          BX_INFO(("poly_ud: emulated riscv %s x%u,x%u not-taken", op_name, rs1, rs2));
         }
         return true;
       }
