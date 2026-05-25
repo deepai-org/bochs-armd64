@@ -255,6 +255,30 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 add x0,x0,x1 value=%llu", (unsigned long long) bx_poly_aarch64_x1));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc00000) == 0xf9000000) {
+        Bit32u rt = insn & 0x1f;
+        Bit32u rn = (insn >> 5) & 0x1f;
+        Bit32u imm12 = (insn >> 10) & 0xfff;
+        if (rt != 0 || rn != 2)
+          break;
+        bx_address addr = (bx_address) (RDI + ((Bit64u) imm12 << 3));
+        write_virtual_qword(BX_SEG_REG_DS, addr, RAX);
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 str x0,[x2,#%u] addr=%llx value=%llu", imm12 << 3, (unsigned long long) addr, (unsigned long long) RAX));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc00000) == 0xf9400000) {
+        Bit32u rt = insn & 0x1f;
+        Bit32u rn = (insn >> 5) & 0x1f;
+        Bit32u imm12 = (insn >> 10) & 0xfff;
+        if (rt != 0 || rn != 2)
+          break;
+        bx_address addr = (bx_address) (RDI + ((Bit64u) imm12 << 3));
+        RAX = read_virtual_qword(BX_SEG_REG_DS, addr);
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 ldr x0,[x2,#%u] addr=%llx value=%llu", imm12 << 3, (unsigned long long) addr, (unsigned long long) RAX));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4000001) {
         Bit32u syscall_id = (insn >> 5) & 0xffff;
         bx_poly_last_syscall_mode = bx_poly_current_mode;
@@ -311,6 +335,31 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX += bx_poly_riscv_a1;
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv add a0,a0,a1 value=%llu", (unsigned long long) bx_poly_riscv_a1));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00003023) {
+        Bit32u rs1 = (insn >> 15) & 0x1f;
+        Bit32u rs2 = (insn >> 20) & 0x1f;
+        Bit32u imm = ((insn >> 7) & 0x1f) | (((insn >> 25) & 0x7f) << 5);
+        if (rs1 != 12 || rs2 != 10)
+          break;
+        Bit64s offset = bx_poly_sign_extend(imm, 12);
+        bx_address addr = (bx_address) (RDI + offset);
+        write_virtual_qword(BX_SEG_REG_DS, addr, RAX);
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv sd a0,%lld(a2) addr=%llx value=%llu", (long long) offset, (unsigned long long) addr, (unsigned long long) RAX));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00003003) {
+        Bit32u rd = (insn >> 7) & 0x1f;
+        Bit32u rs1 = (insn >> 15) & 0x1f;
+        Bit64s offset = bx_poly_sign_extend(insn >> 20, 12);
+        if (rd != 10 || rs1 != 12)
+          break;
+        bx_address addr = (bx_address) (RDI + offset);
+        RAX = read_virtual_qword(BX_SEG_REG_DS, addr);
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv ld a0,%lld(a2) addr=%llx value=%llu", (long long) offset, (unsigned long long) addr, (unsigned long long) RAX));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000893) {
