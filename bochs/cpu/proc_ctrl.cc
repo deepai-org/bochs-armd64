@@ -43,9 +43,11 @@ enum {
   BX_POLY_MODE_RISCV = 2
 };
 
+static const unsigned BX_POLY_CALL_STACK_DEPTH = 8;
+
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
-static Bit32u bx_poly_return_mode = BX_POLY_MODE_X86;
-static bool bx_poly_call_active = false;
+static Bit32u bx_poly_return_mode_stack[BX_POLY_CALL_STACK_DEPTH];
+static Bit32u bx_poly_call_depth = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
 static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
@@ -490,9 +492,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     case 0xf2:
     {
       Bit8u call_target = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
-      bx_poly_return_mode = bx_poly_current_mode;
+      if (bx_poly_call_depth >= BX_POLY_CALL_STACK_DEPTH) {
+        RAX = 0xca110000 | bx_poly_call_depth;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: call stack overflow depth=%u", bx_poly_call_depth));
+        return true;
+      }
+      bx_poly_return_mode_stack[bx_poly_call_depth++] = bx_poly_current_mode;
       bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
-      bx_poly_call_active = true;
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64) {
         bx_poly_aarch64_x1 = 0;
         bx_poly_aarch64_x2 = 0;
@@ -503,16 +510,15 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         bx_poly_riscv_a2 = 0;
         bx_poly_riscv_a7 = 0;
       }
-      BX_INFO(("poly_ud: call target=%c mode=%u return=%u", call_target, bx_poly_current_mode, bx_poly_return_mode));
+      BX_INFO(("poly_ud: call target=%c mode=%u depth=%u", call_target, bx_poly_current_mode, bx_poly_call_depth));
       RIP = next_rip;
       return true;
     }
     case 0xf3:
-      if (bx_poly_call_active) {
-        bx_poly_current_mode = bx_poly_return_mode;
-        bx_poly_call_active = false;
+      if (bx_poly_call_depth > 0) {
+        bx_poly_current_mode = bx_poly_return_mode_stack[--bx_poly_call_depth];
       }
-      BX_INFO(("poly_ud: return mode=%u", bx_poly_current_mode));
+      BX_INFO(("poly_ud: return mode=%u depth=%u", bx_poly_current_mode, bx_poly_call_depth));
       RIP = next_rip;
       return true;
     case 0x67: {
