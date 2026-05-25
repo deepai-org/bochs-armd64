@@ -166,6 +166,57 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
   BX_NEXT_INSTR(i);
 }
 
+bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
+  Bit32u libcall_id, Bit64u arg1, Bit64u arg2)
+{
+  bx_poly_last_libcall_mode = bx_poly_current_mode;
+  bx_poly_last_libcall_number = libcall_id;
+
+  if (libcall_id == 1) {
+    RAX = 0;
+    while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
+      RAX++;
+    BX_INFO(("poly_ud: emulated %s %s strlen addr=%llx len=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) RAX));
+  }
+  else if (libcall_id == 2) {
+    Bit64u count = RAX < 4096 ? RAX : 4096;
+    Bit8u value = (Bit8u) arg1;
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s %s memfill addr=%llx count=%llu value=%u", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) count, value));
+  }
+  else if (libcall_id == 3) {
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
+    Bit64s result = 0;
+    for (Bit64u n = 0; n < count; n++) {
+      Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n));
+      Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+      if (left != right) {
+        result = (Bit64s) left - (Bit64s) right;
+        break;
+      }
+    }
+    RAX = (Bit64u) result;
+    BX_INFO(("poly_ud: emulated %s %s memcmp left=%llx right=%llx count=%llu result=%lld", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count, (long long) result));
+  }
+  else if (libcall_id == 4) {
+    Bit64u count = RAX < 4096 ? RAX : 4096;
+    for (Bit64u n = 0; n < count; n++) {
+      Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
+    }
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s %s memcpy dest=%llx src=%llx count=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count));
+  }
+  else {
+    RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
+    BX_INFO(("poly_ud: emulated %s %s #%u libcall mode=%u", arch_name, trap_name, libcall_id, bx_poly_current_mode));
+  }
+
+  return true;
+}
+
 bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
 {
   (void) i;
@@ -534,49 +585,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe0001f) == 0xd4200000) {
         Bit32u libcall_id = (insn >> 5) & 0xffff;
-        bx_poly_last_libcall_mode = bx_poly_current_mode;
-        bx_poly_last_libcall_number = libcall_id;
-        if (libcall_id == 1) {
-          RAX = 0;
-          while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
-            RAX++;
-          BX_INFO(("poly_ud: emulated aarch64 brk strlen addr=%llx len=%llu", (unsigned long long) RDI, (unsigned long long) RAX));
-        }
-        else if (libcall_id == 2) {
-          Bit64u count = RAX < 4096 ? RAX : 4096;
-          Bit8u value = (Bit8u) bx_poly_aarch64_x1;
-          for (Bit64u n = 0; n < count; n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
-          RAX = count;
-          BX_INFO(("poly_ud: emulated aarch64 brk memfill addr=%llx count=%llu value=%u", (unsigned long long) RDI, (unsigned long long) count, value));
-        }
-        else if (libcall_id == 3) {
-          Bit64u count = bx_poly_aarch64_x2 < 4096 ? bx_poly_aarch64_x2 : 4096;
-          Bit64s result = 0;
-          for (Bit64u n = 0; n < count; n++) {
-            Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n));
-            Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
-            if (left != right) {
-              result = (Bit64s) left - (Bit64s) right;
-              break;
-            }
-          }
-          RAX = (Bit64u) result;
-          BX_INFO(("poly_ud: emulated aarch64 brk memcmp left=%llx right=%llx count=%llu result=%lld", (unsigned long long) RDI, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count, (long long) result));
-        }
-        else if (libcall_id == 4) {
-          Bit64u count = RAX < 4096 ? RAX : 4096;
-          for (Bit64u n = 0; n < count; n++) {
-            Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + n));
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
-          }
-          RAX = count;
-          BX_INFO(("poly_ud: emulated aarch64 brk memcpy dest=%llx src=%llx count=%llu", (unsigned long long) RDI, (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) count));
-        }
-        else {
-          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
-          BX_INFO(("poly_ud: emulated aarch64 brk #%u libcall mode=%u", libcall_id, bx_poly_current_mode));
-        }
+        handle_poly_libcall("aarch64", "brk", libcall_id, bx_poly_aarch64_x1, bx_poly_aarch64_x2);
         RIP = next_rip;
         return true;
       }
@@ -859,49 +868,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && insn == 0x00100073) {
-        bx_poly_last_libcall_mode = bx_poly_current_mode;
-        bx_poly_last_libcall_number = bx_poly_riscv_a7;
-        if (bx_poly_riscv_a7 == 1) {
-          RAX = 0;
-          while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
-            RAX++;
-          BX_INFO(("poly_ud: emulated riscv ebreak strlen addr=%llx len=%llu", (unsigned long long) RDI, (unsigned long long) RAX));
-        }
-        else if (bx_poly_riscv_a7 == 2) {
-          Bit64u count = RAX < 4096 ? RAX : 4096;
-          Bit8u value = (Bit8u) bx_poly_riscv_a1;
-          for (Bit64u n = 0; n < count; n++)
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
-          RAX = count;
-          BX_INFO(("poly_ud: emulated riscv ebreak memfill addr=%llx count=%llu value=%u", (unsigned long long) RDI, (unsigned long long) count, value));
-        }
-        else if (bx_poly_riscv_a7 == 3) {
-          Bit64u count = bx_poly_riscv_a2 < 4096 ? bx_poly_riscv_a2 : 4096;
-          Bit64s result = 0;
-          for (Bit64u n = 0; n < count; n++) {
-            Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n));
-            Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
-            if (left != right) {
-              result = (Bit64s) left - (Bit64s) right;
-              break;
-            }
-          }
-          RAX = (Bit64u) result;
-          BX_INFO(("poly_ud: emulated riscv ebreak memcmp left=%llx right=%llx count=%llu result=%lld", (unsigned long long) RDI, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count, (long long) result));
-        }
-        else if (bx_poly_riscv_a7 == 4) {
-          Bit64u count = RAX < 4096 ? RAX : 4096;
-          for (Bit64u n = 0; n < count; n++) {
-            Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
-            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
-          }
-          RAX = count;
-          BX_INFO(("poly_ud: emulated riscv ebreak memcpy dest=%llx src=%llx count=%llu", (unsigned long long) RDI, (unsigned long long) bx_poly_riscv_a1, (unsigned long long) count));
-        }
-        else {
-          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | bx_poly_riscv_a7;
-          BX_INFO(("poly_ud: emulated riscv ebreak a7=%u libcall mode=%u", bx_poly_riscv_a7, bx_poly_current_mode));
-        }
+        handle_poly_libcall("riscv", "ebreak", bx_poly_riscv_a7, bx_poly_riscv_a1, bx_poly_riscv_a2);
         RIP = next_rip;
         return true;
       }
