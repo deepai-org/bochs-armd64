@@ -389,6 +389,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = bx_poly_aarch64_x2;
           BX_INFO(("poly_ud: emulated aarch64 write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_aarch64_x1, (unsigned long long) bx_poly_aarch64_x2, (unsigned long long) checksum));
         }
+        else if (bx_poly_aarch64_x8 == 113 && RAX == 0) {
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_aarch64_x1, 123);
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) (bx_poly_aarch64_x1 + 8), 456789);
+          RAX = 0;
+          BX_INFO(("poly_ud: emulated aarch64 clock_gettime clk=0 addr=%llx sec=123 nsec=456789", (unsigned long long) bx_poly_aarch64_x1));
+        }
         else if (bx_poly_aarch64_x8 == 172) {
           RAX = 4242;
           BX_INFO(("poly_ud: emulated aarch64 getpid pid=%llu", (unsigned long long) RAX));
@@ -635,6 +641,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
             checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + n));
           RAX = bx_poly_riscv_a2;
           BX_INFO(("poly_ud: emulated riscv write fd=1 addr=%llx count=%llu checksum=%llu", (unsigned long long) bx_poly_riscv_a1, (unsigned long long) bx_poly_riscv_a2, (unsigned long long) checksum));
+        }
+        else if (bx_poly_riscv_a7 == 113 && RAX == 0) {
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) bx_poly_riscv_a1, 123);
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + 8), 456789);
+          RAX = 0;
+          BX_INFO(("poly_ud: emulated riscv clock_gettime clk=0 addr=%llx sec=123 nsec=456789", (unsigned long long) bx_poly_riscv_a1));
         }
         else if (bx_poly_riscv_a7 == 172) {
           RAX = 4242;
