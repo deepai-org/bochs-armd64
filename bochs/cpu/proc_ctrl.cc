@@ -176,6 +176,7 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
 bool BX_CPU_C::poly_raw_mode_active(void)
 {
   return BX_CPU_THIS_PTR poly_feature_enabled &&
+    CPL == 3 &&
     (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 ||
      bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV);
 }
