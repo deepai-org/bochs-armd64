@@ -174,6 +174,17 @@ void BX_CPU_C::cpu_loop(void)
       }
     }
 
+    if (poly_raw_mode_active()) {
+      BX_CPU_THIS_PTR prev_rip = RIP;
+      execute_poly_raw_step();
+      BX_CPU_THIS_PTR icount++;
+      BX_SYNC_TIME_IF_SINGLE_PROCESSOR(0);
+#if BX_GDBSTUB
+      if (gdbstub_instruction_epilog()) return;
+#endif
+      continue;
+    }
+
     bxICacheEntry_c *entry = getICacheEntry();
     bxInstruction_c *i = entry->i;
 
@@ -239,6 +250,13 @@ void BX_CPU_C::cpu_run_trace(void)
       // If request to return to caller ASAP.
       return;
     }
+  }
+
+  if (poly_raw_mode_active()) {
+    BX_CPU_THIS_PTR prev_rip = RIP;
+    execute_poly_raw_step();
+    BX_CPU_THIS_PTR icount++;
+    return;
   }
 
   bxICacheEntry_c *entry = getICacheEntry();

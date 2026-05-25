@@ -40,8 +40,13 @@
 enum {
   BX_POLY_MODE_X86 = 0,
   BX_POLY_MODE_AARCH64 = 1,
-  BX_POLY_MODE_RISCV = 2
+  BX_POLY_MODE_RISCV = 2,
+  BX_POLY_MODE_RAW_AARCH64 = 3,
+  BX_POLY_MODE_RAW_RISCV = 4
 };
+
+static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
+static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 
 static const unsigned BX_POLY_CALL_STACK_DEPTH = 8;
 
@@ -165,6 +170,109 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
       return true;
     }
     return false;
+  }
+}
+
+bool BX_CPU_C::poly_raw_mode_active(void)
+{
+  return BX_CPU_THIS_PTR poly_feature_enabled &&
+    (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 ||
+     bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV);
+}
+
+bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
+{
+  bx_address next_rip = pc + 4;
+
+  if ((insn & 0xffe00000) == 0xd2800000) {
+    Bit32u imm16 = (insn >> 5) & 0xffff;
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, imm16))
+      return false;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: emulated aarch64 movz x%u,#%u", rd, imm16));
+    return true;
+  }
+
+  if ((insn & 0xff000000) == 0x91000000 || (insn & 0xff000000) == 0xd1000000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit64u base = 0;
+    Bit64u imm = (insn >> 10) & 0xfff;
+    if (insn & 0x00400000)
+      imm <<= 12;
+    if (rn == 2 && (rd == 0 || rd == 1)) {
+      base = RDI;
+    }
+    else if (!read_poly_aarch64_reg(rn, &base)) {
+      return false;
+    }
+    Bit64u result = (insn & 0x40000000) ? base - imm : base + imm;
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: emulated aarch64 %s x%u,x%u,#%llu result=%llu", (insn & 0x40000000) ? "sub" : "add", rd, rn, (unsigned long long) imm, (unsigned long long) result));
+    return true;
+  }
+
+  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_X86_ESCAPE << 5))) {
+    bx_poly_current_mode = BX_POLY_MODE_X86;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: aarch64 brk #0x%x escape to x86", BX_POLY_AARCH64_BRK_X86_ESCAPE));
+    return true;
+  }
+
+  return false;
+}
+
+bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
+{
+  bx_address next_rip = pc + 4;
+
+  if (insn == BX_POLY_RISCV_X86_ESCAPE) {
+    bx_poly_current_mode = BX_POLY_MODE_X86;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: riscv custom-0 escape to x86"));
+    return true;
+  }
+
+  if ((insn & 0x0000707f) == 0x00000013) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit64u base = 0;
+    Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+    if (rs1 == 12 && (rd == 10 || rd == 11))
+      base = RDI;
+    else if (!read_poly_riscv_reg(rs1, &base))
+      return false;
+    if (!write_poly_riscv_reg(rd, (Bit64u) ((Bit64s) base + imm12)))
+      return false;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: emulated riscv addi x%u,x%u,%lld", rd, rs1, (long long) imm12));
+    return true;
+  }
+
+  return false;
+}
+
+void BX_CPU_C::execute_poly_raw_step(void)
+{
+  bx_address pc = RIP;
+  Bit32u insn = read_virtual_dword(BX_SEG_REG_CS, pc);
+  bool handled = false;
+
+  if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
+    bx_poly_foreign_insn_count++;
+    handled = execute_poly_raw_aarch64(insn, pc);
+  }
+  else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
+    bx_poly_foreign_insn_count++;
+    handled = execute_poly_raw_riscv(insn, pc);
+  }
+
+  if (!handled) {
+    BX_INFO(("poly_raw: unhandled mode=%u rip=%llx insn=%08x", bx_poly_current_mode, (unsigned long long) pc, insn));
+    exception(BX_UD_EXCEPTION, 0);
   }
 }
 
@@ -594,17 +702,34 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     case 0x64:
     case 0x65:
     case 0x66:
-      bx_poly_current_mode =
-        (prefix == 0x64) ? BX_POLY_MODE_X86 :
-        (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+    {
+      Bit8u mode3 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 3);
+      Bit8u mode4 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4);
+      Bit8u mode5 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5);
+      Bit8u mode6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
+      Bit8u mode7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (prefix == 0x64) {
+        bx_poly_current_mode = BX_POLY_MODE_X86;
+      }
+      else if (prefix == 0x65 && mode3 == 'R' && mode4 == 'A' && mode5 == 'W' && mode6 == '6' && mode7 == '4') {
+        bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+      }
+      else if (prefix == 0x66 && mode3 == 'R' && mode4 == 'A' && mode5 == 'W' && mode6 == 'R' && mode7 == 'V') {
+        bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+      }
+      else {
+        bx_poly_current_mode = (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+      }
       bx_poly_mode_switch_count++;
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 || bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
         bx_poly_reset_aarch64_regs();
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV || bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
         bx_poly_reset_riscv_regs();
+      BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
       BX_INFO(("poly_ud: mode switch to %u", bx_poly_current_mode));
       RIP = next_rip;
       return true;
+    }
     case 0xf2:
     {
       Bit8u call_target = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
@@ -614,7 +739,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: call stack overflow depth=%u", bx_poly_call_depth));
         return true;
       }
-      bx_poly_return_mode_stack[bx_poly_call_depth++] = bx_poly_current_mode;
+      Bit32u caller_mode = bx_poly_call_depth == 0 ? BX_POLY_MODE_X86 : bx_poly_current_mode;
+      bx_poly_return_mode_stack[bx_poly_call_depth++] = caller_mode;
       bx_poly_current_mode = call_target == 'R' ? BX_POLY_MODE_RISCV : BX_POLY_MODE_AARCH64;
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
         bx_poly_reset_aarch64_regs();
@@ -627,6 +753,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     case 0xf3:
       if (bx_poly_call_depth > 0) {
         bx_poly_current_mode = bx_poly_return_mode_stack[--bx_poly_call_depth];
+      }
+      else {
+        bx_poly_current_mode = BX_POLY_MODE_X86;
       }
       BX_INFO(("poly_ud: return mode=%u depth=%u", bx_poly_current_mode, bx_poly_call_depth));
       RIP = next_rip;
@@ -648,39 +777,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 movz x%u,#%u", rd, imm16));
         return true;
       }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0x91000000) {
-        Bit32u imm12 = (insn >> 10) & 0xfff;
-        RAX += imm12;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 add x0,x0,#%u", imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0xd1000000) {
-        Bit32u imm12 = (insn >> 10) & 0xfff;
-        RAX -= imm12;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 sub x0,x0,#%u", imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0x91000041) {
-        Bit32u imm12 = (insn >> 10) & 0xfff;
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 &&
+          ((insn & 0xff000000) == 0x91000000 || (insn & 0xff000000) == 0xd1000000)) {
+        Bit32u rd = insn & 0x1f;
         Bit32u rn = (insn >> 5) & 0x1f;
-        if (rn != 2)
+        Bit64u base = 0;
+        Bit64u imm = (insn >> 10) & 0xfff;
+        if (insn & 0x00400000)
+          imm <<= 12;
+        if (rn == 2 && (rd == 0 || rd == 1)) {
+          base = RDI;
+        }
+        else if (!read_poly_aarch64_reg(rn, &base)) {
           break;
-        bx_poly_aarch64_x[1] = RDI + imm12;
-        bx_poly_aarch64_x_valid[1] = true;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 add x1,x2,#%u value=%llu", imm12, (unsigned long long) bx_poly_aarch64_x[1]));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0x91000040) {
-        Bit32u imm12 = (insn >> 10) & 0xfff;
-        Bit32u rn = (insn >> 5) & 0x1f;
-        if (rn != 2)
+        }
+        Bit64u result = (insn & 0x40000000) ? base - imm : base + imm;
+        if (!write_poly_aarch64_reg(rd, result))
           break;
-        RAX = RDI + imm12;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 add x0,x2,#%u value=%llu", imm12, (unsigned long long) RAX));
+        BX_INFO(("poly_ud: emulated aarch64 %s x%u,x%u,#%llu result=%llu", (insn & 0x40000000) ? "sub" : "add", rd, rn, (unsigned long long) imm, (unsigned long long) result));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64) {
@@ -873,61 +988,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
         bx_poly_foreign_insn_count++;
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00000013 &&
-          ((insn >> 7) & 0x1f) >= 13 && ((insn >> 7) & 0x1f) != 17) {
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000707f) == 0x00000013) {
         Bit32u rd = (insn >> 7) & 0x1f;
         Bit32u rs1 = (insn >> 15) & 0x1f;
         Bit64u base = 0;
         Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        if (!read_poly_riscv_reg(rs1, &base) || !write_poly_riscv_reg(rd, (Bit64u) ((Bit64s) base + imm12)))
+        if (rs1 == 12 && (rd == 10 || rd == 11))
+          base = RDI;
+        else if (!read_poly_riscv_reg(rs1, &base))
+          break;
+        if (!write_poly_riscv_reg(rd, (Bit64u) ((Bit64s) base + imm12)))
           break;
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv addi x%u,x%u,%lld", rd, rs1, (long long) imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000513) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        RAX = (Bit64u) imm12;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a0,x0,%lld", (long long) imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00050513) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        RAX = (Bit64u) ((Bit64s) RAX + imm12);
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a0,a0,%lld", (long long) imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00060513) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        RAX = (Bit64u) (RDI + imm12);
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a0,a2,%lld value=%llu", (long long) imm12, (unsigned long long) RAX));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000593) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        bx_poly_riscv_x[11] = (Bit64u) imm12;
-        bx_poly_riscv_x_valid[11] = true;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a1,x0,%lld", (long long) imm12));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00060593) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        bx_poly_riscv_x[11] = (Bit64u) (RDI + imm12);
-        bx_poly_riscv_x_valid[11] = true;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a1,a2,%lld value=%llu", (long long) imm12, (unsigned long long) bx_poly_riscv_x[11]));
-        return true;
-      }
-      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000613) {
-        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
-        bx_poly_riscv_x[12] = (Bit64u) imm12;
-        bx_poly_riscv_x_valid[12] = true;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: emulated riscv addi a2,x0,%lld", (long long) imm12));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x00000033) {

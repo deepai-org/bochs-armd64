@@ -1498,6 +1498,10 @@ public: // for now...
   BX_SMF bool write_poly_aarch64_reg(Bit32u, Bit64u);
   BX_SMF bool read_poly_riscv_reg(Bit32u, Bit64u *);
   BX_SMF bool write_poly_riscv_reg(Bit32u, Bit64u);
+  BX_SMF bool poly_raw_mode_active(void);
+  BX_SMF void execute_poly_raw_step(void);
+  BX_SMF bool execute_poly_raw_aarch64(Bit32u, bx_address);
+  BX_SMF bool execute_poly_raw_riscv(Bit32u, bx_address);
 
   BX_SMF void PUSHA32(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void PUSHA16(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
