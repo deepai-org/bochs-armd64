@@ -37,6 +37,18 @@
 
 #include "decoder/ia_opcodes.h"
 
+enum {
+  BX_POLY_MODE_X86 = 0,
+  BX_POLY_MODE_AARCH64 = 1,
+  BX_POLY_MODE_RISCV = 2
+};
+
+static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
+static Bit32u bx_poly_return_mode = BX_POLY_MODE_X86;
+static bool bx_poly_call_active = false;
+static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
+static Bit32u bx_poly_last_syscall_number = 0;
+
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
   unsigned ia_opcode = i->getIaOpcode();
@@ -133,12 +145,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     if (window[n + 1] != 0x0f || window[n + 2] != 0x0b)
       continue;
 
-    bx_address next_rip = PREV_RIP + (bx_address)n - 3 + 8;
+    bx_address marker_rip = PREV_RIP + (bx_address)n - 3;
+    bx_address next_rip = marker_rip + 8;
 
     if (prefix == 0x2e) {
       BX_INFO(("poly_ud: matched syscall prefix window %02x %02x %02x %02x %02x %02x", window[0], window[1], window[2], window[3], window[4], window[5]));
-      RAX = 0;
+      Bit8u syscall_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (syscall_id >= '0' && syscall_id <= '9')
+        syscall_id -= '0';
+      bx_poly_last_syscall_mode = bx_poly_current_mode;
+      bx_poly_last_syscall_number = syscall_id;
+      RAX = bx_poly_current_mode;
       RIP = next_rip;
+      BX_INFO(("poly_ud: syscall mode=%u number=%u", bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
       return true;
     }
 
@@ -146,9 +165,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     case 0x64:
     case 0x65:
     case 0x66:
+      bx_poly_current_mode =
+        (prefix == 0x64) ? BX_POLY_MODE_X86 :
+        (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+      BX_INFO(("poly_ud: mode switch to %u", bx_poly_current_mode));
+      RIP = next_rip;
+      return true;
     case 0xf2:
+      bx_poly_return_mode = bx_poly_current_mode;
+      bx_poly_current_mode = BX_POLY_MODE_AARCH64;
+      bx_poly_call_active = true;
+      BX_INFO(("poly_ud: call mode=%u return=%u", bx_poly_current_mode, bx_poly_return_mode));
+      RIP = next_rip;
+      return true;
     case 0xf3:
-      BX_INFO(("poly_ud: matched no-op prefix %02x in window %02x %02x %02x %02x %02x %02x", prefix, window[0], window[1], window[2], window[3], window[4], window[5]));
+      if (bx_poly_call_active) {
+        bx_poly_current_mode = bx_poly_return_mode;
+        bx_poly_call_active = false;
+      }
+      BX_INFO(("poly_ud: return mode=%u", bx_poly_current_mode));
       RIP = next_rip;
       return true;
     default:
