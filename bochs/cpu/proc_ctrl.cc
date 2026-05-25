@@ -403,6 +403,19 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x0000007f) == 0x00000037 ||
+      (insn & 0x0000007f) == 0x00000017) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit64s imm = bx_poly_sign_extend(insn & 0xfffff000, 32);
+    bool auipc = (insn & 0x0000007f) == 0x00000017;
+    Bit64u result = auipc ? (Bit64u) ((Bit64s) pc + imm) : (Bit64u) imm;
+    if (!write_poly_riscv_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated riscv %s x%u,%lld result=%llu", auipc ? "auipc" : "lui", rd, (long long) imm, (unsigned long long) result));
+    return true;
+  }
+
   if ((insn & 0x0000007f) == 0x00000013) {
     Bit32u rd = (insn >> 7) & 0x1f;
     Bit32u funct3 = (insn >> 12) & 0x7;
@@ -1394,6 +1407,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV)
         bx_poly_foreign_insn_count++;
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV &&
+          ((insn & 0x0000007f) == 0x00000037 ||
+           (insn & 0x0000007f) == 0x00000017)) {
+        Bit32u rd = (insn >> 7) & 0x1f;
+        Bit64s imm = bx_poly_sign_extend(insn & 0xfffff000, 32);
+        bool auipc = (insn & 0x0000007f) == 0x00000017;
+        Bit64u result = auipc ? (Bit64u) ((Bit64s) marker_rip + imm) : (Bit64u) imm;
+        if (!write_poly_riscv_reg(rd, result))
+          break;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv %s x%u,%lld result=%llu", auipc ? "auipc" : "lui", rd, (long long) imm, (unsigned long long) result));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x0000007f) == 0x00000013) {
         Bit32u rd = (insn >> 7) & 0x1f;
         Bit32u funct3 = (insn >> 12) & 0x7;
