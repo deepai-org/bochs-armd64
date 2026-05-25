@@ -51,6 +51,7 @@ static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const unsigned BX_POLY_CALL_STACK_DEPTH = 8;
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
+static bx_address bx_poly_raw_owner_cr3 = 0;
 static Bit32u bx_poly_return_mode_stack[BX_POLY_CALL_STACK_DEPTH];
 static Bit32u bx_poly_call_depth = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
@@ -177,6 +178,7 @@ bool BX_CPU_C::poly_raw_mode_active(void)
 {
   return BX_CPU_THIS_PTR poly_feature_enabled &&
     CPL == 3 &&
+    BX_CPU_THIS_PTR cr3 == bx_poly_raw_owner_cr3 &&
     (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 ||
      bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV);
 }
@@ -273,6 +275,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_X86_ESCAPE << 5))) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_raw_owner_cr3 = 0;
     RIP = next_rip;
     BX_INFO(("poly_raw: aarch64 brk #0x%x escape to x86", BX_POLY_AARCH64_BRK_X86_ESCAPE));
     return true;
@@ -307,6 +310,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
     RSP += 8;
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_raw_owner_cr3 = 0;
     RIP = ret_addr;
     BX_DEBUG(("poly_raw: emulated aarch64 ret rip=%llx", (unsigned long long) ret_addr));
     return true;
@@ -373,6 +377,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_RISCV_X86_ESCAPE) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_raw_owner_cr3 = 0;
     RIP = next_rip;
     BX_INFO(("poly_raw: riscv custom-0 escape to x86"));
     return true;
@@ -472,6 +477,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     bx_address ret_addr = (bx_address) read_virtual_qword(BX_SEG_REG_SS, RSP);
     RSP += 8;
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_raw_owner_cr3 = 0;
     RIP = ret_addr;
     BX_DEBUG(("poly_raw: emulated riscv jalr ret rip=%llx", (unsigned long long) ret_addr));
     return true;
@@ -547,6 +553,7 @@ void BX_CPU_C::execute_poly_raw_step(void)
   if (!handled) {
     BX_INFO(("poly_raw: unhandled mode=%u rip=%llx insn=%08x", bx_poly_current_mode, (unsigned long long) pc, insn));
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_raw_owner_cr3 = 0;
     exception(BX_UD_EXCEPTION, 0);
   }
 }
@@ -657,6 +664,7 @@ bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_nu
   RSP += 8;
   RAX = exit_code;
   bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_raw_owner_cr3 = 0;
   RIP = ret_addr;
   BX_INFO(("poly_ud: emulated %s exit code=%llu rip=%llx", arch_name, (unsigned long long) exit_code, (unsigned long long) ret_addr));
   return true;
@@ -986,15 +994,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u mode7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       if (prefix == 0x64) {
         bx_poly_current_mode = BX_POLY_MODE_X86;
+        bx_poly_raw_owner_cr3 = 0;
       }
       else if (prefix == 0x65 && mode3 == 'R' && mode4 == 'A' && mode5 == 'W' && mode6 == '6' && mode7 == '4') {
         bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+        bx_poly_raw_owner_cr3 = BX_CPU_THIS_PTR cr3;
       }
       else if (prefix == 0x66 && mode3 == 'R' && mode4 == 'A' && mode5 == 'W' && mode6 == 'R' && mode7 == 'V') {
         bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+        bx_poly_raw_owner_cr3 = BX_CPU_THIS_PTR cr3;
       }
       else {
         bx_poly_current_mode = (prefix == 0x65) ? BX_POLY_MODE_AARCH64 : BX_POLY_MODE_RISCV;
+        bx_poly_raw_owner_cr3 = 0;
       }
       bx_poly_mode_switch_count++;
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 || bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
@@ -1032,6 +1044,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       }
       else {
         bx_poly_current_mode = BX_POLY_MODE_X86;
+        bx_poly_raw_owner_cr3 = 0;
       }
       BX_INFO(("poly_ud: return mode=%u depth=%u", bx_poly_current_mode, bx_poly_call_depth));
       RIP = next_rip;
