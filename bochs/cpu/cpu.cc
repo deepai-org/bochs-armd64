@@ -51,6 +51,8 @@
 
 jmp_buf BX_CPU_C::jmp_buf_env;
 
+static const unsigned BX_POLY_RAW_BURST_INSNS = 64;
+
 #if BX_DEBUGGER
 void BX_CPU_C::cpu_loop_debugger(void)
 {
@@ -175,13 +177,17 @@ void BX_CPU_C::cpu_loop(void)
     }
 
     if (poly_raw_mode_active()) {
-      BX_CPU_THIS_PTR prev_rip = RIP;
-      execute_poly_raw_step();
-      BX_CPU_THIS_PTR icount++;
-      BX_SYNC_TIME_IF_SINGLE_PROCESSOR(0);
+      for (unsigned n = 0; n < BX_POLY_RAW_BURST_INSNS; n++) {
+        BX_CPU_THIS_PTR prev_rip = RIP;
+        execute_poly_raw_step();
+        BX_CPU_THIS_PTR icount++;
+        BX_SYNC_TIME_IF_SINGLE_PROCESSOR(0);
 #if BX_GDBSTUB
-      if (gdbstub_instruction_epilog()) return;
+        if (gdbstub_instruction_epilog()) return;
 #endif
+        if (BX_CPU_THIS_PTR async_event || !poly_raw_mode_active())
+          break;
+      }
       continue;
     }
 
@@ -253,9 +259,13 @@ void BX_CPU_C::cpu_run_trace(void)
   }
 
   if (poly_raw_mode_active()) {
-    BX_CPU_THIS_PTR prev_rip = RIP;
-    execute_poly_raw_step();
-    BX_CPU_THIS_PTR icount++;
+    for (unsigned n = 0; n < BX_POLY_RAW_BURST_INSNS; n++) {
+      BX_CPU_THIS_PTR prev_rip = RIP;
+      execute_poly_raw_step();
+      BX_CPU_THIS_PTR icount++;
+      if (BX_CPU_THIS_PTR async_event || !poly_raw_mode_active())
+        break;
+    }
     return;
   }
 

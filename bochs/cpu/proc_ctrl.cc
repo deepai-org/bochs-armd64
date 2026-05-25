@@ -538,6 +538,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 void BX_CPU_C::execute_poly_raw_step(void)
 {
   bx_address pc = RIP;
+  bx_address raw_owner_cr3 = bx_poly_raw_owner_cr3;
+  bx_poly_raw_owner_cr3 = 0;
   Bit32u insn = read_virtual_dword(BX_SEG_REG_CS, pc);
   bool handled = false;
 
@@ -553,9 +555,12 @@ void BX_CPU_C::execute_poly_raw_step(void)
   if (!handled) {
     BX_INFO(("poly_raw: unhandled mode=%u rip=%llx insn=%08x", bx_poly_current_mode, (unsigned long long) pc, insn));
     bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_raw_owner_cr3 = 0;
     exception(BX_UD_EXCEPTION, 0);
   }
+
+  if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 ||
+      bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
+    bx_poly_raw_owner_cr3 = raw_owner_cr3;
 }
 
 struct bx_poly_scalar_syscall_entry {
