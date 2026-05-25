@@ -187,13 +187,33 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
 
-  if ((insn & 0xffe00000) == 0xd2800000) {
+  if ((insn & 0xff800000) == 0x92800000 ||
+      (insn & 0xff800000) == 0xd2800000 ||
+      (insn & 0xff800000) == 0xf2800000) {
     Bit32u imm16 = (insn >> 5) & 0xffff;
+    Bit32u hw = (insn >> 21) & 0x3;
+    Bit32u shift = hw * 16;
     Bit32u rd = insn & 0x1f;
-    if (!write_poly_aarch64_reg(rd, imm16))
+    Bit64u value = ((Bit64u) imm16) << shift;
+    const char *op_name = "movz";
+
+    if ((insn & 0xff800000) == 0x92800000) {
+      value = ~value;
+      op_name = "movn";
+    }
+    else if ((insn & 0xff800000) == 0xf2800000) {
+      Bit64u prev = 0;
+      Bit64u mask = ((Bit64u) 0xffff) << shift;
+      if (!read_poly_aarch64_reg(rd, &prev))
+        return false;
+      value = (prev & ~mask) | value;
+      op_name = "movk";
+    }
+
+    if (!write_poly_aarch64_reg(rd, value))
       return false;
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 movz x%u,#%u", rd, imm16));
+    BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,#%u,lsl #%u result=%llu", op_name, rd, imm16, shift, (unsigned long long) value));
     return true;
   }
 
@@ -1133,13 +1153,34 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         ((Bit32u) read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6) << 24);
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64)
         bx_poly_foreign_insn_count++;
-      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffe00000) == 0xd2800000) {
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 &&
+          ((insn & 0xff800000) == 0x92800000 ||
+           (insn & 0xff800000) == 0xd2800000 ||
+           (insn & 0xff800000) == 0xf2800000)) {
         Bit32u imm16 = (insn >> 5) & 0xffff;
+        Bit32u hw = (insn >> 21) & 0x3;
+        Bit32u shift = hw * 16;
         Bit32u rd = insn & 0x1f;
-        if (!write_poly_aarch64_reg(rd, imm16))
+        Bit64u value = ((Bit64u) imm16) << shift;
+        const char *op_name = "movz";
+
+        if ((insn & 0xff800000) == 0x92800000) {
+          value = ~value;
+          op_name = "movn";
+        }
+        else if ((insn & 0xff800000) == 0xf2800000) {
+          Bit64u prev = 0;
+          Bit64u mask = ((Bit64u) 0xffff) << shift;
+          if (!read_poly_aarch64_reg(rd, &prev))
+            break;
+          value = (prev & ~mask) | value;
+          op_name = "movk";
+        }
+
+        if (!write_poly_aarch64_reg(rd, value))
           break;
         RIP = next_rip;
-        BX_INFO(("poly_ud: emulated aarch64 movz x%u,#%u", rd, imm16));
+        BX_INFO(("poly_ud: emulated aarch64 %s x%u,#%u,lsl #%u result=%llu", op_name, rd, imm16, shift, (unsigned long long) value));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 &&
