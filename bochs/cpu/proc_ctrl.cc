@@ -181,14 +181,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
     }
 
     if (prefix == 0x3e) {
-      Bit8u libcall_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
-      if (libcall_id >= '0' && libcall_id <= '9')
-        libcall_id -= '0';
-      bx_poly_last_libcall_mode = bx_poly_current_mode;
-      bx_poly_last_libcall_number = libcall_id;
-      RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
+      Bit8u status_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (status_id >= '0' && status_id <= '9')
+        status_id -= '0';
+      RAX = status_id == 1 ? bx_poly_last_libcall_number : 0x4c000000 | (bx_poly_current_mode << 8) | status_id;
       RIP = next_rip;
-      BX_INFO(("poly_ud: libcall mode=%u number=%u", bx_poly_last_libcall_mode, bx_poly_last_libcall_number));
+      BX_INFO(("poly_ud: libcall status id=%u mode=%u number=%u", status_id, bx_poly_last_libcall_mode, bx_poly_last_libcall_number));
       return true;
     }
 
