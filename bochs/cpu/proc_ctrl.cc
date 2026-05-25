@@ -48,6 +48,8 @@ static Bit32u bx_poly_return_mode = BX_POLY_MODE_X86;
 static bool bx_poly_call_active = false;
 static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
+static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
+static Bit32u bx_poly_last_libcall_number = 0;
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
@@ -158,6 +160,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       RAX = bx_poly_current_mode;
       RIP = next_rip;
       BX_INFO(("poly_ud: syscall mode=%u number=%u", bx_poly_last_syscall_mode, bx_poly_last_syscall_number));
+      return true;
+    }
+
+    if (prefix == 0x3e) {
+      Bit8u libcall_id = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (libcall_id >= '0' && libcall_id <= '9')
+        libcall_id -= '0';
+      bx_poly_last_libcall_mode = bx_poly_current_mode;
+      bx_poly_last_libcall_number = libcall_id;
+      RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
+      RIP = next_rip;
+      BX_INFO(("poly_ud: libcall mode=%u number=%u", bx_poly_last_libcall_mode, bx_poly_last_libcall_number));
       return true;
     }
 
