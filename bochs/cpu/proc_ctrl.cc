@@ -276,6 +276,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         BX_INFO(("poly_ud: emulated aarch64 add x1,x2,#%u value=%llu", imm12, (unsigned long long) bx_poly_aarch64_x1));
         return true;
       }
+      if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc003ff) == 0x91000040) {
+        Bit32u imm12 = (insn >> 10) & 0xfff;
+        Bit32u rn = (insn >> 5) & 0x1f;
+        if (rn != 2)
+          break;
+        RAX = RDI + imm12;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated aarch64 add x0,x2,#%u value=%llu", imm12, (unsigned long long) RAX));
+        return true;
+      }
       if (bx_poly_current_mode == BX_POLY_MODE_AARCH64 && (insn & 0xffc0fc00) == 0x8b000000) {
         Bit32u rd = insn & 0x1f;
         Bit32u rn = (insn >> 5) & 0x1f;
@@ -381,6 +391,13 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           BX_INFO(("poly_ud: emulated aarch64 exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
           return true;
         }
+        else if (bx_poly_aarch64_x8 == 160) {
+          const char sysname[] = "Linux";
+          for (unsigned n = 0; n < sizeof(sysname); n++)
+            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RAX + n), (Bit8u) sysname[n]);
+          BX_INFO(("poly_ud: emulated aarch64 uname addr=%llx sysname=%s", (unsigned long long) RAX, sysname));
+          RAX = 0;
+        }
         else {
           RAX = 0x53000000 | (syscall_id << 8) | bx_poly_current_mode;
           BX_INFO(("poly_ud: emulated aarch64 svc #%u mode=%u", syscall_id, bx_poly_current_mode));
@@ -456,6 +473,13 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
         RAX = (Bit64u) ((Bit64s) RAX + imm12);
         RIP = next_rip;
         BX_INFO(("poly_ud: emulated riscv addi a0,a0,%lld", (long long) imm12));
+        return true;
+      }
+      if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00060513) {
+        Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+        RAX = (Bit64u) (RDI + imm12);
+        RIP = next_rip;
+        BX_INFO(("poly_ud: emulated riscv addi a0,a2,%lld value=%llu", (long long) imm12, (unsigned long long) RAX));
         return true;
       }
       if (bx_poly_current_mode == BX_POLY_MODE_RISCV && (insn & 0x000fffff) == 0x00000593) {
@@ -594,6 +618,13 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RIP = ret_addr;
           BX_INFO(("poly_ud: emulated riscv exit code=%llu rip=%llx", (unsigned long long) exit_code, (unsigned long long) ret_addr));
           return true;
+        }
+        else if (bx_poly_riscv_a7 == 160) {
+          const char sysname[] = "Linux";
+          for (unsigned n = 0; n < sizeof(sysname); n++)
+            write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RAX + n), (Bit8u) sysname[n]);
+          BX_INFO(("poly_ud: emulated riscv uname addr=%llx sysname=%s", (unsigned long long) RAX, sysname));
+          RAX = 0;
         }
         else {
           RAX = 0x53000000 | (bx_poly_riscv_a7 << 8) | bx_poly_current_mode;
