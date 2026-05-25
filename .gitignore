@@ -145,3 +145,5 @@ bochs-msvc-src.zip
 /sfsite/tmp
 /sfsite/xcf
 /sfsite/.glimpse*
+
+/bochs-prepoly-bin
