@@ -446,6 +446,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "addi";
       result = (Bit64u) ((Bit64s) base + imm12);
     }
+    else if (funct3 == 0x2) {
+      op_name = "slti";
+      result = (Bit64s) base < imm12 ? 1 : 0;
+    }
+    else if (funct3 == 0x3) {
+      op_name = "sltiu";
+      result = base < (Bit64u) imm12 ? 1 : 0;
+    }
     else if (funct3 == 0x4) {
       op_name = "xori";
       result = base ^ (Bit64u) imm12;
@@ -553,9 +561,29 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "mul";
       result = left * right;
     }
+    else if (funct7 == 0x00 && funct3 == 0x1) {
+      op_name = "sll";
+      result = left << (right & 0x3f);
+    }
+    else if (funct7 == 0x00 && funct3 == 0x2) {
+      op_name = "slt";
+      result = (Bit64s) left < (Bit64s) right ? 1 : 0;
+    }
+    else if (funct7 == 0x00 && funct3 == 0x3) {
+      op_name = "sltu";
+      result = left < right ? 1 : 0;
+    }
     else if (funct7 == 0x00 && funct3 == 0x4) {
       op_name = "xor";
       result = left ^ right;
+    }
+    else if (funct7 == 0x00 && funct3 == 0x5) {
+      op_name = "srl";
+      result = left >> (right & 0x3f);
+    }
+    else if (funct7 == 0x20 && funct3 == 0x5) {
+      op_name = "sra";
+      result = (Bit64u) ((Bit64s) left >> (right & 0x3f));
     }
     else if (funct7 == 0x00 && funct3 == 0x6) {
       op_name = "or";
@@ -600,6 +628,18 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x01 && funct3 == 0x0) {
       op_name = "mulw";
       result32 = (Bit32u) ((Bit64s) (Bit32s) (Bit32u) left * (Bit64s) (Bit32s) (Bit32u) right);
+    }
+    else if (funct7 == 0x00 && funct3 == 0x1) {
+      op_name = "sllw";
+      result32 = (Bit32u) left << (right & 0x1f);
+    }
+    else if (funct7 == 0x00 && funct3 == 0x5) {
+      op_name = "srlw";
+      result32 = (Bit32u) left >> (right & 0x1f);
+    }
+    else if (funct7 == 0x20 && funct3 == 0x5) {
+      op_name = "sraw";
+      result32 = (Bit32u) ((Bit32s) (Bit32u) left >> (right & 0x1f));
     }
 
     if (op_name == 0)
