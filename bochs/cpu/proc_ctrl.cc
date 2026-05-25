@@ -457,6 +457,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = 0;
           BX_INFO(("poly_ud: emulated aarch64 getrusage who=0 addr=%llx utime_sec=321 utime_usec=654321", (unsigned long long) bx_poly_aarch64_x1));
         }
+        else if (bx_poly_aarch64_x8 == 169 && RAX != 0 && bx_poly_aarch64_x1 == 0) {
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) RAX, 246);
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) (RAX + 8), 13579);
+          BX_INFO(("poly_ud: emulated aarch64 gettimeofday addr=%llx sec=246 usec=13579", (unsigned long long) RAX));
+          RAX = 0;
+        }
         else if (bx_poly_aarch64_x8 == 179) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) RAX, 98765);
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) (RAX + 8), 111);
@@ -801,6 +807,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) (bx_poly_riscv_a1 + 8), 654321);
           RAX = 0;
           BX_INFO(("poly_ud: emulated riscv getrusage who=0 addr=%llx utime_sec=321 utime_usec=654321", (unsigned long long) bx_poly_riscv_a1));
+        }
+        else if (bx_poly_riscv_a7 == 169 && RAX != 0 && bx_poly_riscv_a1 == 0) {
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) RAX, 246);
+          write_virtual_qword(BX_SEG_REG_DS, (bx_address) (RAX + 8), 13579);
+          BX_INFO(("poly_ud: emulated riscv gettimeofday addr=%llx sec=246 usec=13579", (unsigned long long) RAX));
+          RAX = 0;
         }
         else if (bx_poly_riscv_a7 == 179) {
           write_virtual_qword(BX_SEG_REG_DS, (bx_address) RAX, 98765);
