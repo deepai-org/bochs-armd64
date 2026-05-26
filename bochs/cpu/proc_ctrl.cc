@@ -1909,11 +1909,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP64_STACK) {
       // RISC-V psABI falls back to integer arg registers after fa0-fa7.
-      mapped =
-        write_poly_riscv_reg(10,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8)) &&
-        write_poly_riscv_reg(11,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 16));
+      for (Bit32u n = 0; mapped && n < 8; n++) {
+        mapped = write_poly_riscv_reg(10 + n,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8 + n * 8));
+      }
     }
   }
   else {
