@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 38;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 40;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -130,7 +130,9 @@ enum {
   BX_POLY_IMPORT_FUNC_STRCHRNUL = 34,
   BX_POLY_IMPORT_FUNC_BCMP = 35,
   BX_POLY_IMPORT_FUNC_BCOPY = 36,
-  BX_POLY_IMPORT_FUNC_BZERO = 37
+  BX_POLY_IMPORT_FUNC_BZERO = 37,
+  BX_POLY_IMPORT_FUNC_MEMRCHR = 38,
+  BX_POLY_IMPORT_FUNC_MEMMEM = 39
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1879,7 +1881,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     return true;
   }
 
-  Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
+  Bit64u arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0;
   Bit64u result = 0;
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -1895,12 +1897,16 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMPCPY ||
          import_id == BX_POLY_IMPORT_FUNC_BCMP ||
          import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
          import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
       mapped = read_poly_aarch64_reg(2, &arg2);
+    if (mapped && import_id == BX_POLY_IMPORT_FUNC_MEMMEM)
+      mapped = read_poly_aarch64_reg(3, &arg3);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = read_poly_riscv_reg(10, &arg0);
@@ -1915,12 +1921,16 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMPCPY ||
          import_id == BX_POLY_IMPORT_FUNC_BCMP ||
          import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
          import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
       mapped = read_poly_riscv_reg(12, &arg2);
+    if (mapped && import_id == BX_POLY_IMPORT_FUNC_MEMMEM)
+      mapped = read_poly_riscv_reg(13, &arg3);
   }
 
   if (!mapped)
@@ -2319,6 +2329,45 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), 0);
     result = arg0;
     op_name = "bzero";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_MEMRCHR) {
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
+    Bit8u needle = (Bit8u) arg1;
+    result = 0;
+    for (Bit64u n = count; n > 0; n--) {
+      Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n - 1));
+      if (value == needle) {
+        result = arg0 + n - 1;
+        break;
+      }
+    }
+    op_name = "memrchr";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_MEMMEM) {
+    Bit64u haystack_len = arg1 < 4096 ? arg1 : 4096;
+    Bit64u needle_len = arg3 < 4096 ? arg3 : 4096;
+    result = 0;
+    if (needle_len == 0) {
+      result = arg0;
+    }
+    else if (needle_len <= haystack_len) {
+      for (Bit64u n = 0; n <= haystack_len - needle_len; n++) {
+        bool matched = true;
+        for (Bit64u m = 0; m < needle_len; m++) {
+          Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n + m));
+          Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg2 + m));
+          if (left != right) {
+            matched = false;
+            break;
+          }
+        }
+        if (matched) {
+          result = arg0 + n;
+          break;
+        }
+      }
+    }
+    op_name = "memmem";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_X86_ADD) {
     if (R12 == 0 || !bx_poly_return_cookie_valid ||
