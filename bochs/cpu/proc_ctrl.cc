@@ -875,10 +875,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if ((insn & 0xfc000000) == 0x14000000) {
+  if ((insn & 0x7c000000) == 0x14000000) {
     Bit64s guest_offset = bx_poly_sign_extend(insn & 0x03ffffff, 26) << 2;
+    if (insn & 0x80000000) {
+      if (!write_poly_aarch64_reg(30, next_rip))
+        return false;
+      BX_DEBUG(("poly_raw: emulated aarch64 bl offset=%lld link=%llx", (long long) guest_offset, (unsigned long long) next_rip));
+    }
+    else {
+      BX_DEBUG(("poly_raw: emulated aarch64 b offset=%lld", (long long) guest_offset));
+    }
     RIP = (bx_address) ((Bit64s) pc + guest_offset);
-    BX_DEBUG(("poly_raw: emulated aarch64 b offset=%lld", (long long) guest_offset));
     return true;
   }
 
@@ -897,6 +904,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 %s x0 not-taken", op ? "cbnz" : "cbz"));
     }
+    return true;
+  }
+
+  if ((insn & 0xfffffc1f) == 0xd61f0000 ||
+      (insn & 0xfffffc1f) == 0xd63f0000) {
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit64u target = 0;
+    bool link = (insn & 0xfffffc1f) == 0xd63f0000;
+    if (!read_poly_aarch64_reg(rn, &target))
+      return false;
+    if (link && !write_poly_aarch64_reg(30, next_rip))
+      return false;
+    RIP = (bx_address) target;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s x%u target=%llx", link ? "blr" : "br", rn, (unsigned long long) target));
     return true;
   }
 
