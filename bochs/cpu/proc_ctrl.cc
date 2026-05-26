@@ -1371,6 +1371,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) * bx_poly_fp32_from_bits(right32_bits));
     }
+    else if ((insn & 0xffe0fc00) == 0x1e201800) {
+      op_name = "fdiv.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right32_bits))
+        return false;
+      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
+    }
     else if ((insn & 0xffe0fc00) == 0x1e204000) {
       op_name = "fmov.s";
       fp32_op = true;
@@ -1397,6 +1405,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) * bx_poly_fp64_from_bits(right_bits));
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e601800) {
+      op_name = "fdiv.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
     }
     else if ((insn & 0xffe0fc00) == 0x1e604000) {
       op_name = "fmov.d";
@@ -2133,6 +2148,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) * bx_poly_fp32_from_bits(right32_bits));
     }
+    else if (funct7 == 0x0c) {
+      op_name = "fdiv.s";
+      fp32_op = true;
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
+          !read_poly_riscv_fp32_reg(rs2, &right32_bits))
+        return false;
+      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
+    }
     else if (funct7 == 0x01) {
       op_name = "fadd.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
@@ -2153,6 +2176,13 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) * bx_poly_fp64_from_bits(right_bits));
+    }
+    else if (funct7 == 0x0d) {
+      op_name = "fdiv.d";
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
+          !read_poly_riscv_fp64_reg(rs2, &right_bits))
+        return false;
+      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
     }
     else if (funct7 == 0x10) {
       fp32_op = true;
