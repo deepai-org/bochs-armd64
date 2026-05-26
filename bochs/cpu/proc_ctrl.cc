@@ -1532,6 +1532,24 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
     }
+    else if ((insn & 0xffe0fc00) == 0x1e207800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fminnm.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right32_bits))
+        return false;
+      result32_bits = f32_min(left32_bits, right32_bits, &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e206800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmaxnm.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right32_bits))
+        return false;
+      result32_bits = f32_max(left32_bits, right32_bits, &status);
+    }
     else if ((insn & 0xfffffc00) == 0x1e214000) {
       op_name = "fneg.s";
       fp32_op = true;
@@ -1594,6 +1612,22 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e607800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fminnm.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      result_bits = f64_min(left_bits, right_bits, &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e606800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmaxnm.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      result_bits = f64_max(left_bits, right_bits, &status);
     }
     else if ((insn & 0xfffffc00) == 0x1e614000) {
       op_name = "fneg.d";
@@ -2752,6 +2786,24 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
     }
+    else if (funct7 == 0x14 && rm == 0) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmin.s";
+      fp32_op = true;
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
+          !read_poly_riscv_fp32_reg(rs2, &right32_bits))
+        return false;
+      result32_bits = f32_min(left32_bits, right32_bits, &status);
+    }
+    else if (funct7 == 0x14 && rm == 1) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmax.s";
+      fp32_op = true;
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
+          !read_poly_riscv_fp32_reg(rs2, &right32_bits))
+        return false;
+      result32_bits = f32_max(left32_bits, right32_bits, &status);
+    }
     else if (funct7 == 0x01) {
       op_name = "fadd.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
@@ -2779,6 +2831,22 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+    }
+    else if (funct7 == 0x15 && rm == 0) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmin.d";
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
+          !read_poly_riscv_fp64_reg(rs2, &right_bits))
+        return false;
+      result_bits = f64_min(left_bits, right_bits, &status);
+    }
+    else if (funct7 == 0x15 && rm == 1) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmax.d";
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
+          !read_poly_riscv_fp64_reg(rs2, &right_bits))
+        return false;
+      result_bits = f64_max(left_bits, right_bits, &status);
     }
     else if (funct7 == 0x2c && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
