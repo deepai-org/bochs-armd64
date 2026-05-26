@@ -6298,6 +6298,24 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 214) {
+    RAX = arg0 != 0 ? arg0 : RDI;
+    BX_INFO(("poly_ud: emulated %s brk addr=%llx result=%llx", arch_name, (unsigned long long) arg0, (unsigned long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 215 && arg0 != 0 && arg1 != 0) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s munmap addr=%llx len=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 226 && arg0 != 0 && arg1 != 0) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s mprotect addr=%llx len=%llu prot=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
   return false;
 }
 
