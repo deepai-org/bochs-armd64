@@ -8871,6 +8871,36 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 85) {
+    RAX = 13;
+    BX_INFO(("poly_ud: emulated %s timerfd_create clockid=%llu flags=%llu result=13", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 86) {
+    RAX = arg0 == 13 ? 0 : (Bit64u) -9;
+    if (RAX == 0 && arg3) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg3, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 16), 21);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 24), 0);
+    }
+    BX_INFO(("poly_ud: emulated %s timerfd_settime fd=%llu flags=%llu new_value=%llx old_value=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 87) {
+    RAX = arg0 == 13 ? 0 : (Bit64u) -9;
+    if (RAX == 0 && arg1) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 16), 34);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 24), 0);
+    }
+    BX_INFO(("poly_ud: emulated %s timerfd_gettime fd=%llu curr_value=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 63 && (arg0 == 0 || arg0 == 3)) {
     const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
     const Bit8u file_input[] = {'F', 'D', '!', '!'};
