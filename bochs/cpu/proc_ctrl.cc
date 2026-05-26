@@ -8740,6 +8740,18 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 72) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s pselect6 nfds=%llu readfds=%llx writefds=%llx exceptfds=%llx timeout=%llx sigmask=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) arg5));
+    return true;
+  }
+
+  if (syscall_number == 73) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s ppoll fds=%llx nfds=%llu timeout=%llx sigmask=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
+    return true;
+  }
+
   if (syscall_number == 65 && (arg0 == 0 || arg0 == 3)) {
     const Bit8u stdin_input[] = {'R', 'V', '!', '!'};
     const Bit8u file_input[] = {'F', 'V', '!', '!'};
