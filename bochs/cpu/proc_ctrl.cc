@@ -2380,6 +2380,23 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x7e000000) == 0x36000000) {
+    Bit32u rt = insn & 0x1f;
+    Bit32u bit = (((insn >> 31) & 0x1) << 5) | ((insn >> 19) & 0x1f);
+    Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x3fff, 14) << 2;
+    bool branch_on_one = (insn & 0x01000000) != 0;
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rt, &value))
+      return false;
+    bool bit_set = (value & (BX_CONST64(1) << bit)) != 0;
+    bool taken = branch_on_one ? bit_set : !bit_set;
+    RIP = taken ? (bx_address) ((Bit64s) pc + guest_offset) : next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,#%u %s offset=%lld",
+      branch_on_one ? "tbnz" : "tbz", rt, bit, taken ? "taken" : "not-taken",
+      (long long) guest_offset));
+    return true;
+  }
+
   if ((insn & 0x7e000000) == 0x34000000) {
     Bit32u rt = insn & 0x1f;
     bool sf = (insn & 0x80000000) != 0;
