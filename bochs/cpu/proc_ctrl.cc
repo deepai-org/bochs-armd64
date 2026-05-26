@@ -56,6 +56,20 @@ static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
+static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
+static const Bit32u BX_POLY_CPUID_MAX = 0x40000001;
+static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
+static const Bit32u BX_POLY_CPUID_FEATURE_RAW_RISCV = (1U << 1);
+static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH = (1U << 2);
+static const Bit32u BX_POLY_CPUID_FEATURE_NATIVE_RET = (1U << 3);
+static const Bit32u BX_POLY_CPUID_FEATURE_PCALL_SYSV = (1U << 4);
+static const Bit32u BX_POLY_CPUID_FEATURE_PCALL_SRET = (1U << 5);
+static const Bit32u BX_POLY_CPUID_FEATURE_FP_BRIDGE = (1U << 6);
+static const Bit32u BX_POLY_CPUID_FEATURE_TRAP_RECORDS = (1U << 7);
+static const Bit32u BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE = (1U << 8);
+static const Bit32u BX_POLY_CPUID_FEATURE_X86_TSO = (1U << 9);
+static const Bit32u BX_POLY_CPUID_FEATURE_THREAD_BANKS = (1U << 10);
+static const Bit32u BX_POLY_CPUID_FEATURE_COMPAT_TRAPS = (1U << 11);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -6409,6 +6423,36 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
 #endif
 
   struct cpuid_function_t leaf;
+  if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE) {
+    RAX = BX_POLY_CPUID_MAX;
+    RBX = 0x796c6f50; // "Poly"
+    RDX = 0x746f6c67; // "glot"
+    RCX = 0x21555043; // "CPU!"
+    BX_NEXT_INSTR(i);
+    return;
+  }
+  if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 1) {
+    RAX = 1; // poly CPUID ABI version
+    RBX = (1U << BX_POLY_MODE_X86) |
+          (1U << BX_POLY_MODE_RAW_AARCH64) |
+          (1U << BX_POLY_MODE_RAW_RISCV);
+    RCX = BX_POLY_CPUID_FEATURE_RAW_AARCH64 |
+          BX_POLY_CPUID_FEATURE_RAW_RISCV |
+          BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH |
+          BX_POLY_CPUID_FEATURE_NATIVE_RET |
+          BX_POLY_CPUID_FEATURE_PCALL_SYSV |
+          BX_POLY_CPUID_FEATURE_PCALL_SRET |
+          BX_POLY_CPUID_FEATURE_FP_BRIDGE |
+          BX_POLY_CPUID_FEATURE_TRAP_RECORDS |
+          BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE |
+          BX_POLY_CPUID_FEATURE_X86_TSO |
+          BX_POLY_CPUID_FEATURE_THREAD_BANKS |
+          BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
+    RDX = 0; // no architectural XSAVE component is exposed yet
+    BX_NEXT_INSTR(i);
+    return;
+  }
+
   BX_CPU_THIS_PTR cpuid->get_cpuid_leaf(EAX, ECX, &leaf);
 
   RAX = leaf.eax;
