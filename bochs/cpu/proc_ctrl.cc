@@ -8678,8 +8678,6 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
 bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
-  (void) arg4;
-  (void) arg5;
   const Bit8u stat_magic[] = {'P', 'S', 'T', 'A', 'T', '!', '!', '\0'};
 
   if (syscall_number == 17) {
@@ -8722,6 +8720,12 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 203) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s connect fd=%llu addr=%llx addrlen=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 206 && arg0 == 5) {
     Bit64u checksum = 0;
     for (Bit64u n = 0; n < arg2 && n < 4096; n++)
@@ -8739,6 +8743,24 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
       write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), input[n]);
     RAX = count;
     BX_INFO(("poly_ud: emulated %s recvfrom fd=5 buf=%llx len=%llu flags=%llu src=%llx addrlen=%llx result=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) arg5, (unsigned long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 208) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s setsockopt fd=%llu level=%llu optname=%llu optval=%llx optlen=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 209) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    if (RAX == 0) {
+      if (arg3)
+        write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg3, 0);
+      if (arg4)
+        write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg4, 4);
+    }
+    BX_INFO(("poly_ud: emulated %s getsockopt fd=%llu level=%llu optname=%llu optval=%llx optlen=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
     return true;
   }
 
