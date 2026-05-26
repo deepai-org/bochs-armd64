@@ -8716,6 +8716,32 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 198) {
+    RAX = 5;
+    BX_INFO(("poly_ud: emulated %s socket domain=%llu type=%llu protocol=%llu result=5", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 206 && arg0 == 5) {
+    Bit64u checksum = 0;
+    for (Bit64u n = 0; n < arg2 && n < 4096; n++)
+      checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+    RAX = arg2;
+    BX_INFO(("poly_ud: emulated %s sendto fd=5 buf=%llx len=%llu flags=%llu dest=%llx addrlen=%llu checksum=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) arg5, (unsigned long long) checksum));
+    return true;
+  }
+
+  if (syscall_number == 207 && arg0 == 5) {
+    const Bit8u input[] = {'N', 'E', 'T', '!'};
+    const Bit64u input_size = 4;
+    Bit64u count = arg2 < input_size ? arg2 : input_size;
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), input[n]);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s recvfrom fd=5 buf=%llx len=%llu flags=%llu src=%llx addrlen=%llx result=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) arg5, (unsigned long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 63 && (arg0 == 0 || arg0 == 3)) {
     const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
     const Bit8u file_input[] = {'F', 'D', '!', '!'};
