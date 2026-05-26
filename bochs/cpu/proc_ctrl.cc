@@ -50,7 +50,9 @@ enum {
 };
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
+static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
+static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
@@ -478,6 +480,14 @@ static void bx_poly_bind_reg_state(bx_address cr3, bx_address fsbase)
     bx_poly_save_current_reg_state(bx_poly_loaded_reg_state_cr3, bx_poly_loaded_reg_state_fsbase);
 
   bx_poly_load_reg_state(cr3, fsbase);
+  bx_poly_loaded_reg_state_valid = true;
+  bx_poly_loaded_reg_state_cr3 = cr3;
+  bx_poly_loaded_reg_state_fsbase = fsbase;
+}
+
+static void bx_poly_commit_reg_state(bx_address cr3, bx_address fsbase)
+{
+  bx_poly_save_current_reg_state(cr3, fsbase);
   bx_poly_loaded_reg_state_valid = true;
   bx_poly_loaded_reg_state_cr3 = cr3;
   bx_poly_loaded_reg_state_fsbase = fsbase;
@@ -1158,9 +1168,21 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_X86_ESCAPE << 5))) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_mode_switch_count++;
     RIP = next_rip;
     BX_INFO(("poly_raw: aarch64 brk #0x%x escape to x86", BX_POLY_AARCH64_BRK_X86_ESCAPE));
+    return true;
+  }
+
+  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_SWITCH << 5))) {
+    bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_mode_switch_count++;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: aarch64 brk #0x%x switch to riscv", BX_POLY_AARCH64_BRK_RISCV_SWITCH));
     return true;
   }
 
@@ -1407,9 +1429,21 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_RISCV_X86_ESCAPE) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_mode_switch_count++;
     RIP = next_rip;
     BX_INFO(("poly_raw: riscv custom-0 escape to x86"));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_AARCH64_SWITCH) {
+    bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+    bx_poly_mode_switch_count++;
+    RIP = next_rip;
+    BX_INFO(("poly_raw: riscv custom-1 switch to aarch64"));
     return true;
   }
 
@@ -2694,6 +2728,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u mode5 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5);
       Bit8u mode6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
       Bit8u mode7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
       if (prefix == 0x64) {
         bx_poly_current_mode = BX_POLY_MODE_X86;
       }
@@ -2706,12 +2741,13 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       else {
         break;
       }
-      bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
       bx_poly_mode_switch_count++;
       if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
         bx_poly_reset_aarch64_regs();
       if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
         bx_poly_reset_riscv_regs();
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+      bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
       BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
       BX_INFO(("poly_ud: mode switch to %u", bx_poly_current_mode));
       RIP = next_rip;
