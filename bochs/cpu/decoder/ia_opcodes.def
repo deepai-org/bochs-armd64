@@ -100,6 +100,7 @@
  */
 
 bx_define_opcode(BX_IA_ERROR, "error", "error", &BX_CPU_C::BxError, &BX_CPU_C::BxError, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
+bx_define_opcode(BX_IA_POLYMODE, "polymode", "polymode", &BX_CPU_C::POLYMODE, &BX_CPU_C::POLYMODE, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
 bx_define_opcode(BX_INSERTED_OPCODE, "error", "error", &BX_CPU_C::BxError, &BX_CPU_C::BxError, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, 0)
 #endif

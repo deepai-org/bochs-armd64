@@ -5989,7 +5989,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYRET(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 {
-  BX_NEXT_INSTR(i);
+  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i))
+    return;
+
+  BX_DEBUG(("POLYMODE: invalid or disabled poly opcode - signalling #UD"));
+  exception(BX_UD_EXCEPTION, 0);
+
+  BX_NEXT_TRACE(i); // keep compiler happy
 }
 
 bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_number)
