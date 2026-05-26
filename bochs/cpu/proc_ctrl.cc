@@ -707,11 +707,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u imm = (insn >> 10) & 0xfff;
     if (insn & 0x00400000)
       imm <<= 12;
-    if (!read_poly_aarch64_reg(rn, &base)) {
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base)) {
       return false;
     }
     Bit64u result = (insn & 0x40000000) ? base - imm : base + imm;
-    if (!write_poly_aarch64_reg(rd, result))
+    if (rd == 31)
+      RSP = result;
+    else if (!write_poly_aarch64_reg(rd, result))
       return false;
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,x%u,#%llu result=%llu", (insn & 0x40000000) ? "sub" : "add", rd, rn, (unsigned long long) imm, (unsigned long long) result));
