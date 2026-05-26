@@ -2429,6 +2429,64 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x1fe0fc00) == 0x1a000000) {
+    bool sf = (insn & 0x80000000) != 0;
+    bool subtract = (insn & 0x40000000) != 0;
+    bool set_flags = (insn & 0x20000000) != 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u mask = bx_poly_low_mask(bits);
+    Bit64u sign_bit = BX_CONST64(1) << (bits - 1);
+    Bit64u carry_in = (bx_poly_aarch64_nzcv & 0x2) ? 1 : 0;
+    Bit64u left = 0;
+    Bit64u right = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
+    if (!read_poly_aarch64_reg(rn, &left) ||
+        !read_poly_aarch64_reg(rm, &right))
+      return false;
+    left &= mask;
+    right &= mask;
+
+    if (subtract) {
+      Bit64u borrow = carry_in ? 0 : 1;
+      Bit64u subtrahend = (right + borrow) & mask;
+      result = (left - subtrahend) & mask;
+      if (set_flags) {
+        bool carry = borrow ? left > right : left >= right;
+        bool overflow =
+          (((left ^ subtrahend) & (left ^ result) & sign_bit) != 0);
+        bx_poly_aarch64_set_nzcv(result, carry, overflow, bits);
+      }
+      op_name = set_flags ? "sbcs" : "sbc";
+    }
+    else {
+      unsigned __int128 sum =
+        (unsigned __int128) left + right + carry_in;
+      Bit64u addend = (right + carry_in) & mask;
+      result = (Bit64u) sum & mask;
+      if (set_flags) {
+        bool carry = (sum >> bits) != 0;
+        bool overflow =
+          (((~(left ^ addend)) & (left ^ result) & sign_bit) != 0);
+        bx_poly_aarch64_set_nzcv(result, carry, overflow, bits);
+      }
+      op_name = set_flags ? "adcs" : "adc";
+    }
+
+    if (rd != 31 && !write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u carry_in=%llu result=%llu nzcv=%x",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+      sf ? "x" : "w", rm, (unsigned long long) carry_in,
+      (unsigned long long) result, bx_poly_aarch64_nzcv));
+    return true;
+  }
+
   {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
