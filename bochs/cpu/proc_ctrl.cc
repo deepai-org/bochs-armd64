@@ -91,7 +91,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 110;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 111;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -233,7 +233,8 @@ enum {
   BX_POLY_IMPORT_FUNC_X86_SLOT0 = 106,
   BX_POLY_IMPORT_FUNC_X86_SLOT1 = 107,
   BX_POLY_IMPORT_FUNC_X86_SLOT2 = 108,
-  BX_POLY_IMPORT_FUNC_X86_SLOT3 = 109
+  BX_POLY_IMPORT_FUNC_X86_SLOT3 = 109,
+  BX_POLY_IMPORT_FUNC_X86_SLOT4 = 110
 };
 
 enum {
@@ -3319,6 +3320,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4 ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
@@ -3330,12 +3332,14 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3))
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4))
       mapped = read_poly_aarch64_reg(3, &arg3);
     if (mapped && (import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3))
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4))
       mapped = read_poly_aarch64_reg(4, &arg4) &&
         read_poly_aarch64_reg(5, &arg5);
   }
@@ -3358,6 +3362,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
          import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4 ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
@@ -3369,12 +3374,14 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3))
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4))
       mapped = read_poly_riscv_reg(13, &arg3);
     if (mapped && (import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3))
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4))
       mapped = read_poly_riscv_reg(14, &arg4) &&
         read_poly_riscv_reg(15, &arg5);
   }
@@ -3898,7 +3905,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
       import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
       import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-      import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3) {
+      import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+      import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4) {
     if (R12 == 0 || !bx_poly_return_cookie_valid ||
         bx_poly_return_cookie_rsp < 16)
       return false;
@@ -3907,7 +3915,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     if (import_id == BX_POLY_IMPORT_FUNC_X86_SLOT0 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT1 ||
         import_id == BX_POLY_IMPORT_FUNC_X86_SLOT2 ||
-        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3) {
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT3 ||
+        import_id == BX_POLY_IMPORT_FUNC_X86_SLOT4) {
       Bit64u slot = import_id - BX_POLY_IMPORT_FUNC_X86_SLOT0;
       bx_address descriptor = (bx_address) (R12 +
         slot * BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE);
@@ -9177,7 +9186,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     }
     else if (ECX == 2) {
       RAX = BX_POLY_IMPORT_FUNC_X86_SLOT0;
-      RBX = BX_POLY_IMPORT_FUNC_X86_SLOT3 - BX_POLY_IMPORT_FUNC_X86_SLOT0 + 1;
+      RBX = BX_POLY_IMPORT_FUNC_X86_SLOT4 - BX_POLY_IMPORT_FUNC_X86_SLOT0 + 1;
       RCX = (Bit32u) BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE;
       RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
     }
