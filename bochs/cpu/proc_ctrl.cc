@@ -5905,8 +5905,12 @@ struct bx_poly_scalar_syscall_entry {
 };
 
 static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
+  { 48, 0, "faccessat", "result", false },
   { 96, 4243, "set_tid_address", "tid", false },
+  { 98, 0, "futex", "result", false },
   { 99, 0, "set_robust_list", "result", false },
+  { 134, 0, "rt_sigaction", "result", false },
+  { 135, 0, "rt_sigprocmask", "result", false },
   { 155, 4242, "getpgid", "pgid", true },
   { 156, 4242, "getsid", "sid", true },
   { 172, 4242, "getpid", "pid", false },
@@ -5915,7 +5919,8 @@ static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
   { 175, 1000, "geteuid", "euid", false },
   { 176, 1000, "getgid", "gid", false },
   { 177, 1000, "getegid", "egid", false },
-  { 178, 4243, "gettid", "tid", false }
+  { 178, 4243, "gettid", "tid", false },
+  { 233, 0, "madvise", "result", false }
 };
 
 static bool bx_poly_lookup_scalar_syscall(Bit32u number, Bit64u arg0, const bx_poly_scalar_syscall_entry **entry)
@@ -6191,6 +6196,16 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     }
     RAX = total;
     BX_INFO(("poly_ud: emulated %s writev fd=%llu iov=%llx iovcnt=%llu total=%llu checksum=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) total, (unsigned long long) checksum));
+    return true;
+  }
+
+  if (syscall_number == 78 && arg2 != 0 && arg3 != 0) {
+    const char target[] = "poly!";
+    Bit64u count = (sizeof(target) - 1) < arg3 ? (sizeof(target) - 1) : arg3;
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg2 + n), (Bit8u) target[n]);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s readlinkat dirfd=%lld path=%llx buf=%llx size=%llu result=%llu", arch_name, (long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) RAX));
     return true;
   }
 
