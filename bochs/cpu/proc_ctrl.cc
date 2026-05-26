@@ -2537,6 +2537,64 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x1f000000) == 0x0a000000) {
+    bool sf = (insn & 0x80000000) != 0;
+    Bit32u opc = (insn >> 29) & 0x3;
+    bool invert = (insn & 0x00200000) != 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u shift_type = (insn >> 22) & 0x3;
+    Bit32u shift_amount = (insn >> 10) & 0x3f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u mask = bx_poly_low_mask(bits);
+    Bit64u left = 0;
+    Bit64u right = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
+    if (!read_poly_aarch64_reg(rn, &left) ||
+        !read_poly_aarch64_reg(rm, &right))
+      return false;
+    if (!bx_poly_aarch64_shifted_reg_width(right, shift_type,
+          shift_amount, bits, &right))
+      return false;
+    left &= mask;
+    right &= mask;
+    if (invert)
+      right = (~right) & mask;
+
+    switch (opc) {
+      case 0:
+        op_name = invert ? "bic" : "and";
+        result = left & right;
+        break;
+      case 1:
+        op_name = invert ? "orn" : "orr";
+        result = left | right;
+        break;
+      case 2:
+        op_name = invert ? "eon" : "eor";
+        result = left ^ right;
+        break;
+      case 3:
+        op_name = invert ? "bics" : "ands";
+        result = left & right;
+        bx_poly_aarch64_set_nzcv(result, false, false, bits);
+        break;
+    }
+    result &= mask;
+
+    if (rd != 31 && !write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u,shift=%u,#%u result=%llu nzcv=%x",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+      sf ? "x" : "w", rm, shift_type, shift_amount,
+      (unsigned long long) result, bx_poly_aarch64_nzcv));
+    return true;
+  }
+
   {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
