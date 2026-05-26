@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 52;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 64;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -144,8 +144,165 @@ enum {
   BX_POLY_IMPORT_FUNC_AARCH64_LDCLR4_ACQ_REL = 48,
   BX_POLY_IMPORT_FUNC_AARCH64_LDEOR4_ACQ_REL = 49,
   BX_POLY_IMPORT_FUNC_AARCH64_LDSET8_ACQ_REL = 50,
-  BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL = 51
+  BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL = 51,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDADD2_ACQ_REL = 52,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDADD1_ACQ_REL = 53,
+  BX_POLY_IMPORT_FUNC_AARCH64_SWP2_ACQ_REL = 54,
+  BX_POLY_IMPORT_FUNC_AARCH64_SWP1_ACQ_REL = 55,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDCLR2_ACQ_REL = 56,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDCLR1_ACQ_REL = 57,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDEOR2_ACQ_REL = 58,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDEOR1_ACQ_REL = 59,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDSET2_ACQ_REL = 60,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDSET1_ACQ_REL = 61,
+  BX_POLY_IMPORT_FUNC_AARCH64_CAS2_ACQ_REL = 62,
+  BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL = 63
 };
+
+enum {
+  BX_POLY_AARCH64_ATOMIC_LDADD = 0,
+  BX_POLY_AARCH64_ATOMIC_SWP = 1,
+  BX_POLY_AARCH64_ATOMIC_LDCLR = 2,
+  BX_POLY_AARCH64_ATOMIC_LDEOR = 3,
+  BX_POLY_AARCH64_ATOMIC_LDSET = 4,
+  BX_POLY_AARCH64_ATOMIC_CAS = 5
+};
+
+static bool bx_poly_aarch64_outline_atomic_descriptor(Bit32u import_id,
+    Bit32u *op, Bit32u *size, const char **op_name)
+{
+  switch (import_id) {
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
+      *size = 8;
+      *op_name = "__aarch64_ldadd8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
+      *size = 4;
+      *op_name = "__aarch64_ldadd4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
+      *size = 2;
+      *op_name = "__aarch64_ldadd2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
+      *size = 1;
+      *op_name = "__aarch64_ldadd1_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_SWP;
+      *size = 8;
+      *op_name = "__aarch64_swp8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_SWP;
+      *size = 4;
+      *op_name = "__aarch64_swp4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_SWP;
+      *size = 2;
+      *op_name = "__aarch64_swp2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_SWP;
+      *size = 1;
+      *op_name = "__aarch64_swp1_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
+      *size = 8;
+      *op_name = "__aarch64_ldclr8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR4_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
+      *size = 4;
+      *op_name = "__aarch64_ldclr4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
+      *size = 2;
+      *op_name = "__aarch64_ldclr2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
+      *size = 1;
+      *op_name = "__aarch64_ldclr1_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
+      *size = 8;
+      *op_name = "__aarch64_ldeor8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR4_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
+      *size = 4;
+      *op_name = "__aarch64_ldeor4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
+      *size = 2;
+      *op_name = "__aarch64_ldeor2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
+      *size = 1;
+      *op_name = "__aarch64_ldeor1_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
+      *size = 8;
+      *op_name = "__aarch64_ldset8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX:
+      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
+      *size = 4;
+      *op_name = "__aarch64_ldset4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
+      *size = 2;
+      *op_name = "__aarch64_ldset2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
+      *size = 1;
+      *op_name = "__aarch64_ldset1_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_CAS;
+      *size = 8;
+      *op_name = "__aarch64_cas8_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_CAS;
+      *size = 4;
+      *op_name = "__aarch64_cas4_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS2_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_CAS;
+      *size = 2;
+      *op_name = "__aarch64_cas2_acq_rel";
+      return true;
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL:
+      *op = BX_POLY_AARCH64_ATOMIC_CAS;
+      *size = 1;
+      *op_name = "__aarch64_cas1_acq_rel";
+      return true;
+    default:
+      return false;
+  }
+}
+
+static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
+{
+  return size == 8 ? BX_CONST64(0xffffffffffffffff) :
+    ((BX_CONST64(1) << (size * 8)) - 1);
+}
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 static const unsigned BX_POLY_CROSS_RETURN_DEPTH = 8;
@@ -1772,111 +1929,83 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     return true;
   }
 
+  Bit32u aarch64_atomic_op = 0;
+  Bit32u aarch64_atomic_size = 0;
+  const char *aarch64_atomic_name = 0;
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      ((import_id >= BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL &&
-       import_id <= BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) ||
-       import_id == BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL ||
-       import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL ||
-       import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL ||
-       (import_id >= BX_POLY_IMPORT_FUNC_AARCH64_LDCLR8_ACQ_REL &&
-        import_id <= BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL))) {
+      bx_poly_aarch64_outline_atomic_descriptor(import_id, &aarch64_atomic_op,
+        &aarch64_atomic_size, &aarch64_atomic_name)) {
     Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
     Bit64u result = 0;
-    const char *op_name = 0;
     if (!read_poly_aarch64_reg(0, &arg0) ||
         !read_poly_aarch64_reg(1, &arg1) ||
         !read_poly_aarch64_reg(2, &arg2))
       return false;
 
-    if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      write_virtual_qword(BX_SEG_REG_DS, addr, result + arg0);
-      op_name = "__aarch64_ldadd8_acq_rel";
+    bx_address addr = (bx_address)
+      (aarch64_atomic_op == BX_POLY_AARCH64_ATOMIC_CAS ? arg2 : arg1);
+    switch (aarch64_atomic_size) {
+      case 1:
+        result = read_virtual_byte(BX_SEG_REG_DS, addr);
+        break;
+      case 2:
+        result = read_virtual_word(BX_SEG_REG_DS, addr);
+        break;
+      case 4:
+        result = read_virtual_dword(BX_SEG_REG_DS, addr);
+        break;
+      case 8:
+        result = read_virtual_qword(BX_SEG_REG_DS, addr);
+        break;
+      default:
+        return false;
     }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      write_virtual_dword(BX_SEG_REG_DS, addr, old_value + (Bit32u) arg0);
-      op_name = "__aarch64_ldadd4_acq_rel";
+
+    Bit64u mask = bx_poly_aarch64_size_mask(aarch64_atomic_size);
+    Bit64u new_value = result;
+    Bit64u source = arg0 & mask;
+    switch (aarch64_atomic_op) {
+      case BX_POLY_AARCH64_ATOMIC_LDADD:
+        new_value = (result + source) & mask;
+        break;
+      case BX_POLY_AARCH64_ATOMIC_SWP:
+        new_value = source;
+        break;
+      case BX_POLY_AARCH64_ATOMIC_LDCLR:
+        new_value = result & ~source & mask;
+        break;
+      case BX_POLY_AARCH64_ATOMIC_LDEOR:
+        new_value = (result ^ source) & mask;
+        break;
+      case BX_POLY_AARCH64_ATOMIC_LDSET:
+        new_value = (result | source) & mask;
+        break;
+      case BX_POLY_AARCH64_ATOMIC_CAS:
+        if (result != source)
+          break;
+        new_value = arg1 & mask;
+        break;
+      default:
+        return false;
     }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      write_virtual_qword(BX_SEG_REG_DS, addr, arg0);
-      op_name = "__aarch64_swp8_acq_rel";
+
+    if (aarch64_atomic_op != BX_POLY_AARCH64_ATOMIC_CAS ||
+        result == source) {
+      switch (aarch64_atomic_size) {
+        case 1:
+          write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) new_value);
+          break;
+        case 2:
+          write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) new_value);
+          break;
+        case 4:
+          write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) new_value);
+          break;
+        case 8:
+          write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
+          break;
+      }
     }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) arg0);
-      op_name = "__aarch64_swp4_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDCLR8_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      write_virtual_qword(BX_SEG_REG_DS, addr, result & ~arg0);
-      op_name = "__aarch64_ldclr8_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDEOR8_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      write_virtual_qword(BX_SEG_REG_DS, addr, result ^ arg0);
-      op_name = "__aarch64_ldeor8_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDCLR4_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      write_virtual_dword(BX_SEG_REG_DS, addr, old_value & ~(Bit32u) arg0);
-      op_name = "__aarch64_ldclr4_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDEOR4_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      write_virtual_dword(BX_SEG_REG_DS, addr, old_value ^ (Bit32u) arg0);
-      op_name = "__aarch64_ldeor4_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDSET8_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      write_virtual_qword(BX_SEG_REG_DS, addr, result | arg0);
-      op_name = "__aarch64_ldset8_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      write_virtual_dword(BX_SEG_REG_DS, addr, old_value | (Bit32u) arg0);
-      op_name = "__aarch64_ldset4_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX) {
-      bx_address addr = (bx_address) arg1;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      write_virtual_dword(BX_SEG_REG_DS, addr, old_value | (Bit32u) arg0);
-      result = old_value;
-      op_name = "__aarch64_ldset4_relax";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) {
-      bx_address addr = (bx_address) arg2;
-      result = read_virtual_qword(BX_SEG_REG_DS, addr);
-      if (result == arg0)
-        write_virtual_qword(BX_SEG_REG_DS, addr, arg1);
-      op_name = "__aarch64_cas8_acq_rel";
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL) {
-      bx_address addr = (bx_address) arg2;
-      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
-      result = old_value;
-      if (old_value == (Bit32u) arg0)
-        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) arg1);
-      op_name = "__aarch64_cas4_acq_rel";
-    }
-    else
-      return false;
 
     if (!write_poly_aarch64_reg(0, result))
       return false;
@@ -1886,7 +2015,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     RIP = return_rip;
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_INFO(("poly_raw: import aarch64 outline atomic %s target=%llx result=%llu return=%llx",
-      op_name, (unsigned long long) target_rip, (unsigned long long) result,
+      aarch64_atomic_name, (unsigned long long) target_rip,
+      (unsigned long long) result,
       (unsigned long long) return_rip));
     return true;
   }
@@ -2632,12 +2762,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u size = 0;
     Bit64u base = 0;
 
-    if (size_code == 0x2)
+    if (size_code == 0x0)
+      size = 1;
+    else if (size_code == 0x1)
+      size = 2;
+    else if (size_code == 0x2)
       size = 4;
-    else if (size_code == 0x3)
-      size = 8;
     else
-      return false;
+      size = 8;
 
     if (rn == 31)
       base = RSP;
@@ -2649,7 +2781,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       Bit64u value = 0;
       if (rs != 31)
         return false;
-      if (size == 4)
+      if (size == 1)
+        value = read_virtual_byte(BX_SEG_REG_DS, addr);
+      else if (size == 2)
+        value = read_virtual_word(BX_SEG_REG_DS, addr);
+      else if (size == 4)
         value = read_virtual_dword(BX_SEG_REG_DS, addr);
       else
         value = read_virtual_qword(BX_SEG_REG_DS, addr);
@@ -2660,7 +2796,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 %s %c%u,[rn=%u] addr=%llx value=%llu",
-        acquire_release ? "ldaxr" : "ldxr", size == 4 ? 'w' : 'x', rt, rn,
+        acquire_release ? "ldaxr" : "ldxr", size == 8 ? 'x' : 'w', rt, rn,
         (unsigned long long) addr, (unsigned long long) value));
       return true;
     }
@@ -2673,7 +2809,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_reg(rt, &value))
         return false;
       if (success) {
-        if (size == 4)
+        if (size == 1)
+          write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) value);
+        else if (size == 2)
+          write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) value);
+        else if (size == 4)
           write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
         else
           write_virtual_qword(BX_SEG_REG_DS, addr, value);
@@ -2685,7 +2825,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 %s w%u,%c%u,[rn=%u] addr=%llx %s",
-        acquire_release ? "stlxr" : "stxr", rs, size == 4 ? 'w' : 'x', rt,
+        acquire_release ? "stlxr" : "stxr", rs, size == 8 ? 'x' : 'w', rt,
         rn, (unsigned long long) addr, success ? "success" : "fail"));
       return true;
     }
@@ -2704,12 +2844,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u new_value = 0;
     const char *op_name = 0;
 
-    if (size_code == 0x2)
+    if (size_code == 0x0)
+      size = 1;
+    else if (size_code == 0x1)
+      size = 2;
+    else if (size_code == 0x2)
       size = 4;
-    else if (size_code == 0x3)
-      size = 8;
     else
-      return false;
+      size = 8;
 
     if (rn == 31)
       base = RSP;
@@ -2719,64 +2861,50 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
 
     bx_address addr = (bx_address) base;
-    if (size == 4) {
-      Bit32u old32 = read_virtual_dword(BX_SEG_REG_DS, addr);
-      Bit32u source32 = (Bit32u) source;
-      old_value = old32;
-      switch (op) {
-        case 0x0:
-          op_name = "ldadd";
-          new_value = old32 + source32;
-          break;
-        case 0x1:
-          op_name = "ldclr";
-          new_value = old32 & ~source32;
-          break;
-        case 0x2:
-          op_name = "ldeor";
-          new_value = old32 ^ source32;
-          break;
-        case 0x3:
-          op_name = "ldset";
-          new_value = old32 | source32;
-          break;
-        case 0x8:
-          op_name = "swp";
-          new_value = source32;
-          break;
-        default:
-          return false;
-      }
-      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) new_value);
-    }
-    else {
+    Bit64u mask = bx_poly_aarch64_size_mask(size);
+    source &= mask;
+    if (size == 1)
+      old_value = read_virtual_byte(BX_SEG_REG_DS, addr);
+    else if (size == 2)
+      old_value = read_virtual_word(BX_SEG_REG_DS, addr);
+    else if (size == 4)
+      old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
+    else
       old_value = read_virtual_qword(BX_SEG_REG_DS, addr);
-      switch (op) {
-        case 0x0:
-          op_name = "ldadd";
-          new_value = old_value + source;
-          break;
-        case 0x1:
-          op_name = "ldclr";
-          new_value = old_value & ~source;
-          break;
-        case 0x2:
-          op_name = "ldeor";
-          new_value = old_value ^ source;
-          break;
-        case 0x3:
-          op_name = "ldset";
-          new_value = old_value | source;
-          break;
-        case 0x8:
-          op_name = "swp";
-          new_value = source;
-          break;
-        default:
-          return false;
-      }
-      write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
+
+    switch (op) {
+      case 0x0:
+        op_name = "ldadd";
+        new_value = (old_value + source) & mask;
+        break;
+      case 0x1:
+        op_name = "ldclr";
+        new_value = old_value & ~source & mask;
+        break;
+      case 0x2:
+        op_name = "ldeor";
+        new_value = (old_value ^ source) & mask;
+        break;
+      case 0x3:
+        op_name = "ldset";
+        new_value = (old_value | source) & mask;
+        break;
+      case 0x8:
+        op_name = "swp";
+        new_value = source;
+        break;
+      default:
+        return false;
     }
+
+    if (size == 1)
+      write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) new_value);
+    else if (size == 2)
+      write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) new_value);
+    else if (size == 4)
+      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) new_value);
+    else
+      write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
 
     if (bx_poly_aarch64_reservation_valid &&
         bx_poly_aarch64_reservation_addr == addr &&
@@ -2787,7 +2915,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 lse %s%c %c%u,%c%u,[rn=%u] addr=%llx old=%llu new=%llu",
       op_name, ((insn >> 23) & 0x3) == 0x3 ? 'a' : ' ',
-      size == 4 ? 'w' : 'x', rs, size == 4 ? 'w' : 'x', rt, rn,
+      size == 8 ? 'x' : 'w', rs, size == 8 ? 'x' : 'w', rt, rn,
       (unsigned long long) addr, (unsigned long long) old_value,
       (unsigned long long) new_value));
     return true;
@@ -2805,12 +2933,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u old_value = 0;
     bool success = false;
 
-    if (size_code == 0x2)
+    if (size_code == 0x0)
+      size = 1;
+    else if (size_code == 0x1)
+      size = 2;
+    else if (size_code == 0x2)
       size = 4;
-    else if (size_code == 0x3)
-      size = 8;
     else
-      return false;
+      size = 8;
 
     if (rn == 31)
       base = RSP;
@@ -2821,17 +2951,27 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
 
     bx_address addr = (bx_address) base;
-    if (size == 4) {
-      Bit32u old32 = read_virtual_dword(BX_SEG_REG_DS, addr);
-      old_value = old32;
-      success = old32 == (Bit32u) expected;
-      if (success)
-        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) desired);
-    }
-    else {
+    Bit64u mask = bx_poly_aarch64_size_mask(size);
+    expected &= mask;
+    desired &= mask;
+    if (size == 1)
+      old_value = read_virtual_byte(BX_SEG_REG_DS, addr);
+    else if (size == 2)
+      old_value = read_virtual_word(BX_SEG_REG_DS, addr);
+    else if (size == 4)
+      old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
+    else
       old_value = read_virtual_qword(BX_SEG_REG_DS, addr);
-      success = old_value == expected;
-      if (success)
+
+    success = old_value == expected;
+    if (success) {
+      if (size == 1)
+        write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) desired);
+      else if (size == 2)
+        write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) desired);
+      else if (size == 4)
+        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) desired);
+      else
         write_virtual_qword(BX_SEG_REG_DS, addr, desired);
     }
 
@@ -2843,7 +2983,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 lse cas %c%u,%c%u,[rn=%u] addr=%llx old=%llu desired=%llu %s",
-      size == 4 ? 'w' : 'x', rs, size == 4 ? 'w' : 'x', rt, rn,
+      size == 8 ? 'x' : 'w', rs, size == 8 ? 'x' : 'w', rt, rn,
       (unsigned long long) addr, (unsigned long long) old_value,
       (unsigned long long) desired, success ? "success" : "fail"));
     return true;
