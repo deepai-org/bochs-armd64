@@ -532,6 +532,10 @@ static bool bx_poly_aarch64_shifted_reg_width(Bit64u value, Bit32u shift_type,
       *result = (Bit64u) ((Bit64s) value >> shift_amount);
     *result &= mask;
     return true;
+  case 3:
+    *result = shift_amount == 0 ? (value & mask) :
+      ((value >> shift_amount) | (value << (bits - shift_amount))) & mask;
+    return true;
   default:
     return false;
   }
@@ -2323,6 +2327,39 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u result=%llu",
       op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+      (unsigned long long) result));
+    return true;
+  }
+
+  if ((insn & 0x7fa00000) == 0x13800000) {
+    bool sf = (insn & 0x80000000) != 0;
+    bool n = (insn & 0x00400000) != 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u imm = (insn >> 10) & 0x3f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u high = 0;
+    Bit64u low = 0;
+    Bit64u mask = bx_poly_low_mask(bits);
+    Bit64u result = 0;
+
+    if (n != sf || (!sf && imm >= 32))
+      return false;
+    if (!read_poly_aarch64_reg(rn, &high) ||
+        !read_poly_aarch64_reg(rm, &low))
+      return false;
+    high &= mask;
+    low &= mask;
+    result = imm == 0 ? low :
+      ((low >> imm) | (high << (bits - imm))) & mask;
+
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u,#%u result=%llu",
+      rn == rm ? "ror" : "extr", sf ? "x" : "w", rd,
+      sf ? "x" : "w", rn, sf ? "x" : "w", rm, imm,
       (unsigned long long) result));
     return true;
   }
