@@ -744,6 +744,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x9f000000) == 0x90000000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u immlo = (insn >> 29) & 0x3;
+    Bit32u immhi = (insn >> 5) & 0x7ffff;
+    Bit64s offset = bx_poly_sign_extend((immhi << 2) | immlo, 21) << 12;
+    Bit64u page_base = ((Bit64u) pc) & ~((Bit64u) 0xfff);
+    Bit64u result = (Bit64u) ((Bit64s) page_base + offset);
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 adrp x%u,offset=%lld result=%llx", rd, (long long) offset, (unsigned long long) result));
+    return true;
+  }
+
   if ((insn & 0xff800000) == 0x92800000 ||
       (insn & 0xff800000) == 0xd2800000 ||
       (insn & 0xff800000) == 0xf2800000) {
