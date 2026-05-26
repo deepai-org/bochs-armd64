@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 45;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 46;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -137,7 +137,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STRNCASECMP = 41,
   BX_POLY_IMPORT_FUNC_STRCASESTR = 42,
   BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL = 43,
-  BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL = 44
+  BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL = 44,
+  BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL = 45
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1769,7 +1770,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       ((import_id >= BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL &&
        import_id <= BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) ||
        import_id == BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL ||
-       import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL)) {
+       import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL ||
+       import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL)) {
     Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
     Bit64u result = 0;
     const char *op_name = 0;
@@ -1796,6 +1798,13 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       result = read_virtual_qword(BX_SEG_REG_DS, addr);
       write_virtual_qword(BX_SEG_REG_DS, addr, arg0);
       op_name = "__aarch64_swp8_acq_rel";
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL) {
+      bx_address addr = (bx_address) arg1;
+      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
+      result = old_value;
+      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) arg0);
+      op_name = "__aarch64_swp4_acq_rel";
     }
     else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX) {
       bx_address addr = (bx_address) arg1;
