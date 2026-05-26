@@ -52,7 +52,14 @@ enum {
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
-static const Bit64u BX_POLY_IMPORT_CALL_COOKIE = BX_CONST64(0xffffffffffffe000);
+static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
+static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 2;
+
+enum {
+  BX_POLY_IMPORT_FUNC_ADD = 0,
+  BX_POLY_IMPORT_FUNC_MUL = 1
+};
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 
@@ -756,31 +763,53 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
 bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip)
 {
-  if (target_rip != (bx_address) BX_POLY_IMPORT_CALL_COOKIE)
+  if (target_rip < (bx_address) BX_POLY_IMPORT_CALL_BASE)
+    return false;
+
+  Bit64u target_offset = (Bit64u) target_rip - BX_POLY_IMPORT_CALL_BASE;
+  if ((target_offset % BX_POLY_IMPORT_CALL_STRIDE) != 0)
+    return false;
+
+  Bit32u import_id = (Bit32u) (target_offset / BX_POLY_IMPORT_CALL_STRIDE);
+  if (import_id >= BX_POLY_IMPORT_CALL_COUNT)
     return false;
 
   Bit64u arg0 = 0, arg1 = 0;
+  Bit64u result = 0;
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     mapped = read_poly_aarch64_reg(0, &arg0) &&
-      read_poly_aarch64_reg(1, &arg1) &&
-      write_poly_aarch64_reg(0, arg0 + arg1 + 100);
+      read_poly_aarch64_reg(1, &arg1);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = read_poly_riscv_reg(10, &arg0) &&
-      read_poly_riscv_reg(11, &arg1) &&
-      write_poly_riscv_reg(10, arg0 + arg1 + 100);
+      read_poly_riscv_reg(11, &arg1);
   }
+
+  if (!mapped)
+    return false;
+
+  if (import_id == BX_POLY_IMPORT_FUNC_ADD)
+    result = arg0 + arg1 + 100;
+  else if (import_id == BX_POLY_IMPORT_FUNC_MUL)
+    result = arg0 * arg1 + 100;
+  else
+    return false;
+
+  if (mode == BX_POLY_MODE_RAW_AARCH64)
+    mapped = write_poly_aarch64_reg(0, result);
+  else if (mode == BX_POLY_MODE_RAW_RISCV)
+    mapped = write_poly_riscv_reg(10, result);
 
   if (!mapped)
     return false;
 
   RIP = return_rip;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-  BX_INFO(("poly_raw: import call mode=%u target=%llx arg0=%llu arg1=%llu result=%llu return=%llx",
-    mode, (unsigned long long) target_rip, (unsigned long long) arg0,
-    (unsigned long long) arg1, (unsigned long long) (arg0 + arg1 + 100),
-    (unsigned long long) return_rip));
+  BX_INFO(("poly_raw: import call mode=%u descriptor=%u target=%llx arg0=%llu arg1=%llu result=%llu return=%llx",
+    mode, (unsigned) import_id, (unsigned long long) target_rip,
+    (unsigned long long) arg0, (unsigned long long) arg1,
+    (unsigned long long) result, (unsigned long long) return_rip));
   return true;
 }
 
