@@ -8720,6 +8720,26 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 67 && arg0 == 3) {
+    const Bit8u input[] = {'P', 'D', '!', '!'};
+    const Bit64u input_size = 4;
+    Bit64u count = arg2 < input_size ? arg2 : input_size;
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), input[n]);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s pread64 fd=3 addr=%llx count=%llu offset=%llu result=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 68 && arg0 == 1) {
+    Bit64u checksum = 0;
+    for (Bit64u n = 0; n < arg2 && n < 4096; n++)
+      checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+    RAX = arg2;
+    BX_INFO(("poly_ud: emulated %s pwrite64 fd=1 addr=%llx count=%llu offset=%llu checksum=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) checksum));
+    return true;
+  }
+
   if (syscall_number == 65 && (arg0 == 0 || arg0 == 3)) {
     const Bit8u stdin_input[] = {'R', 'V', '!', '!'};
     const Bit8u file_input[] = {'F', 'V', '!', '!'};
