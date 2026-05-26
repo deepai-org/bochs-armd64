@@ -3305,23 +3305,29 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if ((insn & 0x3b200c00) == 0x38000000) {
+  if ((insn & 0x3b200000) == 0x38000000) {
     Bit32u rt = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u size = (insn >> 30) & 0x3;
     Bit32u opc = (insn >> 22) & 0x3;
     Bit64s offset = bx_poly_sign_extend((insn >> 12) & 0x1ff, 9);
+    Bit32u addr_mode = (insn >> 10) & 0x3;
+    bool post_index = addr_mode == 1;
+    bool pre_index = addr_mode == 3;
     bool fp = (insn & 0x04000000) != 0;
     Bit64u base = 0;
     Bit64u value = 0;
     bx_address addr;
+
+    if (addr_mode == 2)
+      return false;
 
     if (rn == 31)
       base = RSP;
     else if (!read_poly_aarch64_reg(rn, &base))
       return false;
 
-    addr = (bx_address) ((Bit64s) base + offset);
+    addr = (bx_address) (post_index ? base : (Bit64s) base + offset);
     if (fp) {
       if (size < 2)
         return false;
@@ -3336,9 +3342,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           if (!write_poly_aarch64_fp64_reg(rt, fp_value))
             return false;
         }
+        if (pre_index || post_index) {
+          Bit64u new_base = base + offset;
+          if (rn == 31)
+            RSP = new_base;
+          else if (!write_poly_aarch64_reg(rn, new_base))
+            return false;
+        }
         RIP = next_rip;
-        BX_DEBUG(("poly_raw: emulated aarch64 fp ldur%u v%u,[x%u,#%lld] addr=%llx",
-          8U << size, rt, rn, (long long) offset, (unsigned long long) addr));
+        BX_DEBUG(("poly_raw: emulated aarch64 fp ldr%u%s v%u,[x%u,#%lld] addr=%llx",
+          8U << size, (pre_index || post_index) ? "-wb" : "ur",
+          rt, rn, (long long) offset, (unsigned long long) addr));
         return true;
       }
       if (opc != 0)
@@ -3355,9 +3369,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           return false;
         write_virtual_qword(BX_SEG_REG_DS, addr, fp_value);
       }
+      if (pre_index || post_index) {
+        Bit64u new_base = base + offset;
+        if (rn == 31)
+          RSP = new_base;
+        else if (!write_poly_aarch64_reg(rn, new_base))
+          return false;
+      }
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 fp stur%u v%u,[x%u,#%lld] addr=%llx",
-        8U << size, rt, rn, (long long) offset, (unsigned long long) addr));
+      BX_DEBUG(("poly_raw: emulated aarch64 fp str%u%s v%u,[x%u,#%lld] addr=%llx",
+        8U << size, (pre_index || post_index) ? "-wb" : "ur",
+        rt, rn, (long long) offset, (unsigned long long) addr));
       return true;
     }
 
@@ -3372,9 +3394,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         value = read_virtual_qword(BX_SEG_REG_DS, addr);
       if (!write_poly_aarch64_reg(rt, value))
         return false;
+      if (pre_index || post_index) {
+        Bit64u new_base = base + offset;
+        if (rn == 31)
+          RSP = new_base;
+        else if (!write_poly_aarch64_reg(rn, new_base))
+          return false;
+      }
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 ldur%u x%u,[x%u,#%lld] addr=%llx value=%llu",
-        8U << size, rt, rn, (long long) offset, (unsigned long long) addr,
+      BX_DEBUG(("poly_raw: emulated aarch64 ldr%u%s x%u,[x%u,#%lld] addr=%llx value=%llu",
+        8U << size, (pre_index || post_index) ? "-wb" : "ur",
+        rt, rn, (long long) offset, (unsigned long long) addr,
         (unsigned long long) value));
       return true;
     }
@@ -3390,9 +3420,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         value = (Bit32u) value;
       if (!write_poly_aarch64_reg(rt, value))
         return false;
+      if (pre_index || post_index) {
+        Bit64u new_base = base + offset;
+        if (rn == 31)
+          RSP = new_base;
+        else if (!write_poly_aarch64_reg(rn, new_base))
+          return false;
+      }
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 ldurs%u x%u,[x%u,#%lld] addr=%llx value=%llu",
-        8U << size, rt, rn, (long long) offset, (unsigned long long) addr,
+      BX_DEBUG(("poly_raw: emulated aarch64 ldrs%u%s x%u,[x%u,#%lld] addr=%llx value=%llu",
+        8U << size, (pre_index || post_index) ? "-wb" : "ur",
+        rt, rn, (long long) offset, (unsigned long long) addr,
         (unsigned long long) value));
       return true;
     }
@@ -3409,9 +3447,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
     else
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+    if (pre_index || post_index) {
+      Bit64u new_base = base + offset;
+      if (rn == 31)
+        RSP = new_base;
+      else if (!write_poly_aarch64_reg(rn, new_base))
+        return false;
+    }
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 stur%u x%u,[x%u,#%lld] addr=%llx value=%llu",
-      8U << size, rt, rn, (long long) offset, (unsigned long long) addr,
+    BX_DEBUG(("poly_raw: emulated aarch64 str%u%s x%u,[x%u,#%lld] addr=%llx value=%llu",
+      8U << size, (pre_index || post_index) ? "-wb" : "ur",
+      rt, rn, (long long) offset, (unsigned long long) addr,
       (unsigned long long) value));
     return true;
   }
