@@ -1379,7 +1379,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
     }
-    else if ((insn & 0xffe0fc00) == 0x1e204000) {
+    else if ((insn & 0xfffffc00) == 0x1e214000) {
+      op_name = "fneg.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &result32_bits))
+        return false;
+      result32_bits ^= 0x80000000;
+    }
+    else if ((insn & 0xfffffc00) == 0x1e204000) {
       op_name = "fmov.s";
       fp32_op = true;
       if (!read_poly_aarch64_fp32_reg(rn, &result32_bits))
@@ -1413,7 +1420,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
     }
-    else if ((insn & 0xffe0fc00) == 0x1e604000) {
+    else if ((insn & 0xfffffc00) == 0x1e614000) {
+      op_name = "fneg.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
+        return false;
+      result_bits ^= BX_CONST64(0x8000000000000000);
+    }
+    else if ((insn & 0xfffffc00) == 0x1e604000) {
       op_name = "fmov.d";
       if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
         return false;
@@ -1463,6 +1476,35 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 fcmp%s v%u,v%u nzcv=%x",
       fp32_op ? ".s" : ".d", rn, rm, bx_poly_aarch64_nzcv));
+    return true;
+  }
+
+  if ((insn & 0xffe0fc1f) == 0x1e202008 ||
+      (insn & 0xffe0fc1f) == 0x1e202018 ||
+      (insn & 0xffe0fc1f) == 0x1e602008 ||
+      (insn & 0xffe0fc1f) == 0x1e602018) {
+    Bit32u rn = (insn >> 5) & 0x1f;
+    bool fp32_op = (insn & 0xffe0fc1f) == 0x1e202008 ||
+      (insn & 0xffe0fc1f) == 0x1e202018;
+
+    if (fp32_op) {
+      Bit32u left_bits = 0;
+      if (!read_poly_aarch64_fp32_reg(rn, &left_bits))
+        return false;
+      bx_poly_aarch64_set_fp32_compare_nzcv(
+        bx_poly_fp32_from_bits(left_bits), 0.0f);
+    }
+    else {
+      Bit64u left_bits = 0;
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
+        return false;
+      bx_poly_aarch64_set_fp64_compare_nzcv(
+        bx_poly_fp64_from_bits(left_bits), 0.0);
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 fcmp%s v%u,#0.0 nzcv=%x",
+      fp32_op ? ".s" : ".d", rn, bx_poly_aarch64_nzcv));
     return true;
   }
 
@@ -2183,6 +2225,27 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+    }
+    else if (funct7 == 0x78 || funct7 == 0x79) {
+      Bit64u value = 0;
+      if (rm != 0 || rs2 != 0)
+        return false;
+      if (!read_poly_riscv_reg(rs1, &value))
+        return false;
+      if (funct7 == 0x78) {
+        if (!write_poly_riscv_fp32_reg(rd, (Bit32u) value))
+          return false;
+        op_name = "fmv.w.x";
+      }
+      else {
+        if (!write_poly_riscv_fp64_reg(rd, value))
+          return false;
+        op_name = "fmv.d.x";
+      }
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s f%u,x%u value=%llu",
+        op_name, rd, rs1, (unsigned long long) value));
+      return true;
     }
     else if (funct7 == 0x10) {
       fp32_op = true;
