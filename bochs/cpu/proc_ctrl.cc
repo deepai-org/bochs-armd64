@@ -2468,6 +2468,23 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result = left * right;
     }
+    else if ((insn & 0x7fe08000) == 0x1b000000 ||
+             (insn & 0x7fe08000) == 0x1b008000) {
+      Bit32u ra = (insn >> 10) & 0x1f;
+      bool subtract_product = (insn & 0x00008000) != 0;
+      Bit64u addend = 0;
+      op_name = subtract_product ? "msub" : "madd";
+      if (!read_poly_aarch64_reg(rn, &left) ||
+          !read_poly_aarch64_reg(rm, &right))
+        return false;
+      if (ra != 31 && !read_poly_aarch64_reg(ra, &addend))
+        return false;
+      left &= bx_poly_low_mask(bits);
+      right &= bx_poly_low_mask(bits);
+      addend &= bx_poly_low_mask(bits);
+      result = subtract_product ? addend - (left * right) :
+        addend + (left * right);
+    }
     else if ((insn & 0x7fe0fc00) == 0x1ac00800 ||
              (insn & 0x7fe0fc00) == 0x1ac00c00) {
       bool signed_divide = (insn & 0x00000400) != 0;
