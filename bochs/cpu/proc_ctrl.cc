@@ -8720,9 +8720,55 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 200) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s bind fd=%llu addr=%llx addrlen=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 201) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s listen fd=%llu backlog=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 202) {
+    RAX = arg0 == 5 ? 6 : (Bit64u) -9;
+    if (arg0 == 5 && arg1 && arg2) {
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) arg1, 2);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 1), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 2), 0x30);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 3), 0x39);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 4), 127);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 5), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 6), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 7), 1);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg2, 16);
+    }
+    BX_INFO(("poly_ud: emulated %s accept fd=%llu addr=%llx addrlen=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 203) {
     RAX = arg0 == 5 ? 0 : (Bit64u) -9;
     BX_INFO(("poly_ud: emulated %s connect fd=%llu addr=%llx addrlen=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 204 || syscall_number == 205) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    if (RAX == 0 && arg1 && arg2) {
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) arg1, 2);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 1), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 2), 0x30);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 3), 0x39);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 4), 127);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 5), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 6), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 7), 1);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg2, 16);
+    }
+    BX_INFO(("poly_ud: emulated %s %s fd=%llu addr=%llx addrlen=%llx result=%lld", arch_name, syscall_number == 204 ? "getsockname" : "getpeername", (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
     return true;
   }
 
@@ -8761,6 +8807,29 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
         write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg4, 4);
     }
     BX_INFO(("poly_ud: emulated %s getsockopt fd=%llu level=%llu optname=%llu optval=%llx optlen=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 210) {
+    RAX = arg0 == 5 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s shutdown fd=%llu how=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 242) {
+    RAX = arg0 == 5 ? 6 : (Bit64u) -9;
+    if (arg0 == 5 && arg1 && arg2) {
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) arg1, 2);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 1), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 2), 0x30);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 3), 0x39);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 4), 127);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 5), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 6), 0);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 7), 1);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg2, 16);
+    }
+    BX_INFO(("poly_ud: emulated %s accept4 fd=%llu addr=%llx addrlen=%llx flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
     return true;
   }
 
