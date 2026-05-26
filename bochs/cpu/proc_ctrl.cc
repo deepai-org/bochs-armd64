@@ -355,6 +355,13 @@ static Bit32u bx_poly_riscv_cld_imm(Bit16u insn)
     ((((Bit32u) insn >> 5) & 0x3) << 6);
 }
 
+static Bit32u bx_poly_riscv_clw_imm(Bit16u insn)
+{
+  return ((((Bit32u) insn >> 10) & 0x7) << 3) |
+    ((((Bit32u) insn >> 6) & 0x1) << 2) |
+    ((((Bit32u) insn >> 5) & 0x1) << 6);
+}
+
 static Bit32u bx_poly_riscv_cldsp_imm(Bit16u insn)
 {
   return ((((Bit32u) insn >> 12) & 0x1) << 5) |
@@ -362,10 +369,23 @@ static Bit32u bx_poly_riscv_cldsp_imm(Bit16u insn)
     ((((Bit32u) insn >> 2) & 0x7) << 6);
 }
 
+static Bit32u bx_poly_riscv_clwsp_imm(Bit16u insn)
+{
+  return ((((Bit32u) insn >> 12) & 0x1) << 5) |
+    ((((Bit32u) insn >> 4) & 0x7) << 2) |
+    ((((Bit32u) insn >> 2) & 0x3) << 6);
+}
+
 static Bit32u bx_poly_riscv_csdsp_imm(Bit16u insn)
 {
   return ((((Bit32u) insn >> 10) & 0x7) << 3) |
     ((((Bit32u) insn >> 7) & 0x7) << 6);
+}
+
+static Bit32u bx_poly_riscv_cswsp_imm(Bit16u insn)
+{
+  return ((((Bit32u) insn >> 9) & 0xf) << 2) |
+    ((((Bit32u) insn >> 7) & 0x3) << 6);
 }
 
 static void bx_poly_record_trap(Bit32u reason, Bit32u mode, Bit32u number,
@@ -4167,6 +4187,31 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       return true;
     }
 
+    if (funct3 == 0x2 || funct3 == 0x6) {
+      Bit32u rs1 = bx_poly_riscv_creg(((Bit32u) insn >> 7) & 0x7);
+      Bit32u reg = bx_poly_riscv_creg(((Bit32u) insn >> 2) & 0x7);
+      Bit32u imm = bx_poly_riscv_clw_imm(insn);
+      Bit64u base = 0;
+      if (!read_poly_riscv_reg(rs1, &base))
+        return false;
+      bx_address addr = (bx_address) (base + imm);
+      if (funct3 == 0x2) {
+        Bit64u value = (Bit64u) bx_poly_sign_extend(read_virtual_dword(BX_SEG_REG_DS, addr), 32);
+        if (!write_poly_riscv_reg(reg, value))
+          return false;
+        BX_DEBUG(("poly_raw: emulated riscv c.lw x%u,%u(x%u) value=%llu", reg, imm, rs1, (unsigned long long) value));
+      }
+      else {
+        Bit64u value = 0;
+        if (!read_poly_riscv_reg(reg, &value))
+          return false;
+        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
+        BX_DEBUG(("poly_raw: emulated riscv c.sw x%u,%u(x%u) value=%llu", reg, imm, rs1, (unsigned long long) value));
+      }
+      RIP = next_rip;
+      return true;
+    }
+
     if (funct3 == 0x3 || funct3 == 0x7) {
       Bit32u rs1 = bx_poly_riscv_creg(((Bit32u) insn >> 7) & 0x7);
       Bit32u reg = bx_poly_riscv_creg(((Bit32u) insn >> 2) & 0x7);
@@ -4271,6 +4316,21 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       return true;
     }
 
+    if (funct3 == 0x2) {
+      Bit32u rd = ((Bit32u) insn >> 7) & 0x1f;
+      Bit32u imm = bx_poly_riscv_clwsp_imm(insn);
+      Bit64u sp = 0;
+      if (rd == 0 || !read_poly_riscv_reg(2, &sp))
+        return false;
+      Bit64u value = (Bit64u) bx_poly_sign_extend(
+        read_virtual_dword(BX_SEG_REG_DS, (bx_address) (sp + imm)), 32);
+      if (!write_poly_riscv_reg(rd, value))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv c.lwsp x%u,%u(sp) value=%llu", rd, imm, (unsigned long long) value));
+      return true;
+    }
+
     if (funct3 == 0x3) {
       Bit32u rd = ((Bit32u) insn >> 7) & 0x1f;
       Bit32u imm = bx_poly_riscv_cldsp_imm(insn);
@@ -4350,6 +4410,18 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         BX_DEBUG(("poly_raw: emulated riscv c.add x%u,x%u result=%llu", rd, rs2, (unsigned long long) (left + right)));
         return true;
       }
+    }
+
+    if (funct3 == 0x6) {
+      Bit32u rs2 = ((Bit32u) insn >> 2) & 0x1f;
+      Bit32u imm = bx_poly_riscv_cswsp_imm(insn);
+      Bit64u sp = 0, value = 0;
+      if (!read_poly_riscv_reg(2, &sp) || !read_poly_riscv_reg(rs2, &value))
+        return false;
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (sp + imm), (Bit32u) value);
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv c.swsp x%u,%u(sp) value=%llu", rs2, imm, (unsigned long long) value));
+      return true;
     }
 
     if (funct3 == 0x7) {
