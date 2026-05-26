@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 42;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 43;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -134,7 +134,8 @@ enum {
   BX_POLY_IMPORT_FUNC_MEMRCHR = 38,
   BX_POLY_IMPORT_FUNC_MEMMEM = 39,
   BX_POLY_IMPORT_FUNC_STRCASECMP = 40,
-  BX_POLY_IMPORT_FUNC_STRNCASECMP = 41
+  BX_POLY_IMPORT_FUNC_STRNCASECMP = 41,
+  BX_POLY_IMPORT_FUNC_STRCASESTR = 42
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -2025,6 +2026,50 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     }
     result = (Bit64u) cmp;
     op_name = "strncasecmp";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRCASESTR) {
+    result = 0;
+    Bit8u first = read_virtual_byte(BX_SEG_REG_DS, (bx_address) arg1);
+    if (first >= 'A' && first <= 'Z')
+      first += 'a' - 'A';
+    if (first == 0) {
+      result = arg0;
+    }
+    else {
+      for (Bit64u n = 0; n < 4096; n++) {
+        Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n));
+        if (left >= 'A' && left <= 'Z')
+          left += 'a' - 'A';
+        if (left == 0)
+          break;
+        if (left != first)
+          continue;
+
+        bool matched = true;
+        Bit64u m = 1;
+        for (; m < 4096 - n; m++) {
+          Bit8u needle = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + m));
+          if (needle >= 'A' && needle <= 'Z')
+            needle += 'a' - 'A';
+          if (needle == 0)
+            break;
+          Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n + m));
+          if (value >= 'A' && value <= 'Z')
+            value += 'a' - 'A';
+          if (value != needle || value == 0) {
+            matched = false;
+            break;
+          }
+        }
+        if (m == 4096 - n)
+          matched = false;
+        if (matched) {
+          result = arg0 + n;
+          break;
+        }
+      }
+    }
+    op_name = "strcasestr";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_MEMCPY) {
     Bit64u count = arg2 < 4096 ? arg2 : 4096;
