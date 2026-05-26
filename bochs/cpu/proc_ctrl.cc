@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 71;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 75;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -163,7 +163,11 @@ enum {
   BX_POLY_IMPORT_FUNC_UDIVTI3 = 67,
   BX_POLY_IMPORT_FUNC_UMODTI3 = 68,
   BX_POLY_IMPORT_FUNC_DIVTI3 = 69,
-  BX_POLY_IMPORT_FUNC_MODTI3 = 70
+  BX_POLY_IMPORT_FUNC_MODTI3 = 70,
+  BX_POLY_IMPORT_FUNC_FIXDFTI = 71,
+  BX_POLY_IMPORT_FUNC_FIXUNSDFTI = 72,
+  BX_POLY_IMPORT_FUNC_FLOATTIDF = 73,
+  BX_POLY_IMPORT_FUNC_FLOATUNTIDF = 74
 };
 
 enum {
@@ -2007,6 +2011,88 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     return true;
   }
 
+  if (import_id == BX_POLY_IMPORT_FUNC_FIXDFTI ||
+      import_id == BX_POLY_IMPORT_FUNC_FIXUNSDFTI) {
+    Bit64u source_bits = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp64_reg(0, &source_bits);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_fp64_reg(10, &source_bits);
+    }
+    if (!mapped)
+      return false;
+
+    double source = bx_poly_fp64_from_bits(source_bits);
+    unsigned __int128 result =
+      import_id == BX_POLY_IMPORT_FUNC_FIXUNSDFTI ?
+      (unsigned __int128) source :
+      (unsigned __int128) (__int128) source;
+    Bit64u result_lo = (Bit64u) result;
+    Bit64u result_hi = (Bit64u) (result >> 64);
+
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = write_poly_aarch64_reg(0, result_lo) &&
+        write_poly_aarch64_reg(1, result_hi);
+    }
+    else {
+      mapped = write_poly_riscv_reg(10, result_lo) &&
+        write_poly_riscv_reg(11, result_hi);
+    }
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import double-to-int128 helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_FLOATTIDF ||
+      import_id == BX_POLY_IMPORT_FUNC_FLOATUNTIDF) {
+    Bit64u source_lo = 0, source_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_reg(0, &source_lo) &&
+        read_poly_aarch64_reg(1, &source_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &source_lo) &&
+        read_poly_riscv_reg(11, &source_hi);
+    }
+    if (!mapped)
+      return false;
+
+    unsigned __int128 unsigned_source =
+      ((unsigned __int128) source_hi << 64) | source_lo;
+    double result = import_id == BX_POLY_IMPORT_FUNC_FLOATUNTIDF ?
+      (double) unsigned_source : (double) (__int128) unsigned_source;
+    Bit64u result_bits = bx_poly_fp64_to_bits(result);
+
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = write_poly_aarch64_fp64_reg(0, result_bits);
+    }
+    else {
+      mapped = write_poly_riscv_fp64_reg(10, result_bits);
+    }
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import int128-to-double helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
   if (mode == BX_POLY_MODE_RAW_RISCV &&
       import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
     Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
@@ -3329,6 +3415,49 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rm = (insn >> 16) & 0x1f;
+    Bit64u left_bits = 0;
+    Bit64u right_bits = 0;
+    Bit64u result_bits = 0;
+    const char *op_name = 0;
+
+    if ((insn & 0xffe0fc00) == 0x5ee08400 ||
+        (insn & 0xffe0fc00) == 0x7ee08400) {
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      if ((insn & 0xffe0fc00) == 0x5ee08400) {
+        op_name = "add.d";
+        result_bits = left_bits + right_bits;
+      }
+      else {
+        op_name = "sub.d";
+        result_bits = left_bits - right_bits;
+      }
+      if (!write_poly_aarch64_fp64_reg(rd, result_bits))
+        return false;
+    }
+    else if ((insn & 0xbfe0fc00) == 0x2e201c00) {
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      op_name = "eor.8b";
+      result_bits = left_bits ^ right_bits;
+      if (!write_poly_aarch64_fp64_reg(rd, result_bits))
+        return false;
+    }
+
+    if (op_name != 0) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u,v%u,v%u result=%llu",
+        op_name, rd, rn, rm, (unsigned long long) result_bits));
+      return true;
+    }
+  }
+
+  {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
     Bit32u left32_bits = 0;
     Bit32u right32_bits = 0;
     Bit32u result32_bits = 0;
@@ -3528,6 +3657,32 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         result_bits = is_unsigned ?
           bx_poly_fp64_to_bits((double) left_bits) :
           bx_poly_fp64_to_bits((double) (Bit64s) left_bits);
+      }
+    }
+    else if ((insn & 0xfffffc00) == 0x5ea1b800 ||
+             (insn & 0xfffffc00) == 0x7ea1b800 ||
+             (insn & 0xfffffc00) == 0x5ee1b800 ||
+             (insn & 0xfffffc00) == 0x7ee1b800) {
+      Bit32u op = insn & 0xfffffc00;
+      bool is_unsigned = (op & 0x20000000) != 0;
+      fp32_op = (op & 0x00400000) == 0;
+      op_name = is_unsigned ? "fcvtzu" : "fcvtzs";
+
+      if (fp32_op) {
+        if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
+          return false;
+        double source_value = (double) bx_poly_fp32_from_bits(left32_bits);
+        result32_bits = is_unsigned ?
+          bx_poly_fp64_to_uint32_rtz(source_value) :
+          (Bit32u) bx_poly_fp64_to_int32_rtz(source_value);
+      }
+      else {
+        if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
+          return false;
+        double source_value = bx_poly_fp64_from_bits(left_bits);
+        result_bits = is_unsigned ?
+          bx_poly_fp64_to_uint64_rtz(source_value) :
+          bx_poly_fp64_to_int64_rtz(source_value);
       }
     }
 
