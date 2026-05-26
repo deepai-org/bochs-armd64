@@ -1722,6 +1722,148 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0x3f200c00) == 0x38200000) {
+    Bit32u size_code = (insn >> 30) & 0x3;
+    Bit32u rs = (insn >> 16) & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rt = insn & 0x1f;
+    Bit32u op = (insn >> 12) & 0xf;
+    Bit32u size = 0;
+    Bit64u base = 0;
+    Bit64u source = 0;
+    Bit64u old_value = 0;
+    Bit64u new_value = 0;
+    const char *op_name = 0;
+
+    if (size_code == 0x2)
+      size = 4;
+    else if (size_code == 0x3)
+      size = 8;
+    else
+      return false;
+
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base))
+      return false;
+    if (!read_poly_aarch64_reg(rs, &source))
+      return false;
+
+    bx_address addr = (bx_address) base;
+    if (size == 4) {
+      Bit32u old32 = read_virtual_dword(BX_SEG_REG_DS, addr);
+      Bit32u source32 = (Bit32u) source;
+      old_value = old32;
+      switch (op) {
+        case 0x0:
+          op_name = "ldadd";
+          new_value = old32 + source32;
+          break;
+        case 0x3:
+          op_name = "ldset";
+          new_value = old32 | source32;
+          break;
+        case 0x8:
+          op_name = "swp";
+          new_value = source32;
+          break;
+        default:
+          return false;
+      }
+      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) new_value);
+    }
+    else {
+      old_value = read_virtual_qword(BX_SEG_REG_DS, addr);
+      switch (op) {
+        case 0x0:
+          op_name = "ldadd";
+          new_value = old_value + source;
+          break;
+        case 0x3:
+          op_name = "ldset";
+          new_value = old_value | source;
+          break;
+        case 0x8:
+          op_name = "swp";
+          new_value = source;
+          break;
+        default:
+          return false;
+      }
+      write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
+    }
+
+    if (bx_poly_aarch64_reservation_valid &&
+        bx_poly_aarch64_reservation_addr == addr &&
+        bx_poly_aarch64_reservation_size == size)
+      bx_poly_aarch64_reservation_valid = false;
+    if (!write_poly_aarch64_reg(rt, size == 4 ? (Bit32u) old_value : old_value))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 lse %s%c %c%u,%c%u,[rn=%u] addr=%llx old=%llu new=%llu",
+      op_name, ((insn >> 23) & 0x3) == 0x3 ? 'a' : ' ',
+      size == 4 ? 'w' : 'x', rs, size == 4 ? 'w' : 'x', rt, rn,
+      (unsigned long long) addr, (unsigned long long) old_value,
+      (unsigned long long) new_value));
+    return true;
+  }
+
+  if ((insn & 0x3fa07c00) == 0x08a07c00) {
+    Bit32u size_code = (insn >> 30) & 0x3;
+    Bit32u rs = (insn >> 16) & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rt = insn & 0x1f;
+    Bit32u size = 0;
+    Bit64u base = 0;
+    Bit64u expected = 0;
+    Bit64u desired = 0;
+    Bit64u old_value = 0;
+    bool success = false;
+
+    if (size_code == 0x2)
+      size = 4;
+    else if (size_code == 0x3)
+      size = 8;
+    else
+      return false;
+
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base))
+      return false;
+    if (!read_poly_aarch64_reg(rs, &expected) ||
+        !read_poly_aarch64_reg(rt, &desired))
+      return false;
+
+    bx_address addr = (bx_address) base;
+    if (size == 4) {
+      Bit32u old32 = read_virtual_dword(BX_SEG_REG_DS, addr);
+      old_value = old32;
+      success = old32 == (Bit32u) expected;
+      if (success)
+        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) desired);
+    }
+    else {
+      old_value = read_virtual_qword(BX_SEG_REG_DS, addr);
+      success = old_value == expected;
+      if (success)
+        write_virtual_qword(BX_SEG_REG_DS, addr, desired);
+    }
+
+    if (bx_poly_aarch64_reservation_valid &&
+        bx_poly_aarch64_reservation_addr == addr &&
+        bx_poly_aarch64_reservation_size == size)
+      bx_poly_aarch64_reservation_valid = false;
+    if (!write_poly_aarch64_reg(rs, size == 4 ? (Bit32u) old_value : old_value))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 lse cas %c%u,%c%u,[rn=%u] addr=%llx old=%llu desired=%llu %s",
+      size == 4 ? 'w' : 'x', rs, size == 4 ? 'w' : 'x', rt, rn,
+      (unsigned long long) addr, (unsigned long long) old_value,
+      (unsigned long long) desired, success ? "success" : "fail"));
+    return true;
+  }
+
   {
     Bit32u fp_fma_op = insn & 0xffe08000;
     if (fp_fma_op == 0x1f000000 || fp_fma_op == 0x1f400000 ||
