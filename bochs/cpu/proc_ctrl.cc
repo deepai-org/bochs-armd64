@@ -7361,7 +7361,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     if (!write_poly_riscv_reg(rd, next_rip))
       return false;
-    // The x86 envelope can place the raw stream at any host byte lane.
+    // The x86 poly opcode can place the raw stream at any host byte lane.
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
     if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
       return true;
@@ -7919,8 +7919,11 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
           return true;
         if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
           return true;
+        Bit64u import_return = 0;
+        if (!read_poly_riscv_reg(1, &import_return))
+          return false;
         if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
-              (bx_address) target, next_rip))
+              (bx_address) target, (bx_address) import_return))
           return true;
         target = (target & ~BX_CONST64(3)) | (pc & 0x3);
         RIP = (bx_address) target;
@@ -7955,6 +7958,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
           return true;
         if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+          return true;
+        if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+              (bx_address) target, next_rip))
           return true;
         target = (target & ~BX_CONST64(3)) | (pc & 0x3);
         RIP = (bx_address) target;
