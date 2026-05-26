@@ -113,9 +113,11 @@ static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
+static Bit64u bx_poly_aarch64_fp[32];
 static Bit32u bx_poly_aarch64_nzcv = 0;
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
+static Bit64u bx_poly_riscv_fp[32];
 
 struct bx_poly_reg_state_t {
   bool valid;
@@ -139,9 +141,11 @@ struct bx_poly_reg_state_t {
   bx_address interrupted_raw_rip;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
+  Bit64u aarch64_fp[32];
   Bit32u aarch64_nzcv;
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
+  Bit64u riscv_fp[32];
 };
 
 static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
@@ -587,6 +591,7 @@ static void bx_poly_reset_aarch64_regs()
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_aarch64_x[n] = 0;
     bx_poly_aarch64_x_valid[n] = false;
+    bx_poly_aarch64_fp[n] = 0;
   }
   bx_poly_aarch64_nzcv = 0;
 }
@@ -596,6 +601,7 @@ static void bx_poly_reset_riscv_regs()
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_riscv_x[n] = 0;
     bx_poly_riscv_x_valid[n] = false;
+    bx_poly_riscv_fp[n] = 0;
   }
 }
 
@@ -685,8 +691,10 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[victim].aarch64_x[n] = 0;
     bx_poly_reg_states[victim].aarch64_x_valid[n] = false;
+    bx_poly_reg_states[victim].aarch64_fp[n] = 0;
     bx_poly_reg_states[victim].riscv_x[n] = 0;
     bx_poly_reg_states[victim].riscv_x_valid[n] = false;
+    bx_poly_reg_states[victim].riscv_fp[n] = 0;
   }
   return victim;
 }
@@ -715,8 +723,10 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[slot].aarch64_x[n] = bx_poly_aarch64_x[n];
     bx_poly_reg_states[slot].aarch64_x_valid[n] = bx_poly_aarch64_x_valid[n];
+    bx_poly_reg_states[slot].aarch64_fp[n] = bx_poly_aarch64_fp[n];
     bx_poly_reg_states[slot].riscv_x[n] = bx_poly_riscv_x[n];
     bx_poly_reg_states[slot].riscv_x_valid[n] = bx_poly_riscv_x_valid[n];
+    bx_poly_reg_states[slot].riscv_fp[n] = bx_poly_riscv_fp[n];
   }
 }
 
@@ -746,8 +756,10 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_aarch64_x[n] = bx_poly_reg_states[slot].aarch64_x[n];
     bx_poly_aarch64_x_valid[n] = bx_poly_reg_states[slot].aarch64_x_valid[n];
+    bx_poly_aarch64_fp[n] = bx_poly_reg_states[slot].aarch64_fp[n];
     bx_poly_riscv_x[n] = bx_poly_reg_states[slot].riscv_x[n];
     bx_poly_riscv_x_valid[n] = bx_poly_reg_states[slot].riscv_x_valid[n];
+    bx_poly_riscv_fp[n] = bx_poly_reg_states[slot].riscv_fp[n];
   }
   bx_poly_update_raw_owner(cr3, fsbase, stack_key);
 }
@@ -942,8 +954,14 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
 
 bool BX_CPU_C::read_poly_aarch64_fp64_reg(Bit32u reg, Bit64u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg < 8) {
     *value = BX_READ_XMM_REG_LO_QWORD(reg);
+    return true;
+  }
+  if (reg < 32) {
+    *value = bx_poly_aarch64_fp[reg];
     return true;
   }
   return false;
@@ -951,8 +969,14 @@ bool BX_CPU_C::read_poly_aarch64_fp64_reg(Bit32u reg, Bit64u *value)
 
 bool BX_CPU_C::write_poly_aarch64_fp64_reg(Bit32u reg, Bit64u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg < 8) {
     BX_WRITE_XMM_REG_LO_QWORD(reg, value);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_aarch64_fp[reg] = value;
     return true;
   }
   return false;
@@ -960,8 +984,14 @@ bool BX_CPU_C::write_poly_aarch64_fp64_reg(Bit32u reg, Bit64u value)
 
 bool BX_CPU_C::read_poly_riscv_fp64_reg(Bit32u reg, Bit64u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg >= 10 && reg <= 17) {
     *value = BX_READ_XMM_REG_LO_QWORD(reg - 10);
+    return true;
+  }
+  if (reg < 32) {
+    *value = bx_poly_riscv_fp[reg];
     return true;
   }
   return false;
@@ -969,8 +999,14 @@ bool BX_CPU_C::read_poly_riscv_fp64_reg(Bit32u reg, Bit64u *value)
 
 bool BX_CPU_C::write_poly_riscv_fp64_reg(Bit32u reg, Bit64u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg >= 10 && reg <= 17) {
     BX_WRITE_XMM_REG_LO_QWORD(reg - 10, value);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_riscv_fp[reg] = value;
     return true;
   }
   return false;
@@ -978,8 +1014,14 @@ bool BX_CPU_C::write_poly_riscv_fp64_reg(Bit32u reg, Bit64u value)
 
 bool BX_CPU_C::read_poly_aarch64_fp32_reg(Bit32u reg, Bit32u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg < 8) {
     *value = BX_READ_XMM_REG_LO_DWORD(reg);
+    return true;
+  }
+  if (reg < 32) {
+    *value = (Bit32u) bx_poly_aarch64_fp[reg];
     return true;
   }
   return false;
@@ -987,8 +1029,15 @@ bool BX_CPU_C::read_poly_aarch64_fp32_reg(Bit32u reg, Bit32u *value)
 
 bool BX_CPU_C::write_poly_aarch64_fp32_reg(Bit32u reg, Bit32u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg < 8) {
     BX_WRITE_XMM_REG_LO_DWORD(reg, value);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_aarch64_fp[reg] =
+      (bx_poly_aarch64_fp[reg] & BX_CONST64(0xffffffff00000000)) | value;
     return true;
   }
   return false;
@@ -996,8 +1045,14 @@ bool BX_CPU_C::write_poly_aarch64_fp32_reg(Bit32u reg, Bit32u value)
 
 bool BX_CPU_C::read_poly_riscv_fp32_reg(Bit32u reg, Bit32u *value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg >= 10 && reg <= 17) {
     *value = BX_READ_XMM_REG_LO_DWORD(reg - 10);
+    return true;
+  }
+  if (reg < 32) {
+    *value = (Bit32u) bx_poly_riscv_fp[reg];
     return true;
   }
   return false;
@@ -1005,8 +1060,15 @@ bool BX_CPU_C::read_poly_riscv_fp32_reg(Bit32u reg, Bit32u *value)
 
 bool BX_CPU_C::write_poly_riscv_fp32_reg(Bit32u reg, Bit32u value)
 {
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
   if (reg >= 10 && reg <= 17) {
     BX_WRITE_XMM_REG_LO_DWORD(reg - 10, value);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_riscv_fp[reg] =
+      (bx_poly_riscv_fp[reg] & BX_CONST64(0xffffffff00000000)) | value;
     return true;
   }
   return false;
@@ -2456,6 +2518,141 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = (bx_address) ret_addr;
     BX_DEBUG(("poly_raw: emulated aarch64 ret x%u target=%llx", rn, (unsigned long long) ret_addr));
     return true;
+  }
+
+  {
+    Bit32u pair_op = insn & 0xffc00000;
+    bool is_load = false;
+    bool writeback = false;
+    bool post_index = false;
+    bool is_double = false;
+    const char *op_name = 0;
+
+    switch (pair_op) {
+    case 0x2c800000:
+      writeback = true;
+      post_index = true;
+      op_name = "stp.s-post";
+      break;
+    case 0x2cc00000:
+      is_load = true;
+      writeback = true;
+      post_index = true;
+      op_name = "ldp.s-post";
+      break;
+    case 0x2d000000:
+      op_name = "stp.s";
+      break;
+    case 0x2d400000:
+      is_load = true;
+      op_name = "ldp.s";
+      break;
+    case 0x2d800000:
+      writeback = true;
+      op_name = "stp.s-pre";
+      break;
+    case 0x2dc00000:
+      is_load = true;
+      writeback = true;
+      op_name = "ldp.s-pre";
+      break;
+    case 0x6c800000:
+      writeback = true;
+      post_index = true;
+      is_double = true;
+      op_name = "stp.d-post";
+      break;
+    case 0x6cc00000:
+      is_load = true;
+      writeback = true;
+      post_index = true;
+      is_double = true;
+      op_name = "ldp.d-post";
+      break;
+    case 0x6d000000:
+      is_double = true;
+      op_name = "stp.d";
+      break;
+    case 0x6d400000:
+      is_load = true;
+      is_double = true;
+      op_name = "ldp.d";
+      break;
+    case 0x6d800000:
+      writeback = true;
+      is_double = true;
+      op_name = "stp.d-pre";
+      break;
+    case 0x6dc00000:
+      is_load = true;
+      writeback = true;
+      is_double = true;
+      op_name = "ldp.d-pre";
+      break;
+    }
+
+    if (op_name != 0) {
+      Bit32u rt = insn & 0x1f;
+      Bit32u rn = (insn >> 5) & 0x1f;
+      Bit32u rt2 = (insn >> 10) & 0x1f;
+      Bit32u scale = is_double ? 3 : 2;
+      Bit64s offset = bx_poly_sign_extend((insn >> 15) & 0x7f, 7) << scale;
+      Bit64u base = 0;
+
+      if (rn == 31)
+        base = RSP;
+      else if (!read_poly_aarch64_reg(rn, &base))
+        return false;
+
+      bx_address addr = (bx_address) (post_index ? base : base + offset);
+      if (is_load) {
+        if (is_double) {
+          Bit64u value0 = read_virtual_qword(BX_SEG_REG_DS, addr);
+          Bit64u value1 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+          if (!write_poly_aarch64_fp64_reg(rt, value0) ||
+              !write_poly_aarch64_fp64_reg(rt2, value1))
+            return false;
+        }
+        else {
+          Bit32u value0 = read_virtual_dword(BX_SEG_REG_DS, addr);
+          Bit32u value1 = read_virtual_dword(BX_SEG_REG_DS, addr + 4);
+          if (!write_poly_aarch64_fp32_reg(rt, value0) ||
+              !write_poly_aarch64_fp32_reg(rt2, value1))
+            return false;
+        }
+      }
+      else {
+        if (is_double) {
+          Bit64u value0 = 0, value1 = 0;
+          if (!read_poly_aarch64_fp64_reg(rt, &value0) ||
+              !read_poly_aarch64_fp64_reg(rt2, &value1))
+            return false;
+          write_virtual_qword(BX_SEG_REG_DS, addr, value0);
+          write_virtual_qword(BX_SEG_REG_DS, addr + 8, value1);
+        }
+        else {
+          Bit32u value0 = 0, value1 = 0;
+          if (!read_poly_aarch64_fp32_reg(rt, &value0) ||
+              !read_poly_aarch64_fp32_reg(rt2, &value1))
+            return false;
+          write_virtual_dword(BX_SEG_REG_DS, addr, value0);
+          write_virtual_dword(BX_SEG_REG_DS, addr + 4, value1);
+        }
+      }
+
+      if (writeback) {
+        Bit64u new_base = base + offset;
+        if (rn == 31)
+          RSP = new_base;
+        else if (!write_poly_aarch64_reg(rn, new_base))
+          return false;
+      }
+
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u,v%u,[x%u],offset=%lld addr=%llx",
+        op_name, rt, rt2, rn, (long long) offset, (unsigned long long) addr));
+      return true;
+    }
   }
 
   {
