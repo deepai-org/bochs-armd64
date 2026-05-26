@@ -36,6 +36,7 @@
 #include "bx_debug/debug.h"
 
 #include "decoder/ia_opcodes.h"
+#include "softfloat3e/include/softfloat.h"
 
 enum {
   BX_POLY_MODE_X86 = 0,
@@ -188,6 +189,15 @@ static Bit32u bx_poly_fp32_to_bits(float value)
   } fp;
   fp.value = value;
   return fp.bits;
+}
+
+static softfloat_status_t bx_poly_softfloat_status()
+{
+  softfloat_status_t status = {};
+  status.softfloat_roundingMode = softfloat_round_near_even;
+  status.softfloat_exceptionMasks = softfloat_all_exceptions_mask;
+  status.extF80_roundingPrecision = 80;
+  return status;
 }
 
 static Bit64u bx_poly_fp64_to_uint64_rtz(double value)
@@ -1474,6 +1484,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits &= 0x7fffffff;
     }
+    else if ((insn & 0xfffffc00) == 0x1e21c000) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fsqrt.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
+        return false;
+      result32_bits = f32_sqrt(left32_bits, &status);
+    }
     else if ((insn & 0xfffffc00) == 0x1e204000) {
       op_name = "fmov.s";
       fp32_op = true;
@@ -1526,6 +1544,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
         return false;
       result_bits &= BX_CONST64(0x7fffffffffffffff);
+    }
+    else if ((insn & 0xfffffc00) == 0x1e61c000) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fsqrt.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
+        return false;
+      result_bits = f64_sqrt(left_bits, &status);
     }
     else if ((insn & 0xfffffc00) == 0x1e604000) {
       op_name = "fmov.d";
@@ -2625,6 +2650,21 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
     }
+    else if (funct7 == 0x2c && rs2 == 0) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fsqrt.s";
+      fp32_op = true;
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
+        return false;
+      result32_bits = f32_sqrt(left32_bits, &status);
+    }
+    else if (funct7 == 0x2d && rs2 == 0) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fsqrt.d";
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
+        return false;
+      result_bits = f64_sqrt(left_bits, &status);
+    }
     else if (funct7 == 0x20 && rs2 == 1) {
       op_name = "fcvt.s.d";
       fp32_op = true;
@@ -3365,6 +3405,27 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated riscv %s x%u,%lld(x%u) addr=%llx value=%llu", op_name, rd, (long long) imm12, rs1, (unsigned long long) addr, (unsigned long long) value));
     return true;
+  }
+
+  if ((insn & 0x0000007f) == 0x00000073) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit32u csr = (insn >> 20) & 0xfff;
+
+    if (csr == 0x001 && funct3 == 0x2 && rs1 == 0) {
+      if (!write_poly_riscv_reg(rd, 0))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv frflags x%u", rd));
+      return true;
+    }
+
+    if (csr == 0x001 && funct3 == 0x1 && rd == 0) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv fsflags x%u", rs1));
+      return true;
+    }
   }
 
   if (insn == 0x00000073) {
