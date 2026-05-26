@@ -1426,6 +1426,44 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   }
 
   {
+    if ((insn & 0xffe08000) == 0x1f000000 ||
+        (insn & 0xffe08000) == 0x1f400000) {
+      Bit32u rd = insn & 0x1f;
+      Bit32u rn = (insn >> 5) & 0x1f;
+      Bit32u ra = (insn >> 10) & 0x1f;
+      Bit32u rm = (insn >> 16) & 0x1f;
+      bool fp32_op = (insn & 0x00400000) == 0;
+      softfloat_status_t status = bx_poly_softfloat_status();
+
+      if (fp32_op) {
+        Bit32u product_left = 0, product_right = 0, addend = 0;
+        if (!read_poly_aarch64_fp32_reg(rn, &product_left) ||
+            !read_poly_aarch64_fp32_reg(rm, &product_right) ||
+            !read_poly_aarch64_fp32_reg(ra, &addend))
+          return false;
+        if (!write_poly_aarch64_fp32_reg(rd,
+              f32_mulAdd(product_left, product_right, addend, 0, &status)))
+          return false;
+      }
+      else {
+        Bit64u product_left = 0, product_right = 0, addend = 0;
+        if (!read_poly_aarch64_fp64_reg(rn, &product_left) ||
+            !read_poly_aarch64_fp64_reg(rm, &product_right) ||
+            !read_poly_aarch64_fp64_reg(ra, &addend))
+          return false;
+        if (!write_poly_aarch64_fp64_reg(rd,
+              f64_mulAdd(product_left, product_right, addend, 0, &status)))
+          return false;
+      }
+
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 fmadd%s v%u, v%u, v%u, v%u",
+        fp32_op ? ".s" : ".d", rd, rn, rm, ra));
+      return true;
+    }
+  }
+
+  {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rm = (insn >> 16) & 0x1f;
@@ -2571,6 +2609,49 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
       BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip);
+  }
+
+  if ((insn & 0x0000007f) == 0x00000043) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u rm = (insn >> 12) & 0x7;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit32u rs2 = (insn >> 20) & 0x1f;
+    Bit32u fmt = (insn >> 25) & 0x3;
+    Bit32u rs3 = (insn >> 27) & 0x1f;
+    softfloat_status_t status = bx_poly_softfloat_status();
+
+    if (rm > 4 && rm != 7)
+      return false;
+
+    if (fmt == 0) {
+      Bit32u product_left = 0, product_right = 0, addend = 0;
+      if (!read_poly_riscv_fp32_reg(rs1, &product_left) ||
+          !read_poly_riscv_fp32_reg(rs2, &product_right) ||
+          !read_poly_riscv_fp32_reg(rs3, &addend))
+        return false;
+      if (!write_poly_riscv_fp32_reg(rd,
+            f32_mulAdd(product_left, product_right, addend, 0, &status)))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv fmadd.s f%u, f%u, f%u, f%u",
+        rd, rs1, rs2, rs3));
+      return true;
+    }
+
+    if (fmt == 1) {
+      Bit64u product_left = 0, product_right = 0, addend = 0;
+      if (!read_poly_riscv_fp64_reg(rs1, &product_left) ||
+          !read_poly_riscv_fp64_reg(rs2, &product_right) ||
+          !read_poly_riscv_fp64_reg(rs3, &addend))
+        return false;
+      if (!write_poly_riscv_fp64_reg(rd,
+            f64_mulAdd(product_left, product_right, addend, 0, &status)))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv fmadd.d f%u, f%u, f%u, f%u",
+        rd, rs1, rs2, rs3));
+      return true;
+    }
   }
 
   if ((insn & 0x0000007f) == 0x00000053) {
