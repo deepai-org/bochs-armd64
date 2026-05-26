@@ -115,6 +115,9 @@ static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_aarch64_fp[32];
 static Bit32u bx_poly_aarch64_nzcv = 0;
+static bool bx_poly_aarch64_reservation_valid = false;
+static bx_address bx_poly_aarch64_reservation_addr = 0;
+static Bit32u bx_poly_aarch64_reservation_size = 0;
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
 static Bit64u bx_poly_riscv_fp[32];
@@ -146,6 +149,9 @@ struct bx_poly_reg_state_t {
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
   Bit32u aarch64_nzcv;
+  bool aarch64_reservation_valid;
+  bx_address aarch64_reservation_addr;
+  Bit32u aarch64_reservation_size;
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
   Bit64u riscv_fp[32];
@@ -709,6 +715,9 @@ static void bx_poly_reset_aarch64_regs()
     bx_poly_aarch64_fp[n] = 0;
   }
   bx_poly_aarch64_nzcv = 0;
+  bx_poly_aarch64_reservation_valid = false;
+  bx_poly_aarch64_reservation_addr = 0;
+  bx_poly_aarch64_reservation_size = 0;
 }
 
 static void bx_poly_reset_riscv_regs()
@@ -798,6 +807,9 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
+  bx_poly_reg_states[victim].aarch64_reservation_valid = false;
+  bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
+  bx_poly_reg_states[victim].aarch64_reservation_size = 0;
   bx_poly_reg_states[victim].riscv_reservation_valid = false;
   bx_poly_reg_states[victim].riscv_reservation_addr = 0;
   bx_poly_reg_states[victim].riscv_reservation_size = 0;
@@ -836,6 +848,9 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
+  bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
+  bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
+  bx_poly_reg_states[slot].aarch64_reservation_size = bx_poly_aarch64_reservation_size;
   bx_poly_reg_states[slot].riscv_reservation_valid = bx_poly_riscv_reservation_valid;
   bx_poly_reg_states[slot].riscv_reservation_addr = bx_poly_riscv_reservation_addr;
   bx_poly_reg_states[slot].riscv_reservation_size = bx_poly_riscv_reservation_size;
@@ -872,6 +887,9 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   if (bx_poly_interrupted_raw_valid)
     bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
+  bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
+  bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
+  bx_poly_aarch64_reservation_size = bx_poly_reg_states[slot].aarch64_reservation_size;
   bx_poly_riscv_reservation_valid = bx_poly_reg_states[slot].riscv_reservation_valid;
   bx_poly_riscv_reservation_addr = bx_poly_reg_states[slot].riscv_reservation_addr;
   bx_poly_riscv_reservation_size = bx_poly_reg_states[slot].riscv_reservation_size;
@@ -1615,11 +1633,91 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
 
+  if (insn == 0xd503305f) {
+    bx_poly_aarch64_reservation_valid = false;
+    bx_poly_aarch64_reservation_addr = 0;
+    bx_poly_aarch64_reservation_size = 0;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 clrex"));
+    return true;
+  }
+
   {
     const char *barrier_name = bx_poly_aarch64_barrier_name(insn);
     if (barrier_name != 0) {
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 %s as x86-tso no-op", barrier_name));
+      return true;
+    }
+  }
+
+  if ((insn & 0x3fff7c00) == 0x085f7c00 ||
+      (insn & 0x3fe07c00) == 0x08007c00) {
+    Bit32u size_code = (insn >> 30) & 0x3;
+    Bit32u rt = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rs = (insn >> 16) & 0x1f;
+    bool is_load = ((insn >> 21) & 0x7) == 0x2;
+    bool is_store = ((insn >> 21) & 0x7) == 0x0;
+    bool acquire_release = (insn & 0x00008000) != 0;
+    Bit32u size = 0;
+    Bit64u base = 0;
+
+    if (size_code == 0x2)
+      size = 4;
+    else if (size_code == 0x3)
+      size = 8;
+    else
+      return false;
+
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base))
+      return false;
+
+    bx_address addr = (bx_address) base;
+    if (is_load) {
+      Bit64u value = 0;
+      if (rs != 31)
+        return false;
+      if (size == 4)
+        value = read_virtual_dword(BX_SEG_REG_DS, addr);
+      else
+        value = read_virtual_qword(BX_SEG_REG_DS, addr);
+      bx_poly_aarch64_reservation_valid = true;
+      bx_poly_aarch64_reservation_addr = addr;
+      bx_poly_aarch64_reservation_size = size;
+      if (!write_poly_aarch64_reg(rt, size == 4 ? (Bit32u) value : value))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s %c%u,[rn=%u] addr=%llx value=%llu",
+        acquire_release ? "ldaxr" : "ldxr", size == 4 ? 'w' : 'x', rt, rn,
+        (unsigned long long) addr, (unsigned long long) value));
+      return true;
+    }
+
+    if (is_store) {
+      Bit64u value = 0;
+      bool success = bx_poly_aarch64_reservation_valid &&
+        bx_poly_aarch64_reservation_addr == addr &&
+        bx_poly_aarch64_reservation_size == size;
+      if (!read_poly_aarch64_reg(rt, &value))
+        return false;
+      if (success) {
+        if (size == 4)
+          write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
+        else
+          write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      }
+      bx_poly_aarch64_reservation_valid = false;
+      bx_poly_aarch64_reservation_addr = 0;
+      bx_poly_aarch64_reservation_size = 0;
+      if (!write_poly_aarch64_reg(rs, success ? 0 : 1))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s w%u,%c%u,[rn=%u] addr=%llx %s",
+        acquire_release ? "stlxr" : "stxr", rs, size == 4 ? 'w' : 'x', rt,
+        rn, (unsigned long long) addr, success ? "success" : "fail"));
       return true;
     }
   }
