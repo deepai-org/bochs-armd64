@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 20;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 21;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -112,7 +112,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STRCMP = 16,
   BX_POLY_IMPORT_FUNC_STRNCMP = 17,
   BX_POLY_IMPORT_FUNC_MEMCHR = 18,
-  BX_POLY_IMPORT_FUNC_STRCHR = 19
+  BX_POLY_IMPORT_FUNC_STRCHR = 19,
+  BX_POLY_IMPORT_FUNC_STRRCHR = 20
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -2011,6 +2012,18 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         break;
     }
     op_name = "strchr";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRRCHR) {
+    Bit8u needle = (Bit8u) arg1;
+    result = 0;
+    for (Bit64u n = 0; n < 4096; n++) {
+      Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n));
+      if (value == needle)
+        result = arg0 + n;
+      if (value == 0)
+        break;
+    }
+    op_name = "strrchr";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_X86_ADD) {
     if (R12 == 0 || !bx_poly_return_cookie_valid ||
