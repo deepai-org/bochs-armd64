@@ -1865,6 +1865,55 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0x3b000000) == 0x39000000 && (insn & 0x04000000)) {
+    Bit32u rt = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u size = (insn >> 30) & 0x3;
+    Bit32u imm12 = (insn >> 10) & 0xfff;
+    Bit64u base = 0;
+    bx_address addr;
+
+    if (size < 2)
+      return false;
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base))
+      return false;
+
+    addr = (bx_address) (base + ((Bit64u) imm12 << size));
+    if (insn & 0x00400000) {
+      if (size == 2) {
+        Bit32u value = read_virtual_dword(BX_SEG_REG_DS, addr);
+        if (!write_poly_aarch64_fp32_reg(rt, value))
+          return false;
+      }
+      else {
+        Bit64u value = read_virtual_qword(BX_SEG_REG_DS, addr);
+        if (!write_poly_aarch64_fp64_reg(rt, value))
+          return false;
+      }
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 fp ldr%u v%u,[x%u,#%u] addr=%llx", 8U << size, rt, rn, imm12 << size, (unsigned long long) addr));
+      return true;
+    }
+
+    if (size == 2) {
+      Bit32u value = 0;
+      if (!read_poly_aarch64_fp32_reg(rt, &value))
+        return false;
+      write_virtual_dword(BX_SEG_REG_DS, addr, value);
+    }
+    else {
+      Bit64u value = 0;
+      if (!read_poly_aarch64_fp64_reg(rt, &value))
+        return false;
+      write_virtual_qword(BX_SEG_REG_DS, addr, value);
+    }
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 fp str%u v%u,[x%u,#%u] addr=%llx", 8U << size, rt, rn, imm12 << size, (unsigned long long) addr));
+    return true;
+  }
+
   if ((insn & 0x3b000000) == 0x39000000) {
     Bit32u rt = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
@@ -2456,6 +2505,41 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x0000007f) == 0x00000027) {
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit32u rs2 = (insn >> 20) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
+    Bit32u imm = ((insn >> 7) & 0x1f) | (((insn >> 25) & 0x7f) << 5);
+    Bit64s imm12 = bx_poly_sign_extend(imm, 12);
+    Bit64u base = 0;
+    const char *op_name = 0;
+    if (!read_poly_riscv_reg(rs1, &base))
+      return false;
+    bx_address addr = (bx_address) ((Bit64s) base + imm12);
+
+    if (funct3 == 0x2) {
+      Bit32u value = 0;
+      if (!read_poly_riscv_fp32_reg(rs2, &value))
+        return false;
+      write_virtual_dword(BX_SEG_REG_DS, addr, value);
+      op_name = "fsw";
+    }
+    else if (funct3 == 0x3) {
+      Bit64u value = 0;
+      if (!read_poly_riscv_fp64_reg(rs2, &value))
+        return false;
+      write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      op_name = "fsd";
+    }
+    else {
+      return false;
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated riscv %s f%u,%lld(x%u) addr=%llx", op_name, rs2, (long long) imm12, rs1, (unsigned long long) addr));
+    return true;
+  }
+
   if ((insn & 0x0000007f) == 0x00000023) {
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit32u rs2 = (insn >> 20) & 0x1f;
@@ -2493,6 +2577,38 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated riscv %s x%u,%lld(x%u) addr=%llx value=%llu", op_name, rs2, (long long) imm12, rs1, (unsigned long long) addr, (unsigned long long) value));
+    return true;
+  }
+
+  if ((insn & 0x0000007f) == 0x00000007) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
+    Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+    Bit64u base = 0;
+    const char *op_name = 0;
+    if (!read_poly_riscv_reg(rs1, &base))
+      return false;
+    bx_address addr = (bx_address) ((Bit64s) base + imm12);
+
+    if (funct3 == 0x2) {
+      Bit32u value = read_virtual_dword(BX_SEG_REG_DS, addr);
+      if (!write_poly_riscv_fp32_reg(rd, value))
+        return false;
+      op_name = "flw";
+    }
+    else if (funct3 == 0x3) {
+      Bit64u value = read_virtual_qword(BX_SEG_REG_DS, addr);
+      if (!write_poly_riscv_fp64_reg(rd, value))
+        return false;
+      op_name = "fld";
+    }
+    else {
+      return false;
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated riscv %s f%u,%lld(x%u) addr=%llx", op_name, rd, (long long) imm12, rs1, (unsigned long long) addr));
     return true;
   }
 
