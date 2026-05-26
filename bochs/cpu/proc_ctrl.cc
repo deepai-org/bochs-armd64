@@ -2485,6 +2485,19 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       result = subtract_product ? addend - (left * right) :
         addend + (left * right);
     }
+    else if ((insn & 0xffe0fc00) == 0x9b407c00 ||
+             (insn & 0xffe0fc00) == 0x9bc07c00) {
+      bool is_unsigned = (insn & 0x00800000) != 0;
+      op_name = is_unsigned ? "umulh" : "smulh";
+      if (!read_poly_aarch64_reg(rn, &left) ||
+          !read_poly_aarch64_reg(rm, &right))
+        return false;
+      if (is_unsigned)
+        result = (Bit64u) (((unsigned __int128) left * right) >> 64);
+      else
+        result = (Bit64u) (((unsigned __int128)
+          ((__int128) (Bit64s) left * (__int128) (Bit64s) right)) >> 64);
+    }
     else if ((insn & 0x7fe0fc00) == 0x1ac00800 ||
              (insn & 0x7fe0fc00) == 0x1ac00c00) {
       bool signed_divide = (insn & 0x00000400) != 0;
@@ -3899,6 +3912,20 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x01 && funct3 == 0x0) {
       op_name = "mul";
       result = left * right;
+    }
+    else if (funct7 == 0x01 && funct3 == 0x1) {
+      op_name = "mulh";
+      result = (Bit64u) (((unsigned __int128)
+        ((__int128) (Bit64s) left * (__int128) (Bit64s) right)) >> 64);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x2) {
+      op_name = "mulhsu";
+      result = (Bit64u) (((unsigned __int128)
+        ((__int128) (Bit64s) left * (__int128) right)) >> 64);
+    }
+    else if (funct7 == 0x01 && funct3 == 0x3) {
+      op_name = "mulhu";
+      result = (Bit64u) (((unsigned __int128) left * right) >> 64);
     }
     else if (funct7 == 0x01 && funct3 == 0x4) {
       op_name = "div";
