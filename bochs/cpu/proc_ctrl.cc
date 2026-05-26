@@ -53,9 +53,13 @@ enum {
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
+static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 = 0x7ffc;
+static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_F32_U32 = 0x7ffb;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
+static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 = 0x0000107b;
+static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32 = 0x0000207b;
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000002;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -79,6 +83,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_U64_F32 = (1U << 17);
 static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_F32_U64 = (1U << 18);
 static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 = (1U << 19);
 static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_F32_U32 = (1U << 20);
+static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT = (1U << 21);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -108,6 +113,12 @@ enum {
   BX_POLY_ARG_KIND_HETERO_F32_U64 = 5,
   BX_POLY_ARG_KIND_COMPACT_U32_F32 = 6,
   BX_POLY_ARG_KIND_COMPACT_F32_U32 = 7
+};
+
+enum {
+  BX_POLY_CROSS_BRIDGE_DEFAULT = 0,
+  BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 = 1,
+  BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 = 2
 };
 
 enum {
@@ -370,6 +381,7 @@ static const unsigned BX_POLY_CROSS_RETURN_DEPTH = 8;
 struct bx_poly_cross_return_frame_t {
   Bit32u caller_mode;
   Bit32u callee_mode;
+  Bit32u bridge_kind;
   bx_address return_rip;
 };
 
@@ -1228,6 +1240,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
     bx_poly_reg_states[victim].cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
     bx_poly_reg_states[victim].cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
+    bx_poly_reg_states[victim].cross_return_stack[n].bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     bx_poly_reg_states[victim].cross_return_stack[n].return_rip = 0;
   }
   for (unsigned n = 0; n < 32; n++) {
@@ -2018,7 +2031,7 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
 }
 
 bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
-  bx_address target_rip, bx_address return_rip)
+  bx_address target_rip, bx_address return_rip, Bit32u bridge_kind)
 {
   if (bx_poly_cross_return_top >= BX_POLY_CROSS_RETURN_DEPTH)
     return false;
@@ -2034,15 +2047,68 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
       return false;
   }
 
-  for (Bit32u n = 0; n < 8; n++) {
-    bool write_ok = false;
-    if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
-      write_ok = write_poly_aarch64_reg(n, args[n]);
-    else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
-      write_ok = write_poly_riscv_reg(10 + n, args[n]);
-    if (!write_ok)
-      return false;
+  bool mapped = true;
+  if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 &&
+      caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
+      callee_mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit32u int_lane = (Bit32u) args[0];
+    Bit32u fp_lane = (Bit32u) (args[0] >> 32);
+    mapped =
+      write_poly_riscv_reg(10, int_lane) &&
+      write_poly_riscv_fp32_reg(10, fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_riscv_reg(10 + n, args[n]);
   }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 &&
+      caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
+      callee_mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit32u fp_lane = (Bit32u) args[0];
+    Bit32u int_lane = (Bit32u) (args[0] >> 32);
+    mapped =
+      write_poly_riscv_reg(10, int_lane) &&
+      write_poly_riscv_fp32_reg(10, fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_riscv_reg(10 + n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 &&
+      caller_mode == BX_POLY_MODE_RAW_RISCV &&
+      callee_mode == BX_POLY_MODE_RAW_AARCH64) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    mapped =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane) &&
+      write_poly_aarch64_reg(0, ((Bit64u) fp_lane << 32) | (Bit32u) int_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_aarch64_reg(n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 &&
+      caller_mode == BX_POLY_MODE_RAW_RISCV &&
+      callee_mode == BX_POLY_MODE_RAW_AARCH64) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    mapped =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane) &&
+      write_poly_aarch64_reg(0, ((Bit64u) (Bit32u) int_lane << 32) | fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_aarch64_reg(n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_DEFAULT) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+  }
+  else {
+    mapped = false;
+  }
+  if (!mapped)
+    return false;
 
   bool link_ok = false;
   if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
@@ -2056,6 +2122,7 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
     &bx_poly_cross_return_stack[bx_poly_cross_return_top++];
   frame->caller_mode = caller_mode;
   frame->callee_mode = callee_mode;
+  frame->bridge_kind = bridge_kind;
   frame->return_rip = return_rip;
   bx_poly_current_mode = callee_mode;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
@@ -2063,9 +2130,10 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   RIP = target_rip;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
-  BX_INFO(("poly_raw: cross call caller=%u callee=%u depth=%u target=%llx return=%llx",
+  BX_INFO(("poly_raw: cross call caller=%u callee=%u depth=%u target=%llx return=%llx bridge=%u",
     caller_mode, callee_mode, bx_poly_cross_return_top,
-    (unsigned long long) target_rip, (unsigned long long) return_rip));
+    (unsigned long long) target_rip, (unsigned long long) return_rip,
+    bridge_kind));
   return true;
 }
 
@@ -2079,6 +2147,7 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
     &bx_poly_cross_return_stack[bx_poly_cross_return_top - 1];
   if (frame->callee_mode != callee_mode)
     return false;
+  Bit32u bridge_kind = frame->bridge_kind;
 
   Bit64u args[8];
   for (Bit32u n = 0; n < 8; n++) {
@@ -2091,15 +2160,68 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
       return false;
   }
 
-  for (Bit32u n = 0; n < 8; n++) {
-    bool write_ok = false;
-    if (frame->caller_mode == BX_POLY_MODE_RAW_AARCH64)
-      write_ok = write_poly_aarch64_reg(n, args[n]);
-    else if (frame->caller_mode == BX_POLY_MODE_RAW_RISCV)
-      write_ok = write_poly_riscv_reg(10 + n, args[n]);
-    if (!write_ok)
-      return false;
+  bool mapped = true;
+  if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 &&
+      callee_mode == BX_POLY_MODE_RAW_RISCV &&
+      frame->caller_mode == BX_POLY_MODE_RAW_AARCH64) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    mapped =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane) &&
+      write_poly_aarch64_reg(0, ((Bit64u) fp_lane << 32) | (Bit32u) int_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_aarch64_reg(n, args[n]);
   }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 &&
+      callee_mode == BX_POLY_MODE_RAW_RISCV &&
+      frame->caller_mode == BX_POLY_MODE_RAW_AARCH64) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    mapped =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane) &&
+      write_poly_aarch64_reg(0, ((Bit64u) (Bit32u) int_lane << 32) | fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_aarch64_reg(n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 &&
+      callee_mode == BX_POLY_MODE_RAW_AARCH64 &&
+      frame->caller_mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit32u int_lane = (Bit32u) args[0];
+    Bit32u fp_lane = (Bit32u) (args[0] >> 32);
+    mapped =
+      write_poly_riscv_reg(10, int_lane) &&
+      write_poly_riscv_fp32_reg(10, fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_riscv_reg(10 + n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 &&
+      callee_mode == BX_POLY_MODE_RAW_AARCH64 &&
+      frame->caller_mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit32u fp_lane = (Bit32u) args[0];
+    Bit32u int_lane = (Bit32u) (args[0] >> 32);
+    mapped =
+      write_poly_riscv_reg(10, int_lane) &&
+      write_poly_riscv_fp32_reg(10, fp_lane);
+    for (Bit32u n = 1; mapped && n < 8; n++)
+      mapped = write_poly_riscv_reg(10 + n, args[n]);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_DEFAULT) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (frame->caller_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (frame->caller_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+  }
+  else {
+    mapped = false;
+  }
+  if (!mapped)
+    return false;
 
   bx_poly_current_mode = frame->caller_mode;
   RIP = frame->return_rip;
@@ -2108,9 +2230,9 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
-  BX_INFO(("poly_raw: cross return callee=%u mode=%u depth=%u rip=%llx",
+  BX_INFO(("poly_raw: cross return callee=%u mode=%u depth=%u rip=%llx bridge=%u",
     callee_mode, bx_poly_current_mode, bx_poly_cross_return_top,
-    (unsigned long long) RIP));
+    (unsigned long long) RIP, bridge_kind));
   return true;
 }
 
@@ -5631,7 +5753,24 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(17, &return_rip))
       return false;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
-      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip);
+      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
+  }
+
+  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 << 5)) ||
+      insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_F32_U32 << 5))) {
+    Bit64u target = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_aarch64_reg(16, &target) ||
+        !read_poly_aarch64_reg(17, &return_rip))
+      return false;
+    Bit32u bridge_kind =
+      insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 << 5)) ?
+      BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 :
+      BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
+      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip,
+      bridge_kind);
   }
 
   if ((insn & 0xff000010) == 0x54000000) {
@@ -6488,7 +6627,24 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(6, &return_rip))
       return false;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
-      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip);
+      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
+  }
+
+  if (insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 ||
+      insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32) {
+    Bit64u target = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_riscv_reg(5, &target) ||
+        !read_poly_riscv_reg(6, &return_rip))
+      return false;
+    Bit32u bridge_kind =
+      insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 ?
+      BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 :
+      BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
+      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
+      bridge_kind);
   }
 
   if ((insn & 0x0000007f) == 0x0000002f) {
@@ -8940,7 +9096,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_HETERO_U64_F32 |
           BX_POLY_CPUID_FEATURE_HETERO_F32_U64 |
           BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 |
-          BX_POLY_CPUID_FEATURE_COMPACT_F32_U32;
+          BX_POLY_CPUID_FEATURE_COMPACT_F32_U32 |
+          BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
@@ -8955,8 +9112,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     }
     else if (ECX == 1) {
       RAX = BX_POLY_RISCV_AARCH64_CALL;
-      RBX = 0;
-      RCX = 0;
+      RBX = BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32;
+      RCX = BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32;
       RDX = 0;
     }
     else {
