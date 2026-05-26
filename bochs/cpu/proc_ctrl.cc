@@ -2866,6 +2866,47 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0x3fe00c10) == 0x3a400000 ||
+      (insn & 0x3fe00c10) == 0x3a400800) {
+    bool sf = (insn & 0x80000000) != 0;
+    bool subtract = (insn & 0x40000000) != 0;
+    bool immediate = (insn & 0x00000800) != 0;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u cond = (insn >> 12) & 0xf;
+    Bit32u nzcv = insn & 0xf;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u left = 0;
+    Bit64u right = 0;
+
+    if (!bx_poly_aarch64_condition_holds(cond)) {
+      bx_poly_aarch64_nzcv = nzcv;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s%s cond=%u false nzcv=%x",
+        subtract ? "ccmp" : "ccmn", immediate ? "-imm" : "-reg",
+        cond, bx_poly_aarch64_nzcv));
+      return true;
+    }
+
+    if (!read_poly_aarch64_reg(rn, &left))
+      return false;
+    if (immediate) {
+      right = (insn >> 16) & 0x1f;
+    }
+    else {
+      Bit32u rm = (insn >> 16) & 0x1f;
+      if (!read_poly_aarch64_reg(rm, &right))
+        return false;
+    }
+
+    bx_poly_aarch64_addsub_flags(left, right, subtract, bits);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s%s %s%u,%llu,#%x,cond=%u nzcv=%x",
+      subtract ? "ccmp" : "ccmn", immediate ? "-imm" : "-reg",
+      sf ? "x" : "w", rn, (unsigned long long) right, nzcv, cond,
+      bx_poly_aarch64_nzcv));
+    return true;
+  }
+
   if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_X86_ESCAPE << 5))) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_clear_cross_return_stack();
