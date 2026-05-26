@@ -493,6 +493,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::IRET64(bxInstruction_c *i)
 
   RSP_COMMIT;
 
+  poly_iret_return_to_user();
+
 #if BX_SUPPORT_VMX
   BX_CPU_THIS_PTR nmi_unblocking_iret = false;
 #endif

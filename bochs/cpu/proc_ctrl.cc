@@ -107,6 +107,9 @@ static bool bx_poly_import_x86_return_valid = false;
 static Bit32u bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_import_x86_return_rip = 0;
 static bx_address bx_poly_import_x86_return_rsp = 0;
+static bool bx_poly_interrupted_raw_valid = false;
+static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
+static bx_address bx_poly_interrupted_raw_rip = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit32u bx_poly_aarch64_nzcv = 0;
@@ -130,6 +133,9 @@ struct bx_poly_reg_state_t {
   Bit32u import_x86_return_mode;
   bx_address import_x86_return_rip;
   bx_address import_x86_return_rsp;
+  bool interrupted_raw_valid;
+  Bit32u interrupted_raw_mode;
+  bx_address interrupted_raw_rip;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit32u aarch64_nzcv;
@@ -519,6 +525,9 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].import_x86_return_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].import_x86_return_rip = 0;
   bx_poly_reg_states[victim].import_x86_return_rsp = 0;
+  bx_poly_reg_states[victim].interrupted_raw_valid = false;
+  bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].interrupted_raw_rip = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
     bx_poly_reg_states[victim].cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
@@ -549,6 +558,9 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].import_x86_return_mode = bx_poly_import_x86_return_mode;
   bx_poly_reg_states[slot].import_x86_return_rip = bx_poly_import_x86_return_rip;
   bx_poly_reg_states[slot].import_x86_return_rsp = bx_poly_import_x86_return_rsp;
+  bx_poly_reg_states[slot].interrupted_raw_valid = bx_poly_interrupted_raw_valid;
+  bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
+  bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
     bx_poly_reg_states[slot].cross_return_stack[n] = bx_poly_cross_return_stack[n];
@@ -575,6 +587,11 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_import_x86_return_mode = bx_poly_reg_states[slot].import_x86_return_mode;
   bx_poly_import_x86_return_rip = bx_poly_reg_states[slot].import_x86_return_rip;
   bx_poly_import_x86_return_rsp = bx_poly_reg_states[slot].import_x86_return_rsp;
+  bx_poly_interrupted_raw_valid = bx_poly_reg_states[slot].interrupted_raw_valid;
+  bx_poly_interrupted_raw_mode = bx_poly_reg_states[slot].interrupted_raw_mode;
+  bx_poly_interrupted_raw_rip = bx_poly_reg_states[slot].interrupted_raw_rip;
+  if (bx_poly_interrupted_raw_valid)
+    bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
     bx_poly_cross_return_stack[n] = bx_poly_reg_states[slot].cross_return_stack[n];
@@ -1036,6 +1053,51 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   BX_INFO(("poly_ud: import x86 return mode=%u result=%llu rip=%llx",
     bx_poly_current_mode, (unsigned long long) RAX, (unsigned long long) RIP));
   return true;
+}
+
+void BX_CPU_C::poly_interrupt_enter(void)
+{
+  if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
+    return;
+
+  bx_address stack_key = bx_poly_stack_key(RSP);
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+  if (!bx_poly_is_raw_mode(bx_poly_current_mode))
+    return;
+
+  bx_poly_interrupted_raw_valid = true;
+  bx_poly_interrupted_raw_mode = bx_poly_current_mode;
+  bx_poly_interrupted_raw_rip = RIP;
+  bx_poly_save_current_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+  bx_poly_loaded_reg_state_valid = false;
+  BX_INFO(("poly_raw: interrupt enter mode=%u rip=%llx",
+    bx_poly_interrupted_raw_mode, (unsigned long long) bx_poly_interrupted_raw_rip));
+}
+
+void BX_CPU_C::poly_iret_return_to_user(void)
+{
+  if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
+    return;
+
+  bx_address stack_key = bx_poly_stack_key(RSP);
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+  if (!bx_poly_interrupted_raw_valid ||
+      !bx_poly_is_raw_mode(bx_poly_interrupted_raw_mode) ||
+      bx_poly_interrupted_raw_rip != RIP)
+    return;
+
+  bx_poly_current_mode = bx_poly_interrupted_raw_mode;
+  bx_poly_interrupted_raw_valid = false;
+  bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
+  bx_poly_interrupted_raw_rip = 0;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  BX_INFO(("poly_raw: iret restore mode=%u rip=%llx",
+    bx_poly_current_mode, (unsigned long long) RIP));
 }
 
 bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
