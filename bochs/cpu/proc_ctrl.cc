@@ -51,9 +51,12 @@ enum {
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
+static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
+static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
+static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
@@ -90,6 +93,10 @@ static bool bx_poly_return_cookie_valid = false;
 static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_return_cookie_rip = 0;
 static bx_address bx_poly_return_cookie_rsp = 0;
+static bool bx_poly_cross_return_valid = false;
+static Bit32u bx_poly_cross_return_mode = BX_POLY_MODE_X86;
+static Bit32u bx_poly_cross_callee_mode = BX_POLY_MODE_X86;
+static bx_address bx_poly_cross_return_rip = 0;
 static bool bx_poly_import_x86_return_valid = false;
 static Bit32u bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_import_x86_return_rip = 0;
@@ -820,6 +827,98 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   return true;
 }
 
+bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
+  bx_address target_rip, bx_address return_rip)
+{
+  if (bx_poly_cross_return_valid)
+    return false;
+
+  Bit64u args[8];
+  for (Bit32u n = 0; n < 8; n++) {
+    bool read_ok = false;
+    if (caller_mode == BX_POLY_MODE_RAW_AARCH64)
+      read_ok = read_poly_aarch64_reg(n, &args[n]);
+    else if (caller_mode == BX_POLY_MODE_RAW_RISCV)
+      read_ok = read_poly_riscv_reg(10 + n, &args[n]);
+    if (!read_ok)
+      return false;
+  }
+
+  for (Bit32u n = 0; n < 8; n++) {
+    bool write_ok = false;
+    if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+      write_ok = write_poly_aarch64_reg(n, args[n]);
+    else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+      write_ok = write_poly_riscv_reg(10 + n, args[n]);
+    if (!write_ok)
+      return false;
+  }
+
+  bool link_ok = false;
+  if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+    link_ok = write_poly_aarch64_reg(30, BX_POLY_CROSS_RETURN_COOKIE);
+  else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+    link_ok = write_poly_riscv_reg(1, BX_POLY_CROSS_RETURN_COOKIE);
+  if (!link_ok)
+    return false;
+
+  bx_poly_cross_return_valid = true;
+  bx_poly_cross_return_mode = caller_mode;
+  bx_poly_cross_callee_mode = callee_mode;
+  bx_poly_cross_return_rip = return_rip;
+  bx_poly_current_mode = callee_mode;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+  bx_poly_mode_switch_count++;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  RIP = target_rip;
+  BX_INFO(("poly_raw: cross call caller=%u callee=%u target=%llx return=%llx",
+    caller_mode, callee_mode, (unsigned long long) target_rip,
+    (unsigned long long) return_rip));
+  return true;
+}
+
+bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
+{
+  if (!bx_poly_cross_return_valid ||
+      bx_poly_cross_callee_mode != callee_mode ||
+      target_rip != (bx_address) BX_POLY_CROSS_RETURN_COOKIE)
+    return false;
+
+  Bit64u args[8];
+  for (Bit32u n = 0; n < 8; n++) {
+    bool read_ok = false;
+    if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+      read_ok = read_poly_aarch64_reg(n, &args[n]);
+    else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+      read_ok = read_poly_riscv_reg(10 + n, &args[n]);
+    if (!read_ok)
+      return false;
+  }
+
+  for (Bit32u n = 0; n < 8; n++) {
+    bool write_ok = false;
+    if (bx_poly_cross_return_mode == BX_POLY_MODE_RAW_AARCH64)
+      write_ok = write_poly_aarch64_reg(n, args[n]);
+    else if (bx_poly_cross_return_mode == BX_POLY_MODE_RAW_RISCV)
+      write_ok = write_poly_riscv_reg(10 + n, args[n]);
+    if (!write_ok)
+      return false;
+  }
+
+  bx_poly_current_mode = bx_poly_cross_return_mode;
+  RIP = bx_poly_cross_return_rip;
+  bx_poly_cross_return_valid = false;
+  bx_poly_cross_return_mode = BX_POLY_MODE_X86;
+  bx_poly_cross_callee_mode = BX_POLY_MODE_X86;
+  bx_poly_cross_return_rip = 0;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
+  bx_poly_mode_switch_count++;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  BX_INFO(("poly_raw: cross return callee=%u mode=%u rip=%llx",
+    callee_mode, bx_poly_current_mode, (unsigned long long) RIP));
+  return true;
+}
+
 bool BX_CPU_C::return_poly_import_x86_call(void)
 {
   if (!bx_poly_import_x86_return_valid)
@@ -1338,6 +1437,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL << 5))) {
+    Bit64u target = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_aarch64_reg(16, &target) ||
+        !read_poly_aarch64_reg(17, &return_rip))
+      return false;
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
+      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip);
+  }
+
   if ((insn & 0xff000010) == 0x54000000) {
     Bit32u cond = insn & 0xf;
     Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x7ffff, 19) << 2;
@@ -1408,6 +1517,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u ret_addr = 0;
     if (!read_poly_aarch64_reg(rn, &ret_addr))
       return false;
+    if (return_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
+      return true;
     if (return_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
       return true;
     RIP = (bx_address) ret_addr;
@@ -1603,6 +1714,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_INFO(("poly_raw: riscv custom-1 switch to aarch64"));
     return true;
+  }
+
+  if (insn == BX_POLY_RISCV_AARCH64_CALL) {
+    Bit64u target = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_riscv_reg(5, &target) ||
+        !read_poly_riscv_reg(6, &return_rip))
+      return false;
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
+      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip);
   }
 
   if ((insn & 0x0000007f) == 0x00000053) {
@@ -2018,6 +2139,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     // The x86 envelope can place the raw stream at any host byte lane.
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
+    if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+      return true;
     if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
       return true;
     if (rd != 0) {
@@ -2302,6 +2425,8 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (rd == 0 || !read_poly_riscv_reg(rd, &target))
           return false;
         target &= ~BX_CONST64(1);
+        if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+          return true;
         if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
           return true;
         if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
@@ -2337,6 +2462,8 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
             !write_poly_riscv_reg(1, next_rip))
           return false;
         target &= ~BX_CONST64(1);
+        if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+          return true;
         if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
           return true;
         target = (target & ~BX_CONST64(3)) | (pc & 0x3);
