@@ -6152,6 +6152,23 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 66 && (arg0 == 1 || arg0 == 2)) {
+    Bit64u total = 0;
+    Bit64u checksum = 0;
+    Bit64u iovcnt = arg2 < 16 ? arg2 : 16;
+    for (Bit64u iov = 0; iov < iovcnt; iov++) {
+      bx_address iov_addr = (bx_address) (arg1 + iov * 16);
+      Bit64u base = read_virtual_qword(BX_SEG_REG_DS, iov_addr);
+      Bit64u len = read_virtual_qword(BX_SEG_REG_DS, iov_addr + 8);
+      total += len;
+      for (Bit64u n = 0; n < len && n < 4096; n++)
+        checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (base + n));
+    }
+    RAX = total;
+    BX_INFO(("poly_ud: emulated %s writev fd=%llu iov=%llx iovcnt=%llu total=%llu checksum=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) total, (unsigned long long) checksum));
+    return true;
+  }
+
   if (syscall_number == 56) {
     char path[16];
     unsigned n;
