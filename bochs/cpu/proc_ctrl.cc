@@ -61,7 +61,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 4;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 8;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -69,7 +69,11 @@ enum {
   BX_POLY_IMPORT_FUNC_ADD = 0,
   BX_POLY_IMPORT_FUNC_MUL = 1,
   BX_POLY_IMPORT_FUNC_X86_ADD = 2,
-  BX_POLY_IMPORT_FUNC_FP64_ADD = 3
+  BX_POLY_IMPORT_FUNC_FP64_ADD = 3,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL = 4,
+  BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL = 5,
+  BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX = 6,
+  BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL = 7
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1516,6 +1520,59 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   Bit32u import_id = (Bit32u) (target_offset / BX_POLY_IMPORT_CALL_STRIDE);
   if (import_id >= BX_POLY_IMPORT_CALL_COUNT)
     return false;
+
+  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
+      import_id >= BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL &&
+      import_id <= BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) {
+    Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+    if (!read_poly_aarch64_reg(0, &arg0) ||
+        !read_poly_aarch64_reg(1, &arg1) ||
+        !read_poly_aarch64_reg(2, &arg2))
+      return false;
+
+    if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL) {
+      bx_address addr = (bx_address) arg1;
+      result = read_virtual_qword(BX_SEG_REG_DS, addr);
+      write_virtual_qword(BX_SEG_REG_DS, addr, result + arg0);
+      op_name = "__aarch64_ldadd8_acq_rel";
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL) {
+      bx_address addr = (bx_address) arg1;
+      result = read_virtual_qword(BX_SEG_REG_DS, addr);
+      write_virtual_qword(BX_SEG_REG_DS, addr, arg0);
+      op_name = "__aarch64_swp8_acq_rel";
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX) {
+      bx_address addr = (bx_address) arg1;
+      Bit32u old_value = read_virtual_dword(BX_SEG_REG_DS, addr);
+      write_virtual_dword(BX_SEG_REG_DS, addr, old_value | (Bit32u) arg0);
+      result = old_value;
+      op_name = "__aarch64_ldset4_relax";
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) {
+      bx_address addr = (bx_address) arg2;
+      result = read_virtual_qword(BX_SEG_REG_DS, addr);
+      if (result == arg0)
+        write_virtual_qword(BX_SEG_REG_DS, addr, arg1);
+      op_name = "__aarch64_cas8_acq_rel";
+    }
+    else
+      return false;
+
+    if (!write_poly_aarch64_reg(0, result))
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import aarch64 outline atomic %s target=%llx result=%llu return=%llx",
+      op_name, (unsigned long long) target_rip, (unsigned long long) result,
+      (unsigned long long) return_rip));
+    return true;
+  }
 
   if (import_id == BX_POLY_IMPORT_FUNC_FP64_ADD) {
     Bit64u left_bits = 0, right_bits = 0;
