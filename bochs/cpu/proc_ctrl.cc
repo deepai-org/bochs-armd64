@@ -54,6 +54,7 @@ static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
+static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 3;
 
 enum {
@@ -830,13 +831,18 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   else if (import_id == BX_POLY_IMPORT_FUNC_MUL)
     result = arg0 * arg1 + 100;
   else if (import_id == BX_POLY_IMPORT_FUNC_X86_ADD) {
-    if (R12 == 0)
+    if (R12 == 0 || !bx_poly_return_cookie_valid ||
+        bx_poly_return_cookie_rsp < 16)
       return false;
     RDI = arg0;
     RSI = arg1;
     bx_address foreign_rsp = RSP;
-    BX_INFO(("poly_raw: import x86 call mode=%u descriptor=%u target=%llx arg0=%llu arg1=%llu return=%llx",
+    bx_address x86_rsp = bx_poly_return_cookie_rsp - 16;
+    bx_address trampoline = (bx_address) (R12 + BX_POLY_IMPORT_X86_ADD_HELPER_SIZE);
+    write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
+    BX_INFO(("poly_raw: import x86 call mode=%u descriptor=%u target=%llx trampoline=%llx stack=%llx arg0=%llu arg1=%llu return=%llx",
       mode, (unsigned) import_id, (unsigned long long) R12,
+      (unsigned long long) trampoline, (unsigned long long) x86_rsp,
       (unsigned long long) arg0,
       (unsigned long long) arg1, (unsigned long long) return_rip));
     bx_poly_import_x86_return_valid = true;
@@ -846,6 +852,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
     RIP = (bx_address) R12;
+    RSP = x86_rsp;
     bx_poly_mode_switch_count++;
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     return true;
