@@ -1473,6 +1473,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &result32_bits))
         return false;
     }
+    else if ((insn & 0xfffffc00) == 0x1e624000) {
+      op_name = "fcvt.s.d";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
+        return false;
+      result32_bits = bx_poly_fp32_to_bits((float) bx_poly_fp64_from_bits(left_bits));
+    }
     else if ((insn & 0xffe0fc00) == 0x1e602800) {
       op_name = "fadd.d";
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
@@ -1511,6 +1518,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       op_name = "fmov.d";
       if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
         return false;
+    }
+    else if ((insn & 0xfffffc00) == 0x1e22c000) {
+      op_name = "fcvt.d.s";
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
+        return false;
+      result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
     }
 
     if (op_name != 0) {
@@ -2534,6 +2547,19 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+    }
+    else if (funct7 == 0x20 && rs2 == 1) {
+      op_name = "fcvt.s.d";
+      fp32_op = true;
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
+        return false;
+      result32_bits = bx_poly_fp32_to_bits((float) bx_poly_fp64_from_bits(left_bits));
+    }
+    else if (funct7 == 0x21 && rs2 == 0) {
+      op_name = "fcvt.d.s";
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
+        return false;
+      result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
     }
     else if (funct7 == 0x78 || funct7 == 0x79) {
       Bit64u value = 0;
