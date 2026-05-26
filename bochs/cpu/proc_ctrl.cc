@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 24;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 25;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -116,7 +116,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STRRCHR = 20,
   BX_POLY_IMPORT_FUNC_STRSTR = 21,
   BX_POLY_IMPORT_FUNC_STRCPY = 22,
-  BX_POLY_IMPORT_FUNC_STRNCPY = 23
+  BX_POLY_IMPORT_FUNC_STRNCPY = 23,
+  BX_POLY_IMPORT_FUNC_STRNLEN = 24
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1870,7 +1871,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     mapped = read_poly_aarch64_reg(0, &arg0);
-    if (mapped && import_id != BX_POLY_IMPORT_FUNC_STRLEN)
+    if (mapped &&
+        import_id != BX_POLY_IMPORT_FUNC_STRLEN)
       mapped = read_poly_aarch64_reg(1, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -1884,7 +1886,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = read_poly_riscv_reg(10, &arg0);
-    if (mapped && import_id != BX_POLY_IMPORT_FUNC_STRLEN)
+    if (mapped &&
+        import_id != BX_POLY_IMPORT_FUNC_STRLEN)
       mapped = read_poly_riscv_reg(11, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -1915,6 +1918,14 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
            read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + result)) != 0)
       result++;
     op_name = "strlen";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRNLEN) {
+    Bit64u count = arg1 < 4096 ? arg1 : 4096;
+    result = 0;
+    while (result < count &&
+           read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + result)) != 0)
+      result++;
+    op_name = "strnlen";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRCMP) {
     Bit64s cmp = 0;
