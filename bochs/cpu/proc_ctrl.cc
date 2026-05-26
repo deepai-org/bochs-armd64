@@ -91,7 +91,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 113;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 114;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -236,13 +236,14 @@ enum {
   BX_POLY_IMPORT_FUNC_X86_SLOT3 = 109,
   BX_POLY_IMPORT_FUNC_X86_SLOT4 = 110,
   BX_POLY_IMPORT_FUNC_X86_SLOT5 = 111,
-  BX_POLY_IMPORT_FUNC_X86_SLOT6 = 112
+  BX_POLY_IMPORT_FUNC_X86_SLOT6 = 112,
+  BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
 {
   return import_id >= BX_POLY_IMPORT_FUNC_X86_SLOT0 &&
-    import_id <= BX_POLY_IMPORT_FUNC_X86_SLOT6;
+    import_id <= BX_POLY_IMPORT_FUNC_X86_SLOT7;
 }
 
 static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
@@ -9184,7 +9185,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     }
     else if (ECX == 2) {
       RAX = BX_POLY_IMPORT_FUNC_X86_SLOT0;
-      RBX = BX_POLY_IMPORT_FUNC_X86_SLOT6 - BX_POLY_IMPORT_FUNC_X86_SLOT0 + 1;
+      RBX = BX_POLY_IMPORT_FUNC_X86_SLOT7 - BX_POLY_IMPORT_FUNC_X86_SLOT0 + 1;
       RCX = (Bit32u) BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE;
       RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
     }
