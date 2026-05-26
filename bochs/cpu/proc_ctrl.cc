@@ -77,6 +77,7 @@ static bx_address bx_poly_return_cookie_rip = 0;
 static bx_address bx_poly_return_cookie_rsp = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
+static Bit32u bx_poly_aarch64_nzcv = 0;
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
 
@@ -88,6 +89,7 @@ struct bx_poly_reg_state_t {
   Bit32u current_mode;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
+  Bit32u aarch64_nzcv;
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
 };
@@ -242,6 +244,91 @@ static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u 
   }
 }
 
+static bool bx_poly_aarch64_shifted_reg_width(Bit64u value, Bit32u shift_type,
+  Bit32u shift_amount, unsigned bits, Bit64u *result)
+{
+  Bit64u mask = bits == 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
+  value &= mask;
+  if (bits == 32 && shift_amount > 31)
+    return false;
+
+  switch (shift_type) {
+  case 0:
+    *result = (value << shift_amount) & mask;
+    return true;
+  case 1:
+    *result = value >> shift_amount;
+    return true;
+  case 2:
+    if (bits == 32)
+      *result = (Bit32u) ((Bit32s) (Bit32u) value >> shift_amount);
+    else
+      *result = (Bit64u) ((Bit64s) value >> shift_amount);
+    *result &= mask;
+    return true;
+  default:
+    return false;
+  }
+}
+
+static void bx_poly_aarch64_set_nzcv(Bit64u result, bool carry, bool overflow, unsigned bits)
+{
+  Bit64u sign_bit = BX_CONST64(1) << (bits - 1);
+  Bit64u mask = bits == 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
+  result &= mask;
+  bx_poly_aarch64_nzcv = 0;
+  if (result & sign_bit)
+    bx_poly_aarch64_nzcv |= 0x8;
+  if (result == 0)
+    bx_poly_aarch64_nzcv |= 0x4;
+  if (carry)
+    bx_poly_aarch64_nzcv |= 0x2;
+  if (overflow)
+    bx_poly_aarch64_nzcv |= 0x1;
+}
+
+static Bit64u bx_poly_aarch64_addsub_flags(Bit64u left, Bit64u right, bool subtract, unsigned bits)
+{
+  Bit64u mask = bits == 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
+  Bit64u sign_bit = BX_CONST64(1) << (bits - 1);
+  left &= mask;
+  right &= mask;
+  Bit64u result = subtract ? (left - right) & mask : (left + right) & mask;
+  bool carry = subtract ? left >= right :
+    (bits == 64 ? result < left : ((left + right) >> bits) != 0);
+  bool overflow = subtract ?
+    (((left ^ right) & (left ^ result) & sign_bit) != 0) :
+    (((~(left ^ right)) & (left ^ result) & sign_bit) != 0);
+  bx_poly_aarch64_set_nzcv(result, carry, overflow, bits);
+  return result;
+}
+
+static bool bx_poly_aarch64_condition_holds(Bit32u cond)
+{
+  bool n = (bx_poly_aarch64_nzcv & 0x8) != 0;
+  bool z = (bx_poly_aarch64_nzcv & 0x4) != 0;
+  bool c = (bx_poly_aarch64_nzcv & 0x2) != 0;
+  bool v = (bx_poly_aarch64_nzcv & 0x1) != 0;
+
+  switch (cond & 0xf) {
+  case 0x0: return z;
+  case 0x1: return !z;
+  case 0x2: return c;
+  case 0x3: return !c;
+  case 0x4: return n;
+  case 0x5: return !n;
+  case 0x6: return v;
+  case 0x7: return !v;
+  case 0x8: return c && !z;
+  case 0x9: return !c || z;
+  case 0xa: return n == v;
+  case 0xb: return n != v;
+  case 0xc: return !z && n == v;
+  case 0xd: return z || n != v;
+  default: return true;
+  }
+}
+
 static const char *bx_poly_aarch64_barrier_name(Bit32u insn)
 {
   if ((insn & 0xfffff0ff) == 0xd503309f)
@@ -268,6 +355,7 @@ static void bx_poly_reset_aarch64_regs()
     bx_poly_aarch64_x[n] = 0;
     bx_poly_aarch64_x_valid[n] = false;
   }
+  bx_poly_aarch64_nzcv = 0;
 }
 
 static void bx_poly_reset_riscv_regs()
@@ -326,6 +414,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3, bx_address fsbas
   bx_poly_reg_states[victim].fsbase = fsbase;
   bx_poly_reg_states[victim].age = bx_poly_reg_state_age++;
   bx_poly_reg_states[victim].current_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].aarch64_nzcv = 0;
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[victim].aarch64_x[n] = 0;
     bx_poly_reg_states[victim].aarch64_x_valid[n] = false;
@@ -340,6 +429,7 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase)
   unsigned slot = bx_poly_find_or_alloc_reg_state(cr3, fsbase);
   bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
   bx_poly_reg_states[slot].current_mode = bx_poly_current_mode;
+  bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[slot].aarch64_x[n] = bx_poly_aarch64_x[n];
     bx_poly_reg_states[slot].aarch64_x_valid[n] = bx_poly_aarch64_x_valid[n];
@@ -353,6 +443,7 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase)
   unsigned slot = bx_poly_find_or_alloc_reg_state(cr3, fsbase);
   bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
   bx_poly_current_mode = bx_poly_reg_states[slot].current_mode;
+  bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_aarch64_x[n] = bx_poly_reg_states[slot].aarch64_x[n];
     bx_poly_aarch64_x_valid[n] = bx_poly_reg_states[slot].aarch64_x_valid[n];
@@ -788,6 +879,33 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x7f000000) == 0x31000000 ||
+      (insn & 0x7f000000) == 0x71000000) {
+    bool sf = (insn & 0x80000000) != 0;
+    bool subtract = (insn & 0x40000000) != 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit64u base = 0;
+    Bit64u imm = (insn >> 10) & 0xfff;
+    unsigned bits = sf ? 64 : 32;
+    if (insn & 0x00400000)
+      imm <<= 12;
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base)) {
+      return false;
+    }
+
+    Bit64u result = bx_poly_aarch64_addsub_flags(base, imm, subtract, bits);
+    if (rd != 31 && !write_poly_aarch64_reg(rd, sf ? result : (Bit32u) result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %ss %s%u,%s%u,#%llu nzcv=%x result=%llu",
+      subtract ? "sub" : "add", sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+      (unsigned long long) imm, bx_poly_aarch64_nzcv, (unsigned long long) result));
+    return true;
+  }
+
   if ((insn & 0xff000000) == 0x91000000 || (insn & 0xff000000) == 0xd1000000) {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
@@ -808,6 +926,38 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,x%u,#%llu result=%llu", (insn & 0x40000000) ? "sub" : "add", rd, rn, (unsigned long long) imm, (unsigned long long) result));
     return true;
+  }
+
+  {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u shift_type = (insn >> 22) & 0x3;
+    Bit32u shift_amount = (insn >> 10) & 0x3f;
+    bool sf = (insn & 0x80000000) != 0;
+    bool subtract = (insn & 0x40000000) != 0;
+    Bit64u left = 0;
+    Bit64u right = 0;
+    unsigned bits = sf ? 64 : 32;
+
+    if ((insn & 0x7f200000) == 0x2b000000 ||
+        (insn & 0x7f200000) == 0x6b000000) {
+      if (shift_type == 3)
+        return false;
+      if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
+        return false;
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
+        return false;
+      Bit64u result = bx_poly_aarch64_addsub_flags(left, right, subtract, bits);
+      if (rd != 31 && !write_poly_aarch64_reg(rd, sf ? result : (Bit32u) result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %ss %s%u,%s%u,%s%u,shift=%u,#%u nzcv=%x result=%llu",
+        subtract ? "sub" : "add", sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+        sf ? "x" : "w", rm, shift_type, shift_amount, bx_poly_aarch64_nzcv,
+        (unsigned long long) result));
+      return true;
+    }
   }
 
   {
@@ -886,6 +1036,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
     RIP = next_rip;
     BX_INFO(("poly_raw: aarch64 brk #0x%x escape to x86", BX_POLY_AARCH64_BRK_X86_ESCAPE));
+    return true;
+  }
+
+  if ((insn & 0xff000010) == 0x54000000) {
+    Bit32u cond = insn & 0xf;
+    Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x7ffff, 19) << 2;
+    bool taken = bx_poly_aarch64_condition_holds(cond);
+    RIP = taken ? (bx_address) ((Bit64s) pc + guest_offset) : next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 b.cond cond=%u %s offset=%lld nzcv=%x",
+      cond, taken ? "taken" : "not-taken", (long long) guest_offset, bx_poly_aarch64_nzcv));
     return true;
   }
 
