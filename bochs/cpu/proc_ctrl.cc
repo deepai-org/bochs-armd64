@@ -70,6 +70,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE = (1U << 8);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_TSO = (1U << 9);
 static const Bit32u BX_POLY_CPUID_FEATURE_THREAD_BANKS = (1U << 10);
 static const Bit32u BX_POLY_CPUID_FEATURE_COMPAT_TRAPS = (1U << 11);
+static const Bit32u BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES = (1U << 12);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -6264,6 +6265,57 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
 
   BX_INFO(("poly_ud: bytes=%02x %02x %02x prev=%02x prev2=%02x", opcode0, opcode1, opcode2, opcode_m1, opcode_m2));
 
+  if (opcode0 == 0x0f && opcode1 == 0x24) {
+    Bit8u op = opcode2;
+    Bit8u magic0 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 3);
+    Bit8u magic1 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 4);
+    Bit8u magic2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 5);
+    Bit8u magic3 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 6);
+    Bit8u magic4 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 7);
+    if (magic0 == 'P' && magic1 == 'O' && magic2 == 'L' &&
+        magic3 == 'Y' && magic4 == '!') {
+      bx_address next_rip = PREV_RIP + 8;
+      if (op == 0x00 || op == 0x01 || op == 0x02) {
+        if (op == 0x00) {
+          bx_poly_current_mode = BX_POLY_MODE_X86;
+          bx_poly_clear_cross_return_stack();
+        }
+        else if (op == 0x01) {
+          bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+        }
+        else {
+          bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+        }
+        bx_poly_mode_switch_count++;
+        if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
+          bx_poly_reset_aarch64_regs();
+        if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
+          bx_poly_reset_riscv_regs();
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_stack_key(RSP));
+        bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_stack_key(RSP));
+        BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: x86 poly opcode op=0x%02x mode switch to %u",
+          op, bx_poly_current_mode));
+        return true;
+      }
+      if (op == 0x10)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false);
+      if (op == 0x11)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) R10, (bx_address) R11, false);
+      if (op == 0x12)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, true);
+      if (op == 0x13)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) R10, (bx_address) R11, true);
+    }
+  }
+
   Bit8u window[6];
   for (unsigned n = 0; n < 6; n++)
     window[n] = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + (Bit64u)n - 3);
@@ -6515,7 +6567,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE |
           BX_POLY_CPUID_FEATURE_X86_TSO |
           BX_POLY_CPUID_FEATURE_THREAD_BANKS |
-          BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
+          BX_POLY_CPUID_FEATURE_COMPAT_TRAPS |
+          BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
