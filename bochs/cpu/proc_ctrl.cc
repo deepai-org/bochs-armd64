@@ -1467,6 +1467,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits ^= 0x80000000;
     }
+    else if ((insn & 0xfffffc00) == 0x1e20c000) {
+      op_name = "fabs.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &result32_bits))
+        return false;
+      result32_bits &= 0x7fffffff;
+    }
     else if ((insn & 0xfffffc00) == 0x1e204000) {
       op_name = "fmov.s";
       fp32_op = true;
@@ -1513,6 +1520,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
         return false;
       result_bits ^= BX_CONST64(0x8000000000000000);
+    }
+    else if ((insn & 0xfffffc00) == 0x1e60c000) {
+      op_name = "fabs.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &result_bits))
+        return false;
+      result_bits &= BX_CONST64(0x7fffffffffffffff);
     }
     else if ((insn & 0xfffffc00) == 0x1e604000) {
       op_name = "fmov.d";
