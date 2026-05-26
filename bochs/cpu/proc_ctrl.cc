@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 25;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 27;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -117,7 +117,9 @@ enum {
   BX_POLY_IMPORT_FUNC_STRSTR = 21,
   BX_POLY_IMPORT_FUNC_STRCPY = 22,
   BX_POLY_IMPORT_FUNC_STRNCPY = 23,
-  BX_POLY_IMPORT_FUNC_STRNLEN = 24
+  BX_POLY_IMPORT_FUNC_STRNLEN = 24,
+  BX_POLY_IMPORT_FUNC_STRCAT = 25,
+  BX_POLY_IMPORT_FUNC_STRNCAT = 26
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1881,7 +1883,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMMOVE ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCPY))
+         import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
+         import_id == BX_POLY_IMPORT_FUNC_STRNCAT))
       mapped = read_poly_aarch64_reg(2, &arg2);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
@@ -1896,7 +1899,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMMOVE ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCPY))
+         import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
+         import_id == BX_POLY_IMPORT_FUNC_STRNCAT))
       mapped = read_poly_riscv_reg(12, &arg2);
   }
 
@@ -2101,6 +2105,39 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     }
     result = arg0;
     op_name = "strncpy";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRCAT) {
+    Bit64u dest_len = 0;
+    while (dest_len < 4096 &&
+           read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + dest_len)) != 0)
+      dest_len++;
+    for (Bit64u n = 0; dest_len + n < 4096; n++) {
+      Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + dest_len + n), value);
+      if (value == 0)
+        break;
+    }
+    result = arg0;
+    op_name = "strcat";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRNCAT) {
+    Bit64u dest_len = 0;
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
+    while (dest_len < 4096 &&
+           read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + dest_len)) != 0)
+      dest_len++;
+    Bit64u copied = 0;
+    while (copied < count && dest_len + copied < 4095) {
+      Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + copied));
+      if (value == 0)
+        break;
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + dest_len + copied), value);
+      copied++;
+    }
+    if (dest_len + copied < 4096)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + dest_len + copied), 0);
+    result = arg0;
+    op_name = "strncat";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_X86_ADD) {
     if (R12 == 0 || !bx_poly_return_cookie_valid ||
