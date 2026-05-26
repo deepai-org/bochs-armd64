@@ -76,7 +76,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 12;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 14;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -92,7 +92,9 @@ enum {
   BX_POLY_IMPORT_FUNC_STRLEN = 8,
   BX_POLY_IMPORT_FUNC_MEMCPY = 9,
   BX_POLY_IMPORT_FUNC_MEMSET = 10,
-  BX_POLY_IMPORT_FUNC_MEMCMP = 11
+  BX_POLY_IMPORT_FUNC_MEMCMP = 11,
+  BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC = 12,
+  BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR = 13
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -136,6 +138,7 @@ static bx_address bx_poly_import_x86_return_rsp = 0;
 static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
+static bx_address bx_poly_foreign_tls_base = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_aarch64_fp[32];
@@ -172,6 +175,7 @@ struct bx_poly_reg_state_t {
   bool interrupted_raw_valid;
   Bit32u interrupted_raw_mode;
   bx_address interrupted_raw_rip;
+  bx_address foreign_tls_base;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -855,6 +859,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_valid = false;
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
+  bx_poly_reg_states[victim].foreign_tls_base = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   bx_poly_reg_states[victim].aarch64_reservation_valid = false;
   bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
@@ -898,6 +903,7 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_valid = bx_poly_interrupted_raw_valid;
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
+  bx_poly_reg_states[slot].foreign_tls_base = bx_poly_foreign_tls_base;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
   bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
@@ -939,6 +945,7 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_interrupted_raw_rip = bx_poly_reg_states[slot].interrupted_raw_rip;
   if (bx_poly_interrupted_raw_valid)
     bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_foreign_tls_base = bx_poly_reg_states[slot].foreign_tls_base;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
   bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
@@ -1315,6 +1322,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_poly_return_cookie_rsp = original_rsp;
   bx_poly_return_cookie_sret = sret_call;
   bx_poly_return_cookie_sret_ptr = sret_ptr;
+  bx_poly_foreign_tls_base = (bx_address) R13;
   RSP = foreign_stack_rsp;
 
   bool mapped = false;
@@ -1624,6 +1632,47 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     return false;
 
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
+      import_id == BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC) {
+    Bit64u descriptor_addr = 0;
+    if (!read_poly_aarch64_reg(0, &descriptor_addr))
+      return false;
+
+    Bit64u tls_offset = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) (descriptor_addr + 8));
+    if (!write_poly_aarch64_reg(0, tls_offset))
+      return false;
+
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import aarch64 tlsdesc descriptor=%llx offset=%llu tls_base=%llx return=%llx",
+      (unsigned long long) descriptor_addr, (unsigned long long) tls_offset,
+      (unsigned long long) bx_poly_foreign_tls_base,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (mode == BX_POLY_MODE_RAW_RISCV &&
+      import_id == BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR) {
+    Bit64u descriptor_addr = 0;
+    if (!read_poly_riscv_reg(10, &descriptor_addr))
+      return false;
+
+    Bit64u tls_offset = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) (descriptor_addr + 8));
+    Bit64u result = bx_poly_foreign_tls_base + tls_offset;
+    if (!write_poly_riscv_reg(10, result))
+      return false;
+
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import riscv __tls_get_addr descriptor=%llx offset=%llu tls_base=%llx result=%llx return=%llx",
+      (unsigned long long) descriptor_addr, (unsigned long long) tls_offset,
+      (unsigned long long) bx_poly_foreign_tls_base,
+      (unsigned long long) result, (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
       import_id >= BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL &&
       import_id <= BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL) {
     Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
@@ -1854,6 +1903,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_poly_aarch64_reservation_size = 0;
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 clrex"));
+    return true;
+  }
+
+  if ((insn & 0xffffffe0) == 0xd53bd040) {
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, bx_poly_foreign_tls_base))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,tpidr_el0 value=%llx",
+      rd, (unsigned long long) bx_poly_foreign_tls_base));
     return true;
   }
 
