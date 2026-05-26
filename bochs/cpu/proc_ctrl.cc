@@ -118,6 +118,9 @@ static Bit32u bx_poly_aarch64_nzcv = 0;
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
 static Bit64u bx_poly_riscv_fp[32];
+static bool bx_poly_riscv_reservation_valid = false;
+static bx_address bx_poly_riscv_reservation_addr = 0;
+static Bit32u bx_poly_riscv_reservation_size = 0;
 
 struct bx_poly_reg_state_t {
   bool valid;
@@ -146,6 +149,9 @@ struct bx_poly_reg_state_t {
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
   Bit64u riscv_fp[32];
+  bool riscv_reservation_valid;
+  bx_address riscv_reservation_addr;
+  Bit32u riscv_reservation_size;
 };
 
 static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
@@ -792,6 +798,9 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
+  bx_poly_reg_states[victim].riscv_reservation_valid = false;
+  bx_poly_reg_states[victim].riscv_reservation_addr = 0;
+  bx_poly_reg_states[victim].riscv_reservation_size = 0;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
     bx_poly_reg_states[victim].cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
     bx_poly_reg_states[victim].cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
@@ -827,6 +836,9 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
+  bx_poly_reg_states[slot].riscv_reservation_valid = bx_poly_riscv_reservation_valid;
+  bx_poly_reg_states[slot].riscv_reservation_addr = bx_poly_riscv_reservation_addr;
+  bx_poly_reg_states[slot].riscv_reservation_size = bx_poly_riscv_reservation_size;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
     bx_poly_reg_states[slot].cross_return_stack[n] = bx_poly_cross_return_stack[n];
   for (unsigned n = 0; n < 32; n++) {
@@ -860,6 +872,9 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   if (bx_poly_interrupted_raw_valid)
     bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
+  bx_poly_riscv_reservation_valid = bx_poly_reg_states[slot].riscv_reservation_valid;
+  bx_poly_riscv_reservation_addr = bx_poly_reg_states[slot].riscv_reservation_addr;
+  bx_poly_riscv_reservation_size = bx_poly_reg_states[slot].riscv_reservation_size;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
     bx_poly_cross_return_stack[n] = bx_poly_reg_states[slot].cross_return_stack[n];
   for (unsigned n = 0; n < 32; n++) {
@@ -3726,6 +3741,185 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
       BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip);
+  }
+
+  if ((insn & 0x0000007f) == 0x0000002f) {
+    Bit32u rd = (insn >> 7) & 0x1f;
+    Bit32u funct3 = (insn >> 12) & 0x7;
+    Bit32u rs1 = (insn >> 15) & 0x1f;
+    Bit32u rs2 = (insn >> 20) & 0x1f;
+    Bit32u funct5 = (insn >> 27) & 0x1f;
+    bool is_word = funct3 == 0x2;
+    bool is_dword = funct3 == 0x3;
+    Bit64u base = 0;
+    Bit64u right = 0;
+    Bit64u old_value = 0;
+    Bit64u new_value = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
+    if (!is_word && !is_dword)
+      return false;
+    if (!read_poly_riscv_reg(rs1, &base))
+      return false;
+    bx_address addr = (bx_address) base;
+    Bit32u size = is_word ? 4 : 8;
+
+    if (funct5 == 0x02) {
+      if (rs2 != 0)
+        return false;
+      if (is_word) {
+        Bit32u loaded = read_virtual_dword(BX_SEG_REG_DS, addr);
+        result = (Bit64u) bx_poly_sign_extend(loaded, 32);
+        op_name = "lr.w";
+      }
+      else {
+        result = read_virtual_qword(BX_SEG_REG_DS, addr);
+        op_name = "lr.d";
+      }
+      bx_poly_riscv_reservation_valid = true;
+      bx_poly_riscv_reservation_addr = addr;
+      bx_poly_riscv_reservation_size = size;
+      if (!write_poly_riscv_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,(x%u) addr=%llx value=%llu",
+        op_name, rd, rs1, (unsigned long long) addr,
+        (unsigned long long) result));
+      return true;
+    }
+
+    if (!read_poly_riscv_reg(rs2, &right))
+      return false;
+
+    if (funct5 == 0x03) {
+      bool success = bx_poly_riscv_reservation_valid &&
+        bx_poly_riscv_reservation_addr == addr &&
+        bx_poly_riscv_reservation_size == size;
+      if (success) {
+        if (is_word)
+          write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) right);
+        else
+          write_virtual_qword(BX_SEG_REG_DS, addr, right);
+      }
+      bx_poly_riscv_reservation_valid = false;
+      bx_poly_riscv_reservation_addr = 0;
+      bx_poly_riscv_reservation_size = 0;
+      if (!write_poly_riscv_reg(rd, success ? 0 : 1))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,x%u,(x%u) addr=%llx %s",
+        is_word ? "sc.w" : "sc.d", rd, rs2, rs1,
+        (unsigned long long) addr, success ? "success" : "fail"));
+      return true;
+    }
+
+    if (is_word) {
+      Bit32u old32 = read_virtual_dword(BX_SEG_REG_DS, addr);
+      Bit32u right32 = (Bit32u) right;
+      Bit32u new32 = 0;
+      old_value = old32;
+      switch (funct5) {
+        case 0x00:
+          op_name = "amoadd.w";
+          new32 = old32 + right32;
+          break;
+        case 0x01:
+          op_name = "amoswap.w";
+          new32 = right32;
+          break;
+        case 0x04:
+          op_name = "amoxor.w";
+          new32 = old32 ^ right32;
+          break;
+        case 0x08:
+          op_name = "amoor.w";
+          new32 = old32 | right32;
+          break;
+        case 0x0c:
+          op_name = "amoand.w";
+          new32 = old32 & right32;
+          break;
+        case 0x10:
+          op_name = "amomin.w";
+          new32 = (Bit32s) old32 < (Bit32s) right32 ? old32 : right32;
+          break;
+        case 0x14:
+          op_name = "amomax.w";
+          new32 = (Bit32s) old32 > (Bit32s) right32 ? old32 : right32;
+          break;
+        case 0x18:
+          op_name = "amominu.w";
+          new32 = old32 < right32 ? old32 : right32;
+          break;
+        case 0x1c:
+          op_name = "amomaxu.w";
+          new32 = old32 > right32 ? old32 : right32;
+          break;
+        default:
+          return false;
+      }
+      write_virtual_dword(BX_SEG_REG_DS, addr, new32);
+      result = (Bit64u) bx_poly_sign_extend(old32, 32);
+      new_value = new32;
+    }
+    else {
+      old_value = read_virtual_qword(BX_SEG_REG_DS, addr);
+      switch (funct5) {
+        case 0x00:
+          op_name = "amoadd.d";
+          new_value = old_value + right;
+          break;
+        case 0x01:
+          op_name = "amoswap.d";
+          new_value = right;
+          break;
+        case 0x04:
+          op_name = "amoxor.d";
+          new_value = old_value ^ right;
+          break;
+        case 0x08:
+          op_name = "amoor.d";
+          new_value = old_value | right;
+          break;
+        case 0x0c:
+          op_name = "amoand.d";
+          new_value = old_value & right;
+          break;
+        case 0x10:
+          op_name = "amomin.d";
+          new_value = (Bit64s) old_value < (Bit64s) right ? old_value : right;
+          break;
+        case 0x14:
+          op_name = "amomax.d";
+          new_value = (Bit64s) old_value > (Bit64s) right ? old_value : right;
+          break;
+        case 0x18:
+          op_name = "amominu.d";
+          new_value = old_value < right ? old_value : right;
+          break;
+        case 0x1c:
+          op_name = "amomaxu.d";
+          new_value = old_value > right ? old_value : right;
+          break;
+        default:
+          return false;
+      }
+      write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
+      result = old_value;
+    }
+
+    if (bx_poly_riscv_reservation_valid &&
+        bx_poly_riscv_reservation_addr == addr &&
+        bx_poly_riscv_reservation_size == size)
+      bx_poly_riscv_reservation_valid = false;
+    if (!write_poly_riscv_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated riscv %s x%u,x%u,(x%u) addr=%llx old=%llu new=%llu",
+      op_name, rd, rs2, rs1, (unsigned long long) addr,
+      (unsigned long long) result, (unsigned long long) new_value));
+    return true;
   }
 
   {
