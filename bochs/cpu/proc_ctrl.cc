@@ -157,9 +157,9 @@ enum {
   BX_POLY_IMPORT_FUNC_AARCH64_LDSET1_ACQ_REL = 61,
   BX_POLY_IMPORT_FUNC_AARCH64_CAS2_ACQ_REL = 62,
   BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL = 63,
-  BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_COMPARE_EXCHANGE_16 = 64,
-  BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_LOAD_16 = 65,
-  BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_STORE_16 = 66
+  BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16 = 64,
+  BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16 = 65,
+  BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 = 66
 };
 
 enum {
@@ -1935,8 +1935,92 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   Bit32u aarch64_atomic_op = 0;
   Bit32u aarch64_atomic_size = 0;
   const char *aarch64_atomic_name = 0;
+  if (mode == BX_POLY_MODE_RAW_RISCV &&
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
+    Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
+    if (!read_poly_riscv_reg(10, &ptr) ||
+        !read_poly_riscv_reg(11, &expected_ptr) ||
+        !read_poly_riscv_reg(12, &desired_lo) ||
+        !read_poly_riscv_reg(13, &desired_hi))
+      return false;
+
+    Bit64u actual_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
+    Bit64u actual_hi = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) (ptr + 8));
+    Bit64u expected_lo = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) expected_ptr);
+    Bit64u expected_hi = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) (expected_ptr + 8));
+    bool success = actual_lo == expected_lo && actual_hi == expected_hi;
+
+    if (success) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, desired_lo);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), desired_hi);
+    }
+    else {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) expected_ptr,
+        actual_lo);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (expected_ptr + 8),
+        actual_hi);
+    }
+
+    if (!write_poly_riscv_reg(10, success ? 1 : 0))
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import riscv __atomic_compare_exchange_16 target=%llx success=%u return=%llx",
+      (unsigned long long) target_rip, success ? 1 : 0,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (mode == BX_POLY_MODE_RAW_RISCV &&
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16) {
+    Bit64u ptr = 0;
+    if (!read_poly_riscv_reg(10, &ptr))
+      return false;
+
+    Bit64u result_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
+    Bit64u result_hi = read_virtual_qword(BX_SEG_REG_DS,
+      (bx_address) (ptr + 8));
+    if (!write_poly_riscv_reg(10, result_lo) ||
+        !write_poly_riscv_reg(11, result_hi))
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import riscv __atomic_load_16 target=%llx return=%llx",
+      (unsigned long long) target_rip, (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (mode == BX_POLY_MODE_RAW_RISCV &&
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16) {
+    Bit64u ptr = 0, value_lo = 0, value_hi = 0;
+    if (!read_poly_riscv_reg(10, &ptr) ||
+        !read_poly_riscv_reg(11, &value_lo) ||
+        !read_poly_riscv_reg(12, &value_hi))
+      return false;
+
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, value_lo);
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), value_hi);
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import riscv __atomic_store_16 target=%llx return=%llx",
+      (unsigned long long) target_rip, (unsigned long long) return_rip));
+    return true;
+  }
+
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_COMPARE_EXCHANGE_16) {
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
     Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
     if (!read_poly_aarch64_reg(0, &ptr) ||
         !read_poly_aarch64_reg(1, &expected_ptr) ||
@@ -1978,7 +2062,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   }
 
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_LOAD_16) {
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16) {
     Bit64u ptr = 0;
     if (!read_poly_aarch64_reg(0, &ptr))
       return false;
@@ -2000,7 +2084,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   }
 
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_AARCH64_ATOMIC_STORE_16) {
+      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16) {
     Bit64u ptr = 0, value_lo = 0, value_hi = 0;
     if (!read_poly_aarch64_reg(0, &ptr) ||
         !read_poly_aarch64_reg(2, &value_lo) ||
