@@ -272,6 +272,11 @@ static Bit64s bx_poly_sign_extend(Bit32u value, unsigned bits)
   return extended;
 }
 
+static Bit64u bx_poly_low_mask(unsigned bits)
+{
+  return bits >= 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
+}
+
 static Bit64s bx_poly_marker_offset(Bit64s guest_offset)
 {
   return (guest_offset / 4) * 8;
@@ -1934,6 +1939,51 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
       (unsigned long long) imm, (unsigned long long) result,
       bx_poly_aarch64_nzcv));
+    return true;
+  }
+
+  if ((insn & 0x7f800000) == 0x53000000) {
+    bool sf = (insn & 0x80000000) != 0;
+    Bit32u n = (insn >> 22) & 0x1;
+    Bit32u immr = (insn >> 16) & 0x3f;
+    Bit32u imms = (insn >> 10) & 0x3f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rd = insn & 0x1f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u value = 0;
+    Bit64u result = 0;
+    const char *op_name = "ubfm";
+
+    if ((sf && n == 0) || (!sf && (n != 0 || immr >= 32 || imms >= 32)))
+      return false;
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    value &= bx_poly_low_mask(bits);
+
+    if (immr <= imms) {
+      result = (value >> immr) & bx_poly_low_mask(imms - immr + 1);
+      if (immr == 0 && imms == 7)
+        op_name = "uxtb";
+      else if (immr == 0 && imms == 15)
+        op_name = "uxth";
+      else if (imms == bits - 1)
+        op_name = "lsr";
+      else
+        op_name = "ubfx";
+    }
+    else {
+      unsigned shift = bits - immr;
+      result = (value & bx_poly_low_mask(imms + 1)) << shift;
+      op_name = "lsl";
+    }
+    result &= bx_poly_low_mask(bits);
+
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,immr=%u,imms=%u result=%llu",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn, immr, imms,
+      (unsigned long long) result));
     return true;
   }
 
