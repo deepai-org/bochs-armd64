@@ -1525,6 +1525,30 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
     }
+    else if ((insn & 0xfffffc00) == 0x5e21d800 ||
+             (insn & 0xfffffc00) == 0x7e21d800 ||
+             (insn & 0xfffffc00) == 0x5e61d800 ||
+             (insn & 0xfffffc00) == 0x7e61d800) {
+      Bit32u op = insn & 0xfffffc00;
+      bool is_unsigned = (op & 0x20000000) != 0;
+      fp32_op = (op & 0x00400000) == 0;
+      op_name = is_unsigned ? "ucvtf" : "scvtf";
+
+      if (fp32_op) {
+        if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
+          return false;
+        result32_bits = is_unsigned ?
+          bx_poly_fp32_to_bits((float) (Bit32u) left32_bits) :
+          bx_poly_fp32_to_bits((float) (Bit32s) left32_bits);
+      }
+      else {
+        if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
+          return false;
+        result_bits = is_unsigned ?
+          bx_poly_fp64_to_bits((double) left_bits) :
+          bx_poly_fp64_to_bits((double) (Bit64s) left_bits);
+      }
+    }
 
     if (op_name != 0) {
       if (fp32_op) {
@@ -1537,6 +1561,46 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       BX_DEBUG(("poly_raw: emulated aarch64 %s v%u,v%u,v%u", op_name, rd, rn, rm));
       return true;
     }
+  }
+
+  if ((insn & 0xfffffc00) == 0x1e220000 ||
+      (insn & 0xfffffc00) == 0x1e230000 ||
+      (insn & 0xfffffc00) == 0x1e620000 ||
+      (insn & 0xfffffc00) == 0x1e630000 ||
+      (insn & 0xfffffc00) == 0x9e220000 ||
+      (insn & 0xfffffc00) == 0x9e230000 ||
+      (insn & 0xfffffc00) == 0x9e620000 ||
+      (insn & 0xfffffc00) == 0x9e630000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u op = insn & 0xfffffc00;
+    Bit64u value = 0;
+    bool input_64 = (op & 0x80000000) != 0;
+    bool output_double = (op & 0x00400000) != 0;
+    bool is_unsigned = (op & 0x00010000) != 0;
+
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    if (output_double) {
+      Bit64u result_bits = is_unsigned ?
+        bx_poly_fp64_to_bits(input_64 ? (double) value : (double) (Bit32u) value) :
+        bx_poly_fp64_to_bits(input_64 ? (double) (Bit64s) value : (double) (Bit32s) (Bit32u) value);
+      if (!write_poly_aarch64_fp64_reg(rd, result_bits))
+        return false;
+    }
+    else {
+      Bit32u result_bits = is_unsigned ?
+        bx_poly_fp32_to_bits(input_64 ? (float) value : (float) (Bit32u) value) :
+        bx_poly_fp32_to_bits(input_64 ? (float) (Bit64s) value : (float) (Bit32s) (Bit32u) value);
+      if (!write_poly_aarch64_fp32_reg(rd, result_bits))
+        return false;
+    }
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %c%u,%c%u value=%llu",
+      is_unsigned ? "ucvtf" : "scvtf",
+      output_double ? 'd' : 's', rd, input_64 ? 'x' : 'w', rn,
+      (unsigned long long) value));
+    return true;
   }
 
   if ((insn & 0xffe0fc1f) == 0x1e202000 ||
@@ -2560,6 +2624,30 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
+    }
+    else if ((funct7 == 0x68 || funct7 == 0x69) && rs2 <= 3) {
+      Bit64u value = 0;
+      bool source_64 = rs2 >= 2;
+      bool is_unsigned = (rs2 & 1) != 0;
+      fp32_op = funct7 == 0x68;
+
+      if (!read_poly_riscv_reg(rs1, &value))
+        return false;
+      if (fp32_op) {
+        result32_bits = is_unsigned ?
+          bx_poly_fp32_to_bits(source_64 ? (float) value : (float) (Bit32u) value) :
+          bx_poly_fp32_to_bits(source_64 ? (float) (Bit64s) value : (float) (Bit32s) (Bit32u) value);
+      }
+      else {
+        result_bits = is_unsigned ?
+          bx_poly_fp64_to_bits(source_64 ? (double) value : (double) (Bit32u) value) :
+          bx_poly_fp64_to_bits(source_64 ? (double) (Bit64s) value : (double) (Bit32s) (Bit32u) value);
+      }
+      op_name = fp32_op ?
+        (source_64 ? (is_unsigned ? "fcvt.s.lu" : "fcvt.s.l") :
+          (is_unsigned ? "fcvt.s.wu" : "fcvt.s.w")) :
+        (source_64 ? (is_unsigned ? "fcvt.d.lu" : "fcvt.d.l") :
+          (is_unsigned ? "fcvt.d.wu" : "fcvt.d.w"));
     }
     else if (funct7 == 0x78 || funct7 == 0x79) {
       Bit64u value = 0;
