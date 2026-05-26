@@ -8786,6 +8786,14 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 291 && arg4 != 0) {
+    for (unsigned n = 0; n < sizeof(stat_magic); n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg4 + n), stat_magic[n]);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s statx dirfd=%lld path=%llx flags=%llu mask=%llu statx=%llx", arch_name, (long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4));
+    return true;
+  }
+
   if (syscall_number == 56) {
     char path[16];
     unsigned n;
