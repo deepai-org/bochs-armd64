@@ -1505,6 +1505,7 @@ public: // for now...
   BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address);
   BX_SMF bool return_poly_abi_call(Bit32u, bx_address);
   BX_SMF bool handle_poly_import_call(Bit32u, bx_address, bx_address);
+  BX_SMF bool return_poly_import_x86_call(void);
   BX_SMF bool poly_raw_mode_active(void);
   BX_SMF void execute_poly_raw_step(void);
   BX_SMF bool execute_poly_raw_aarch64(Bit32u, bx_address);
