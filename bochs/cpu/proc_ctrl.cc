@@ -1344,6 +1344,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     bx_poly_reset_riscv_regs();
     if (sret_call) {
       mapped =
+        write_poly_riscv_reg(4, bx_poly_foreign_tls_base) &&
         write_poly_riscv_reg(10, sret_ptr) &&
         write_poly_riscv_reg(11, args[0]) &&
         write_poly_riscv_reg(12, args[1]) &&
@@ -1356,6 +1357,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     }
     else {
       mapped =
+        write_poly_riscv_reg(4, bx_poly_foreign_tls_base) &&
         write_poly_riscv_reg(10, args[0]) &&
         write_poly_riscv_reg(11, args[1]) &&
         write_poly_riscv_reg(12, args[2]) &&
