@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 103;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 106;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -195,7 +195,10 @@ enum {
   BX_POLY_IMPORT_FUNC_TRUNCTFSF2 = 99,
   BX_POLY_IMPORT_FUNC_TRUNCTFDF2 = 100,
   BX_POLY_IMPORT_FUNC_NETF2 = 101,
-  BX_POLY_IMPORT_FUNC_UNORDTF2 = 102
+  BX_POLY_IMPORT_FUNC_UNORDTF2 = 102,
+  BX_POLY_IMPORT_FUNC_FLOATUNSITF = 103,
+  BX_POLY_IMPORT_FUNC_FIXTFSI = 104,
+  BX_POLY_IMPORT_FUNC_FIXUNSTFSI = 105
 };
 
 enum {
@@ -2468,7 +2471,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
 
   if (import_id == BX_POLY_IMPORT_FUNC_FLOATUNDITF ||
       import_id == BX_POLY_IMPORT_FUNC_FLOATDITF ||
-      import_id == BX_POLY_IMPORT_FUNC_FLOATSITF) {
+      import_id == BX_POLY_IMPORT_FUNC_FLOATSITF ||
+      import_id == BX_POLY_IMPORT_FUNC_FLOATUNSITF) {
     Bit64u source = 0;
     bool mapped = false;
     if (mode == BX_POLY_MODE_RAW_AARCH64)
@@ -2484,6 +2488,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       result = (long double) source;
     else if (import_id == BX_POLY_IMPORT_FUNC_FLOATDITF)
       result = (long double) (Bit64s) source;
+    else if (import_id == BX_POLY_IMPORT_FUNC_FLOATUNSITF)
+      result = (long double) (Bit32u) source;
     else
       result = (long double) (Bit32s) source;
     bx_poly_fp128_to_bits(result, &result_lo, &result_hi);
@@ -2506,7 +2512,9 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   }
 
   if (import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFDI ||
-      import_id == BX_POLY_IMPORT_FUNC_FIXTFDI) {
+      import_id == BX_POLY_IMPORT_FUNC_FIXTFDI ||
+      import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFSI ||
+      import_id == BX_POLY_IMPORT_FUNC_FIXTFSI) {
     Bit64u source_lo = 0, source_hi = 0;
     bool mapped = false;
     if (mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -2520,9 +2528,15 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       return false;
 
     long double source = bx_poly_fp128_from_bits(source_lo, source_hi);
-    Bit64u result = import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFDI ?
-      bx_poly_fp128_to_uint64_rtz(source) :
-      bx_poly_fp128_to_int64_rtz(source);
+    Bit64u result = 0;
+    if (import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFDI)
+      result = bx_poly_fp128_to_uint64_rtz(source);
+    else if (import_id == BX_POLY_IMPORT_FUNC_FIXTFDI)
+      result = bx_poly_fp128_to_int64_rtz(source);
+    else if (import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFSI)
+      result = (Bit64u) (Bit32u) bx_poly_fp128_to_uint64_rtz(source);
+    else
+      result = (Bit64u) (Bit64s) (Bit32s) bx_poly_fp128_to_int64_rtz(source);
     if (mode == BX_POLY_MODE_RAW_AARCH64)
       mapped = write_poly_aarch64_reg(0, result);
     else
