@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 83;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 89;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -175,7 +175,13 @@ enum {
   BX_POLY_IMPORT_FUNC_CLZDI2 = 79,
   BX_POLY_IMPORT_FUNC_CTZDI2 = 80,
   BX_POLY_IMPORT_FUNC_PARITYDI2 = 81,
-  BX_POLY_IMPORT_FUNC_POPCOUNTDI2 = 82
+  BX_POLY_IMPORT_FUNC_POPCOUNTDI2 = 82,
+  BX_POLY_IMPORT_FUNC_ADDTF3 = 83,
+  BX_POLY_IMPORT_FUNC_SUBTF3 = 84,
+  BX_POLY_IMPORT_FUNC_MULTF3 = 85,
+  BX_POLY_IMPORT_FUNC_DIVTF3 = 86,
+  BX_POLY_IMPORT_FUNC_FLOATUNDITF = 87,
+  BX_POLY_IMPORT_FUNC_FIXUNSTFDI = 88
 };
 
 enum {
@@ -369,6 +375,7 @@ static bx_address bx_poly_foreign_tls_base = 0;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_aarch64_fp[32];
+static Bit64u bx_poly_aarch64_fp_hi[32];
 static Bit32u bx_poly_aarch64_nzcv = 0;
 static bool bx_poly_aarch64_reservation_valid = false;
 static bx_address bx_poly_aarch64_reservation_addr = 0;
@@ -376,6 +383,7 @@ static Bit32u bx_poly_aarch64_reservation_size = 0;
 static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
 static Bit64u bx_poly_riscv_fp[32];
+static Bit64u bx_poly_riscv_fp_hi[32];
 static bool bx_poly_riscv_reservation_valid = false;
 static bx_address bx_poly_riscv_reservation_addr = 0;
 static Bit32u bx_poly_riscv_reservation_size = 0;
@@ -407,6 +415,7 @@ struct bx_poly_reg_state_t {
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
+  Bit64u aarch64_fp_hi[32];
   Bit32u aarch64_nzcv;
   bool aarch64_reservation_valid;
   bx_address aarch64_reservation_addr;
@@ -414,6 +423,7 @@ struct bx_poly_reg_state_t {
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
   Bit64u riscv_fp[32];
+  Bit64u riscv_fp_hi[32];
   bool riscv_reservation_valid;
   bx_address riscv_reservation_addr;
   Bit32u riscv_reservation_size;
@@ -466,6 +476,34 @@ static Bit32u bx_poly_fp32_to_bits(float value)
   return fp.bits;
 }
 
+static long double bx_poly_fp128_from_bits(Bit64u lo, Bit64u hi)
+{
+  union {
+    struct {
+      Bit64u lo;
+      Bit64u hi;
+    } bits;
+    long double value;
+  } fp;
+  fp.bits.lo = lo;
+  fp.bits.hi = hi;
+  return fp.value;
+}
+
+static void bx_poly_fp128_to_bits(long double value, Bit64u *lo, Bit64u *hi)
+{
+  union {
+    struct {
+      Bit64u lo;
+      Bit64u hi;
+    } bits;
+    long double value;
+  } fp;
+  fp.value = value;
+  *lo = fp.bits.lo;
+  *hi = fp.bits.hi;
+}
+
 static Bit64u bx_poly_aarch64_expand_fp64_imm(Bit32u imm8)
 {
   Bit64u sign = (Bit64u) (imm8 >> 7) << 63;
@@ -500,6 +538,15 @@ static Bit64u bx_poly_fp64_to_uint64_rtz(double value)
   if (!(value > 0.0))
     return 0;
   if (value >= 18446744073709551616.0)
+    return BX_CONST64(0xffffffffffffffff);
+  return (Bit64u) value;
+}
+
+static Bit64u bx_poly_fp128_to_uint64_rtz(long double value)
+{
+  if (!(value > 0.0L))
+    return 0;
+  if (value >= 18446744073709551616.0L)
     return BX_CONST64(0xffffffffffffffff);
   return (Bit64u) value;
 }
@@ -1026,6 +1073,7 @@ static void bx_poly_reset_aarch64_regs()
     bx_poly_aarch64_x[n] = 0;
     bx_poly_aarch64_x_valid[n] = false;
     bx_poly_aarch64_fp[n] = 0;
+    bx_poly_aarch64_fp_hi[n] = 0;
   }
   bx_poly_aarch64_nzcv = 0;
   bx_poly_aarch64_reservation_valid = false;
@@ -1039,6 +1087,7 @@ static void bx_poly_reset_riscv_regs()
     bx_poly_riscv_x[n] = 0;
     bx_poly_riscv_x_valid[n] = false;
     bx_poly_riscv_fp[n] = 0;
+    bx_poly_riscv_fp_hi[n] = 0;
   }
 }
 
@@ -1139,9 +1188,11 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
     bx_poly_reg_states[victim].aarch64_x[n] = 0;
     bx_poly_reg_states[victim].aarch64_x_valid[n] = false;
     bx_poly_reg_states[victim].aarch64_fp[n] = 0;
+    bx_poly_reg_states[victim].aarch64_fp_hi[n] = 0;
     bx_poly_reg_states[victim].riscv_x[n] = 0;
     bx_poly_reg_states[victim].riscv_x_valid[n] = false;
     bx_poly_reg_states[victim].riscv_fp[n] = 0;
+    bx_poly_reg_states[victim].riscv_fp_hi[n] = 0;
   }
   return victim;
 }
@@ -1181,9 +1232,11 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
     bx_poly_reg_states[slot].aarch64_x[n] = bx_poly_aarch64_x[n];
     bx_poly_reg_states[slot].aarch64_x_valid[n] = bx_poly_aarch64_x_valid[n];
     bx_poly_reg_states[slot].aarch64_fp[n] = bx_poly_aarch64_fp[n];
+    bx_poly_reg_states[slot].aarch64_fp_hi[n] = bx_poly_aarch64_fp_hi[n];
     bx_poly_reg_states[slot].riscv_x[n] = bx_poly_riscv_x[n];
     bx_poly_reg_states[slot].riscv_x_valid[n] = bx_poly_riscv_x_valid[n];
     bx_poly_reg_states[slot].riscv_fp[n] = bx_poly_riscv_fp[n];
+    bx_poly_reg_states[slot].riscv_fp_hi[n] = bx_poly_riscv_fp_hi[n];
   }
 }
 
@@ -1224,9 +1277,11 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
     bx_poly_aarch64_x[n] = bx_poly_reg_states[slot].aarch64_x[n];
     bx_poly_aarch64_x_valid[n] = bx_poly_reg_states[slot].aarch64_x_valid[n];
     bx_poly_aarch64_fp[n] = bx_poly_reg_states[slot].aarch64_fp[n];
+    bx_poly_aarch64_fp_hi[n] = bx_poly_reg_states[slot].aarch64_fp_hi[n];
     bx_poly_riscv_x[n] = bx_poly_reg_states[slot].riscv_x[n];
     bx_poly_riscv_x_valid[n] = bx_poly_reg_states[slot].riscv_x_valid[n];
     bx_poly_riscv_fp[n] = bx_poly_reg_states[slot].riscv_fp[n];
+    bx_poly_riscv_fp_hi[n] = bx_poly_reg_states[slot].riscv_fp_hi[n];
   }
   bx_poly_update_raw_owner(cr3, fsbase, stack_key);
 }
@@ -1449,6 +1504,40 @@ bool BX_CPU_C::write_poly_aarch64_fp64_reg(Bit32u reg, Bit64u value)
   return false;
 }
 
+bool BX_CPU_C::read_poly_aarch64_fp128_reg(Bit32u reg, Bit64u *lo, Bit64u *hi)
+{
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
+  if (reg < 8) {
+    *lo = BX_READ_XMM_REG_LO_QWORD(reg);
+    *hi = BX_READ_XMM_REG_HI_QWORD(reg);
+    return true;
+  }
+  if (reg < 32) {
+    *lo = bx_poly_aarch64_fp[reg];
+    *hi = bx_poly_aarch64_fp_hi[reg];
+    return true;
+  }
+  return false;
+}
+
+bool BX_CPU_C::write_poly_aarch64_fp128_reg(Bit32u reg, Bit64u lo, Bit64u hi)
+{
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
+  if (reg < 8) {
+    BX_WRITE_XMM_REG_LO_QWORD(reg, lo);
+    BX_WRITE_XMM_REG_HI_QWORD(reg, hi);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_aarch64_fp[reg] = lo;
+    bx_poly_aarch64_fp_hi[reg] = hi;
+    return true;
+  }
+  return false;
+}
+
 bool BX_CPU_C::read_poly_riscv_fp64_reg(Bit32u reg, Bit64u *value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
@@ -1474,6 +1563,42 @@ bool BX_CPU_C::write_poly_riscv_fp64_reg(Bit32u reg, Bit64u value)
   }
   if (reg < 32) {
     bx_poly_riscv_fp[reg] = value;
+    return true;
+  }
+  return false;
+}
+
+bool BX_CPU_C::read_poly_riscv_fp128_reg(Bit32u reg, Bit64u *lo, Bit64u *hi)
+{
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
+  if (reg >= 10 && reg <= 17) {
+    unsigned xmm = reg - 10;
+    *lo = BX_READ_XMM_REG_LO_QWORD(xmm);
+    *hi = BX_READ_XMM_REG_HI_QWORD(xmm);
+    return true;
+  }
+  if (reg < 32) {
+    *lo = bx_poly_riscv_fp[reg];
+    *hi = bx_poly_riscv_fp_hi[reg];
+    return true;
+  }
+  return false;
+}
+
+bool BX_CPU_C::write_poly_riscv_fp128_reg(Bit32u reg, Bit64u lo, Bit64u hi)
+{
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
+
+  if (reg >= 10 && reg <= 17) {
+    unsigned xmm = reg - 10;
+    BX_WRITE_XMM_REG_LO_QWORD(xmm, lo);
+    BX_WRITE_XMM_REG_HI_QWORD(xmm, hi);
+    return true;
+  }
+  if (reg < 32) {
+    bx_poly_riscv_fp[reg] = lo;
+    bx_poly_riscv_fp_hi[reg] = hi;
     return true;
   }
   return false;
@@ -2258,6 +2383,121 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_INFO(("poly_raw: import bit helper id=%u source=%llx result=%llu target=%llx return=%llx",
       (unsigned) import_id, (unsigned long long) source,
+      (unsigned long long) result, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_ADDTF3 ||
+      import_id == BX_POLY_IMPORT_FUNC_SUBTF3 ||
+      import_id == BX_POLY_IMPORT_FUNC_MULTF3 ||
+      import_id == BX_POLY_IMPORT_FUNC_DIVTF3) {
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp128_reg(0, &left_lo, &left_hi) &&
+        read_poly_aarch64_fp128_reg(1, &right_lo, &right_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &left_lo) &&
+        read_poly_riscv_reg(11, &left_hi) &&
+        read_poly_riscv_reg(12, &right_lo) &&
+        read_poly_riscv_reg(13, &right_hi);
+    }
+    if (!mapped)
+      return false;
+
+    long double left = bx_poly_fp128_from_bits(left_lo, left_hi);
+    long double right = bx_poly_fp128_from_bits(right_lo, right_hi);
+    long double result = 0.0L;
+    if (import_id == BX_POLY_IMPORT_FUNC_ADDTF3)
+      result = left + right;
+    else if (import_id == BX_POLY_IMPORT_FUNC_SUBTF3)
+      result = left - right;
+    else if (import_id == BX_POLY_IMPORT_FUNC_MULTF3)
+      result = left * right;
+    else
+      result = left / right;
+
+    Bit64u result_lo = 0, result_hi = 0;
+    bx_poly_fp128_to_bits(result, &result_lo, &result_hi);
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = write_poly_aarch64_fp128_reg(0, result_lo, result_hi);
+    }
+    else {
+      mapped = write_poly_riscv_reg(10, result_lo) &&
+        write_poly_riscv_reg(11, result_hi);
+    }
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import tf binary helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_FLOATUNDITF) {
+    Bit64u source = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = read_poly_aarch64_reg(0, &source);
+    else if (mode == BX_POLY_MODE_RAW_RISCV)
+      mapped = read_poly_riscv_reg(10, &source);
+    if (!mapped)
+      return false;
+
+    Bit64u result_lo = 0, result_hi = 0;
+    bx_poly_fp128_to_bits((long double) source, &result_lo, &result_hi);
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = write_poly_aarch64_fp128_reg(0, result_lo, result_hi);
+    else
+      mapped = write_poly_riscv_reg(10, result_lo) &&
+        write_poly_riscv_reg(11, result_hi);
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import uint64-to-tf helper source=%llu target=%llx return=%llx",
+      (unsigned long long) source, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFDI) {
+    Bit64u source_lo = 0, source_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp128_reg(0, &source_lo, &source_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &source_lo) &&
+        read_poly_riscv_reg(11, &source_hi);
+    }
+    if (!mapped)
+      return false;
+
+    Bit64u result = bx_poly_fp128_to_uint64_rtz(
+      bx_poly_fp128_from_bits(source_lo, source_hi));
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = write_poly_aarch64_reg(0, result);
+    else
+      mapped = write_poly_riscv_reg(10, result);
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import tf-to-uint64 helper result=%llu target=%llx return=%llx",
       (unsigned long long) result, (unsigned long long) target_rip,
       (unsigned long long) return_rip));
     return true;
@@ -4562,6 +4802,23 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16))) == 0x4ea01c00) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit64u lo = 0, hi = 0;
+
+    if (rn != rm)
+      return false;
+    if (!read_poly_aarch64_fp128_reg(rn, &lo, &hi) ||
+        !write_poly_aarch64_fp128_reg(rd, lo, hi))
+      return false;
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mov v%u.16b,v%u.16b", rd, rn));
+    return true;
+  }
+
   if ((insn & 0xffe00c00) == 0x1e200c00 ||
       (insn & 0xffe00c00) == 0x1e600c00) {
     Bit32u rd = insn & 0x1f;
@@ -5406,20 +5663,28 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rt = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u size = (insn >> 30) & 0x3;
+    Bit32u opc = (insn >> 22) & 0x3;
     Bit32u imm12 = (insn >> 10) & 0xfff;
     Bit64u base = 0;
     bx_address addr;
 
-    if (size < 2)
+    if (size < 2 && !(size == 0 && (opc == 2 || opc == 3)))
       return false;
     if (rn == 31)
       base = RSP;
     else if (!read_poly_aarch64_reg(rn, &base))
       return false;
 
-    addr = (bx_address) (base + ((Bit64u) imm12 << size));
-    if (insn & 0x00400000) {
-      if (size == 2) {
+    Bit32u scale = (size == 0 && (opc == 2 || opc == 3)) ? 4 : size;
+    addr = (bx_address) (base + ((Bit64u) imm12 << scale));
+    if (opc & 1) {
+      if (size == 0 && opc == 3) {
+        Bit64u lo = read_virtual_qword(BX_SEG_REG_DS, addr);
+        Bit64u hi = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+        if (!write_poly_aarch64_fp128_reg(rt, lo, hi))
+          return false;
+      }
+      else if (size == 2) {
         Bit32u value = read_virtual_dword(BX_SEG_REG_DS, addr);
         if (!write_poly_aarch64_fp32_reg(rt, value))
           return false;
@@ -5430,11 +5695,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           return false;
       }
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 fp ldr%u v%u,[x%u,#%u] addr=%llx", 8U << size, rt, rn, imm12 << size, (unsigned long long) addr));
+      BX_DEBUG(("poly_raw: emulated aarch64 fp ldr%u v%u,[x%u,#%u] addr=%llx",
+        size == 0 ? 128U : (8U << size), rt, rn, imm12 << scale,
+        (unsigned long long) addr));
       return true;
     }
 
-    if (size == 2) {
+    if (size == 0 && opc == 2) {
+      Bit64u lo = 0, hi = 0;
+      if (!read_poly_aarch64_fp128_reg(rt, &lo, &hi))
+        return false;
+      write_virtual_qword(BX_SEG_REG_DS, addr, lo);
+      write_virtual_qword(BX_SEG_REG_DS, addr + 8, hi);
+    }
+    else if (size == 2) {
       Bit32u value = 0;
       if (!read_poly_aarch64_fp32_reg(rt, &value))
         return false;
@@ -5447,7 +5721,9 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
     }
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 fp str%u v%u,[x%u,#%u] addr=%llx", 8U << size, rt, rn, imm12 << size, (unsigned long long) addr));
+    BX_DEBUG(("poly_raw: emulated aarch64 fp str%u v%u,[x%u,#%u] addr=%llx",
+      size == 0 ? 128U : (8U << size), rt, rn, imm12 << scale,
+      (unsigned long long) addr));
     return true;
   }
 
