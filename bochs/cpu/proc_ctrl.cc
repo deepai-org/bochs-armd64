@@ -8696,6 +8696,12 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 19) {
+    RAX = 7;
+    BX_INFO(("poly_ud: emulated %s eventfd2 initval=%llu flags=%llu result=7", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
   if (syscall_number == 20) {
     RAX = 4;
     BX_INFO(("poly_ud: emulated %s epoll_create1 flags=%llu result=4", arch_name, (unsigned long long) arg0));
@@ -8714,9 +8720,28 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 24) {
+    RAX = (arg0 == 5 || arg0 == 7) ? arg1 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s dup3 oldfd=%llu newfd=%llu flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 198) {
     RAX = 5;
     BX_INFO(("poly_ud: emulated %s socket domain=%llu type=%llu protocol=%llu result=5", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 199) {
+    if (arg3) {
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg3, 11);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (arg3 + 4), 12);
+      RAX = 0;
+    }
+    else {
+      RAX = (Bit64u) -14;
+    }
+    BX_INFO(("poly_ud: emulated %s socketpair domain=%llu type=%llu protocol=%llu sv=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
     return true;
   }
 
@@ -8830,6 +8855,19 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
       write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg2, 16);
     }
     BX_INFO(("poly_ud: emulated %s accept4 fd=%llu addr=%llx addrlen=%llx flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 59) {
+    if (arg0) {
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg0, 9);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (arg0 + 4), 10);
+      RAX = 0;
+    }
+    else {
+      RAX = (Bit64u) -14;
+    }
+    BX_INFO(("poly_ud: emulated %s pipe2 pipefd=%llx flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
     return true;
   }
 
