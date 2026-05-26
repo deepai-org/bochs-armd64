@@ -9138,11 +9138,45 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
 bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
+  if (syscall_number == 101) {
+    if (arg1) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 0);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s nanosleep req=%llx rem=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
   if (syscall_number == 113 && arg0 == 0) {
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 123);
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 456789);
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s clock_gettime clk=0 addr=%llx sec=123 nsec=456789", arch_name, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 115) {
+    if (arg3) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg3, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 8), 0);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s clock_nanosleep clk=%llu flags=%llu req=%llx rem=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
+    return true;
+  }
+
+  if (syscall_number == 123) {
+    RAX = arg2 && arg1 >= 8 ? 8 : (Bit64u) -22;
+    if (RAX == 8)
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg2, 1);
+    BX_INFO(("poly_ud: emulated %s sched_getaffinity pid=%llu len=%llu mask=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 124) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s sched_yield result=0", arch_name));
     return true;
   }
 
