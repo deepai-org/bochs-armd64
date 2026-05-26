@@ -6375,6 +6375,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       if (op == 0x13)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, true);
+      if (op == 0x20)
+        return return_poly_import_x86_call();
     }
   }
 
