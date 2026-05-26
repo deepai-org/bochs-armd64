@@ -52,6 +52,7 @@ enum {
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
+static const Bit64u BX_POLY_IMPORT_CALL_COOKIE = BX_CONST64(0xffffffffffffe000);
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 
@@ -752,6 +753,37 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   return true;
 }
 
+bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
+  bx_address return_rip)
+{
+  if (target_rip != (bx_address) BX_POLY_IMPORT_CALL_COOKIE)
+    return false;
+
+  Bit64u arg0 = 0, arg1 = 0;
+  bool mapped = false;
+  if (mode == BX_POLY_MODE_RAW_AARCH64) {
+    mapped = read_poly_aarch64_reg(0, &arg0) &&
+      read_poly_aarch64_reg(1, &arg1) &&
+      write_poly_aarch64_reg(0, arg0 + arg1 + 100);
+  }
+  else if (mode == BX_POLY_MODE_RAW_RISCV) {
+    mapped = read_poly_riscv_reg(10, &arg0) &&
+      read_poly_riscv_reg(11, &arg1) &&
+      write_poly_riscv_reg(10, arg0 + arg1 + 100);
+  }
+
+  if (!mapped)
+    return false;
+
+  RIP = return_rip;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  BX_INFO(("poly_raw: import call mode=%u target=%llx arg0=%llu arg1=%llu result=%llu return=%llx",
+    mode, (unsigned long long) target_rip, (unsigned long long) arg0,
+    (unsigned long long) arg1, (unsigned long long) (arg0 + arg1 + 100),
+    (unsigned long long) return_rip));
+  return true;
+}
+
 bool BX_CPU_C::poly_raw_mode_active(void)
 {
   if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
@@ -1090,6 +1122,9 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
     if (link && !write_poly_aarch64_reg(30, next_rip))
       return false;
+    if (link && handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) target, next_rip))
+      return true;
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u target=%llx", link ? "blr" : "br", rn, (unsigned long long) target));
     return true;
@@ -1700,6 +1735,9 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
     if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
       return true;
+    if (rd != 0 && handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) target, next_rip))
+      return true;
     target = (target & ~BX_CONST64(3)) | (pc & 0x3);
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
@@ -1973,6 +2011,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
           return false;
         target &= ~BX_CONST64(1);
         if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
+          return true;
+        if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+              (bx_address) target, next_rip))
           return true;
         target = (target & ~BX_CONST64(3)) | (pc & 0x3);
         RIP = (bx_address) target;
