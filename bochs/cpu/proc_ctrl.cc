@@ -118,6 +118,16 @@ struct bx_poly_reg_state_t {
   bx_address fsbase;
   Bit64u age;
   Bit32u current_mode;
+  bool return_cookie_valid;
+  Bit32u return_cookie_mode;
+  bx_address return_cookie_rip;
+  bx_address return_cookie_rsp;
+  bx_poly_cross_return_frame_t cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
+  unsigned cross_return_top;
+  bool import_x86_return_valid;
+  Bit32u import_x86_return_mode;
+  bx_address import_x86_return_rip;
+  bx_address import_x86_return_rsp;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit32u aarch64_nzcv;
@@ -485,7 +495,21 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3, bx_address fsbas
   bx_poly_reg_states[victim].fsbase = fsbase;
   bx_poly_reg_states[victim].age = bx_poly_reg_state_age++;
   bx_poly_reg_states[victim].current_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].return_cookie_valid = false;
+  bx_poly_reg_states[victim].return_cookie_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].return_cookie_rip = 0;
+  bx_poly_reg_states[victim].return_cookie_rsp = 0;
+  bx_poly_reg_states[victim].cross_return_top = 0;
+  bx_poly_reg_states[victim].import_x86_return_valid = false;
+  bx_poly_reg_states[victim].import_x86_return_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].import_x86_return_rip = 0;
+  bx_poly_reg_states[victim].import_x86_return_rsp = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
+  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
+    bx_poly_reg_states[victim].cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
+    bx_poly_reg_states[victim].cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
+    bx_poly_reg_states[victim].cross_return_stack[n].return_rip = 0;
+  }
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[victim].aarch64_x[n] = 0;
     bx_poly_reg_states[victim].aarch64_x_valid[n] = false;
@@ -500,7 +524,18 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase)
   unsigned slot = bx_poly_find_or_alloc_reg_state(cr3, fsbase);
   bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
   bx_poly_reg_states[slot].current_mode = bx_poly_current_mode;
+  bx_poly_reg_states[slot].return_cookie_valid = bx_poly_return_cookie_valid;
+  bx_poly_reg_states[slot].return_cookie_mode = bx_poly_return_cookie_mode;
+  bx_poly_reg_states[slot].return_cookie_rip = bx_poly_return_cookie_rip;
+  bx_poly_reg_states[slot].return_cookie_rsp = bx_poly_return_cookie_rsp;
+  bx_poly_reg_states[slot].cross_return_top = bx_poly_cross_return_top;
+  bx_poly_reg_states[slot].import_x86_return_valid = bx_poly_import_x86_return_valid;
+  bx_poly_reg_states[slot].import_x86_return_mode = bx_poly_import_x86_return_mode;
+  bx_poly_reg_states[slot].import_x86_return_rip = bx_poly_import_x86_return_rip;
+  bx_poly_reg_states[slot].import_x86_return_rsp = bx_poly_import_x86_return_rsp;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
+  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
+    bx_poly_reg_states[slot].cross_return_stack[n] = bx_poly_cross_return_stack[n];
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[slot].aarch64_x[n] = bx_poly_aarch64_x[n];
     bx_poly_reg_states[slot].aarch64_x_valid[n] = bx_poly_aarch64_x_valid[n];
@@ -514,7 +549,18 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase)
   unsigned slot = bx_poly_find_or_alloc_reg_state(cr3, fsbase);
   bx_poly_reg_states[slot].age = bx_poly_reg_state_age++;
   bx_poly_current_mode = bx_poly_reg_states[slot].current_mode;
+  bx_poly_return_cookie_valid = bx_poly_reg_states[slot].return_cookie_valid;
+  bx_poly_return_cookie_mode = bx_poly_reg_states[slot].return_cookie_mode;
+  bx_poly_return_cookie_rip = bx_poly_reg_states[slot].return_cookie_rip;
+  bx_poly_return_cookie_rsp = bx_poly_reg_states[slot].return_cookie_rsp;
+  bx_poly_cross_return_top = bx_poly_reg_states[slot].cross_return_top;
+  bx_poly_import_x86_return_valid = bx_poly_reg_states[slot].import_x86_return_valid;
+  bx_poly_import_x86_return_mode = bx_poly_reg_states[slot].import_x86_return_mode;
+  bx_poly_import_x86_return_rip = bx_poly_reg_states[slot].import_x86_return_rip;
+  bx_poly_import_x86_return_rsp = bx_poly_reg_states[slot].import_x86_return_rsp;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
+  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
+    bx_poly_cross_return_stack[n] = bx_poly_reg_states[slot].cross_return_stack[n];
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_aarch64_x[n] = bx_poly_reg_states[slot].aarch64_x[n];
     bx_poly_aarch64_x_valid[n] = bx_poly_reg_states[slot].aarch64_x_valid[n];
