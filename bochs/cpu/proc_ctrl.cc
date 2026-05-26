@@ -1846,18 +1846,24 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0x7e000000) == 0x34000000) {
     Bit32u rt = insn & 0x1f;
+    bool sf = (insn & 0x80000000) != 0;
     Bit32u op = (insn >> 24) & 1;
-    if (rt != 0)
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rt, &value))
       return false;
-    bool taken = (op == 0) ? (RAX == 0) : (RAX != 0);
+    if (!sf)
+      value = (Bit32u) value;
+    bool taken = (op == 0) ? (value == 0) : (value != 0);
     if (taken) {
       Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x7ffff, 19) << 2;
       RIP = (bx_address) ((Bit64s) pc + guest_offset);
-      BX_DEBUG(("poly_raw: emulated aarch64 %s x0 taken offset=%lld", op ? "cbnz" : "cbz", (long long) guest_offset));
+      BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u taken offset=%lld",
+        op ? "cbnz" : "cbz", sf ? "x" : "w", rt, (long long) guest_offset));
     }
     else {
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 %s x0 not-taken", op ? "cbnz" : "cbz"));
+      BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u not-taken",
+        op ? "cbnz" : "cbz", sf ? "x" : "w", rt));
     }
     return true;
   }
