@@ -6110,9 +6110,9 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
 bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
-  (void) arg3;
   (void) arg4;
   (void) arg5;
+  const Bit8u stat_magic[] = {'P', 'S', 'T', 'A', 'T', '!', '!', '\0'};
 
   if (syscall_number == 17) {
     const char cwd[] = "/poly";
@@ -6189,6 +6189,22 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     }
     RAX = total;
     BX_INFO(("poly_ud: emulated %s writev fd=%llu iov=%llx iovcnt=%llu total=%llu checksum=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) total, (unsigned long long) checksum));
+    return true;
+  }
+
+  if (syscall_number == 79 && arg2 != 0) {
+    for (unsigned n = 0; n < sizeof(stat_magic); n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg2 + n), stat_magic[n]);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s newfstatat dirfd=%lld path=%llx stat=%llx flags=%llu", arch_name, (long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
+    return true;
+  }
+
+  if (syscall_number == 80 && arg1 != 0 && arg0 <= 3) {
+    for (unsigned n = 0; n < sizeof(stat_magic); n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), stat_magic[n]);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s fstat fd=%llu stat=%llx", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
     return true;
   }
 
