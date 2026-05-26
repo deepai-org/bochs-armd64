@@ -4253,6 +4253,21 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       return true;
     }
 
+    if (funct3 == 0x1) {
+      Bit32u rd = ((Bit32u) insn >> 7) & 0x1f;
+      Bit64s imm = bx_poly_riscv_ci_imm(insn);
+      Bit64u value = 0;
+      if (rd == 0 || !read_poly_riscv_reg(rd, &value))
+        return false;
+      Bit32u result32 = (Bit32u) ((Bit64s) (Bit32s) (Bit32u) value + imm);
+      Bit64u result = (Bit64u) bx_poly_sign_extend(result32, 32);
+      if (!write_poly_riscv_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv c.addiw x%u,%lld result=%llu", rd, (long long) imm, (unsigned long long) result));
+      return true;
+    }
+
     if (funct3 == 0x2) {
       Bit32u rd = ((Bit32u) insn >> 7) & 0x1f;
       Bit64s imm = bx_poly_riscv_ci_imm(insn);
@@ -4280,6 +4295,90 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         BX_DEBUG(("poly_raw: emulated riscv c.lui x%u,%lld", rd, (long long) (imm << 12)));
       }
       RIP = next_rip;
+      return true;
+    }
+
+    if (funct3 == 0x4) {
+      Bit32u op = ((Bit32u) insn >> 10) & 0x3;
+      Bit32u rd = bx_poly_riscv_creg(((Bit32u) insn >> 7) & 0x7);
+      Bit64u left = 0;
+      const char *op_name = 0;
+      Bit64u result = 0;
+
+      if (!read_poly_riscv_reg(rd, &left))
+        return false;
+
+      if (op == 0x0 || op == 0x1) {
+        Bit32u shamt = (((Bit32u) insn >> 2) & 0x1f) |
+          ((((Bit32u) insn >> 12) & 0x1) << 5);
+        if (op == 0x0) {
+          op_name = "c.srli";
+          result = left >> shamt;
+        }
+        else {
+          op_name = "c.srai";
+          result = (Bit64u) ((Bit64s) left >> shamt);
+        }
+        if (!write_poly_riscv_reg(rd, result))
+          return false;
+        RIP = next_rip;
+        BX_DEBUG(("poly_raw: emulated riscv %s x%u,%u result=%llu", op_name, rd, shamt, (unsigned long long) result));
+        return true;
+      }
+
+      if (op == 0x2) {
+        Bit64s imm = bx_poly_riscv_ci_imm(insn);
+        result = left & (Bit64u) imm;
+        if (!write_poly_riscv_reg(rd, result))
+          return false;
+        RIP = next_rip;
+        BX_DEBUG(("poly_raw: emulated riscv c.andi x%u,%lld result=%llu", rd, (long long) imm, (unsigned long long) result));
+        return true;
+      }
+
+      Bit32u rs2 = bx_poly_riscv_creg(((Bit32u) insn >> 2) & 0x7);
+      Bit32u alu_op = ((Bit32u) insn >> 5) & 0x3;
+      bool word_op = (insn & 0x1000) != 0;
+      Bit64u right = 0;
+      if (!read_poly_riscv_reg(rs2, &right))
+        return false;
+
+      if (!word_op) {
+        if (alu_op == 0x0) {
+          op_name = "c.sub";
+          result = left - right;
+        }
+        else if (alu_op == 0x1) {
+          op_name = "c.xor";
+          result = left ^ right;
+        }
+        else if (alu_op == 0x2) {
+          op_name = "c.or";
+          result = left | right;
+        }
+        else {
+          op_name = "c.and";
+          result = left & right;
+        }
+      }
+      else {
+        if (alu_op == 0x0) {
+          op_name = "c.subw";
+          result = (Bit64u) bx_poly_sign_extend((Bit32u) (left - right), 32);
+        }
+        else if (alu_op == 0x1) {
+          op_name = "c.addw";
+          result = (Bit64u) bx_poly_sign_extend((Bit32u) (left + right), 32);
+        }
+        else {
+          return false;
+        }
+      }
+
+      if (!write_poly_riscv_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,x%u result=%llu", op_name, rd, rs2, (unsigned long long) result));
       return true;
     }
 
