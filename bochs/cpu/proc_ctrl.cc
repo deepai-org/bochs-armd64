@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 16;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 17;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -108,7 +108,8 @@ enum {
   BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC = 12,
   BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR = 13,
   BX_POLY_IMPORT_FUNC_FP32_ADD = 14,
-  BX_POLY_IMPORT_FUNC_MEMMOVE = 15
+  BX_POLY_IMPORT_FUNC_MEMMOVE = 15,
+  BX_POLY_IMPORT_FUNC_STRCMP = 16
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1901,6 +1902,19 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
            read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + result)) != 0)
       result++;
     op_name = "strlen";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STRCMP) {
+    Bit64s cmp = 0;
+    for (Bit64u n = 0; n < 4096; n++) {
+      Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n));
+      Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+      if (left != right || left == 0 || right == 0) {
+        cmp = (Bit64s) left - (Bit64s) right;
+        break;
+      }
+    }
+    result = (Bit64u) cmp;
+    op_name = "strcmp";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_MEMCPY) {
     Bit64u count = arg2 < 4096 ? arg2 : 4096;
