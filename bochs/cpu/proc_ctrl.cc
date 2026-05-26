@@ -2116,24 +2116,38 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
-  if ((insn & 0x7fe00c00) == 0x1a800000) {
+  if ((insn & 0x3fe00800) == 0x1a800000) {
     bool sf = (insn & 0x80000000) != 0;
+    bool invert = (insn & 0x40000000) != 0;
+    bool increment = (insn & 0x00000400) != 0;
     Bit32u rm = (insn >> 16) & 0x1f;
     Bit32u cond = (insn >> 12) & 0xf;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rd = insn & 0x1f;
+    Bit64u mask = sf ? ~BX_CONST64(0) : 0xffffffff;
     Bit64u left = 0;
     Bit64u right = 0;
     if (!read_poly_aarch64_reg(rn, &left) ||
         !read_poly_aarch64_reg(rm, &right))
       return false;
-    Bit64u result = bx_poly_aarch64_condition_holds(cond) ? left : right;
+    left &= mask;
+    right &= mask;
+    Bit64u result = right;
+    if (invert)
+      result = ~result;
+    if (increment)
+      result++;
+    result = bx_poly_aarch64_condition_holds(cond) ? left : result;
+    result &= mask;
     if (!sf)
       result = (Bit32u) result;
     if (!write_poly_aarch64_reg(rd, result))
       return false;
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 csel %s%u,%s%u,%s%u,cond=%u result=%llu",
+    const char *op_name = increment ? (invert ? "csneg" : "csinc") :
+      (invert ? "csinv" : "csel");
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u,cond=%u result=%llu",
+      op_name,
       sf ? "x" : "w", rd, sf ? "x" : "w", rn, sf ? "x" : "w", rm,
       cond, (unsigned long long) result));
     return true;
