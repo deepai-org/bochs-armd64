@@ -77,6 +77,8 @@ static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_U64_F64 = (1U << 15);
 static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_F64_U64 = (1U << 16);
 static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_U64_F32 = (1U << 17);
 static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_F32_U64 = (1U << 18);
+static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 = (1U << 19);
+static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_F32_U32 = (1U << 20);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -92,7 +94,9 @@ enum {
   BX_POLY_RETURN_KIND_HETERO_U64_F64 = 2,
   BX_POLY_RETURN_KIND_HETERO_F64_U64 = 3,
   BX_POLY_RETURN_KIND_HETERO_U64_F32 = 4,
-  BX_POLY_RETURN_KIND_HETERO_F32_U64 = 5
+  BX_POLY_RETURN_KIND_HETERO_F32_U64 = 5,
+  BX_POLY_RETURN_KIND_COMPACT_U32_F32 = 6,
+  BX_POLY_RETURN_KIND_COMPACT_F32_U32 = 7
 };
 
 enum {
@@ -101,7 +105,9 @@ enum {
   BX_POLY_ARG_KIND_HETERO_U64_F64 = 2,
   BX_POLY_ARG_KIND_HETERO_F64_U64 = 3,
   BX_POLY_ARG_KIND_HETERO_U64_F32 = 4,
-  BX_POLY_ARG_KIND_HETERO_F32_U64 = 5
+  BX_POLY_ARG_KIND_HETERO_F32_U64 = 5,
+  BX_POLY_ARG_KIND_COMPACT_U32_F32 = 6,
+  BX_POLY_ARG_KIND_COMPACT_F32_U32 = 7
 };
 
 enum {
@@ -1850,6 +1856,20 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 1; mapped && n < 7; n++)
         mapped = write_poly_riscv_fp64_reg(10 + n + 1, fp_args[n]);
     }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_COMPACT_U32_F32) {
+      Bit32u int_lane = (Bit32u) args[0];
+      Bit32u fp_lane = (Bit32u) (args[0] >> 32);
+      mapped =
+        write_poly_riscv_reg(10, int_lane) &&
+        write_poly_riscv_fp32_reg(10, fp_lane);
+    }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_COMPACT_F32_U32) {
+      Bit32u fp_lane = (Bit32u) args[0];
+      Bit32u int_lane = (Bit32u) (args[0] >> 32);
+      mapped =
+        write_poly_riscv_reg(10, int_lane) &&
+        write_poly_riscv_fp32_reg(10, fp_lane);
+    }
   }
   else {
     mapped = false;
@@ -1893,6 +1913,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   Bit32u hetero_f32_result = 0;
   Bit64u hetero_f32_int_result = 0;
   bool has_hetero_f32_result = false;
+  Bit64u compact_result = 0;
+  bool has_compact_result = false;
   Bit32u fpair32_lo = 0, fpair32_hi = 0;
   bool has_fpair32_result = false;
   bool sret_call = bx_poly_return_cookie_sret;
@@ -1932,6 +1954,24 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       read_poly_aarch64_reg(1, &hetero_f32_int_result);
     hetero_f32_result = (Bit32u) second_result;
   }
+  else if (return_kind == BX_POLY_RETURN_KIND_COMPACT_U32_F32 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    has_compact_result =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane);
+    compact_result = ((Bit64u) fp_lane << 32) | (Bit32u) int_lane;
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_COMPACT_F32_U32 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit64u int_lane = 0;
+    Bit32u fp_lane = 0;
+    has_compact_result =
+      read_poly_riscv_reg(10, &int_lane) &&
+      read_poly_riscv_fp32_reg(10, &fp_lane);
+    compact_result = ((Bit64u) (Bit32u) int_lane << 32) | fp_lane;
+  }
   else if (mode == BX_POLY_MODE_RAW_AARCH64)
     has_second_result = read_poly_aarch64_reg(1, &second_result);
   else if (mode == BX_POLY_MODE_RAW_RISCV)
@@ -1962,6 +2002,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
     RAX = hetero_f32_int_result;
     BX_WRITE_XMM_REG_LO_DWORD(0, hetero_f32_result);
   }
+  else if (has_compact_result)
+    RAX = compact_result;
   else if (has_second_result)
     RDX = second_result;
   bx_poly_return_cookie_rsp = 0;
@@ -8725,6 +8767,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_F32_U64,
           BX_POLY_ARG_KIND_HETERO_F32_U64);
+      if (op == 0x1c)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_COMPACT_U32_F32,
+          BX_POLY_ARG_KIND_COMPACT_U32_F32);
+      if (op == 0x1d)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_COMPACT_F32_U32,
+          BX_POLY_ARG_KIND_COMPACT_F32_U32);
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op >= 0x30 && op <= 0x32) {
@@ -8886,7 +8938,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_HETERO_U64_F64 |
           BX_POLY_CPUID_FEATURE_HETERO_F64_U64 |
           BX_POLY_CPUID_FEATURE_HETERO_U64_F32 |
-          BX_POLY_CPUID_FEATURE_HETERO_F32_U64;
+          BX_POLY_CPUID_FEATURE_HETERO_F32_U64 |
+          BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 |
+          BX_POLY_CPUID_FEATURE_COMPACT_F32_U32;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
