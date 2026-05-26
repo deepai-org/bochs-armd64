@@ -6505,6 +6505,73 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           (bx_address) R10, (bx_address) R11, true);
       if (op == 0x20)
         return return_poly_import_x86_call();
+      if (op >= 0x30 && op <= 0x32) {
+        Bit8u status_id = op - 0x30;
+        if (status_id == 1)
+          RAX = bx_poly_last_syscall_number;
+        else if (status_id == 2)
+          RAX = bx_poly_last_syscall_mode;
+        else
+          RAX = bx_poly_current_mode;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: syscall status op=0x%02x id=%u current_mode=%u last_mode=%u number=%u",
+          op, status_id, bx_poly_current_mode, bx_poly_last_syscall_mode,
+          bx_poly_last_syscall_number));
+        return true;
+      }
+      if (op >= 0x38 && op <= 0x3a) {
+        Bit8u status_id = op - 0x38;
+        if (status_id == 1)
+          RAX = bx_poly_last_libcall_number;
+        else if (status_id == 2)
+          RAX = bx_poly_last_libcall_mode;
+        else
+          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | status_id;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: libcall status op=0x%02x id=%u current_mode=%u last_mode=%u number=%u",
+          op, status_id, bx_poly_current_mode, bx_poly_last_libcall_mode,
+          bx_poly_last_libcall_number));
+        return true;
+      }
+      if (op >= 0x40 && op <= 0x44) {
+        Bit8u status_id = op - 0x40;
+        if (status_id == 0)
+          RAX = bx_poly_mode_switch_count;
+        else if (status_id == 2)
+          RAX = bx_poly_foreign_insn_count;
+        else if (status_id == 3)
+          RAX = bx_poly_foreign_syscall_count;
+        else if (status_id == 4)
+          RAX = bx_poly_foreign_libcall_count;
+        else
+          RAX = bx_poly_current_mode;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu libcalls=%llu",
+          op, status_id, bx_poly_current_mode,
+          (unsigned long long) bx_poly_mode_switch_count,
+          (unsigned long long) bx_poly_foreign_insn_count,
+          (unsigned long long) bx_poly_foreign_syscall_count,
+          (unsigned long long) bx_poly_foreign_libcall_count));
+        return true;
+      }
+      if (op >= 0x50 && op <= 0x59) {
+        Bit8u status_id = op - 0x50;
+        if (status_id == 0)
+          RAX = bx_poly_last_trap_reason;
+        else if (status_id == 1)
+          RAX = bx_poly_last_trap_mode;
+        else if (status_id == 2)
+          RAX = bx_poly_last_trap_number;
+        else if (status_id >= 3 && status_id <= 8)
+          RAX = bx_poly_last_trap_args[status_id - 3];
+        else
+          RAX = bx_poly_last_trap_pc;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: trap status op=0x%02x id=%u reason=%u mode=%u number=%u pc=%llx",
+          op, status_id, bx_poly_last_trap_reason, bx_poly_last_trap_mode,
+          bx_poly_last_trap_number, (unsigned long long) bx_poly_last_trap_pc));
+        return true;
+      }
     }
   }
 
