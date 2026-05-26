@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 92;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 103;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -184,7 +184,18 @@ enum {
   BX_POLY_IMPORT_FUNC_FIXUNSTFDI = 88,
   BX_POLY_IMPORT_FUNC_FLOATDITF = 89,
   BX_POLY_IMPORT_FUNC_FLOATSITF = 90,
-  BX_POLY_IMPORT_FUNC_FIXTFDI = 91
+  BX_POLY_IMPORT_FUNC_FIXTFDI = 91,
+  BX_POLY_IMPORT_FUNC_EQTF2 = 92,
+  BX_POLY_IMPORT_FUNC_LTTF2 = 93,
+  BX_POLY_IMPORT_FUNC_LETF2 = 94,
+  BX_POLY_IMPORT_FUNC_GTTF2 = 95,
+  BX_POLY_IMPORT_FUNC_GETF2 = 96,
+  BX_POLY_IMPORT_FUNC_EXTENDSFTF2 = 97,
+  BX_POLY_IMPORT_FUNC_EXTENDDFTF2 = 98,
+  BX_POLY_IMPORT_FUNC_TRUNCTFSF2 = 99,
+  BX_POLY_IMPORT_FUNC_TRUNCTFDF2 = 100,
+  BX_POLY_IMPORT_FUNC_NETF2 = 101,
+  BX_POLY_IMPORT_FUNC_UNORDTF2 = 102
 };
 
 enum {
@@ -2527,6 +2538,169 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       (unsigned) import_id, (unsigned long long) result,
       (unsigned long long) target_rip,
       (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_EXTENDSFTF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_EXTENDDFTF2) {
+    bool fp32 = import_id == BX_POLY_IMPORT_FUNC_EXTENDSFTF2;
+    bool mapped = false;
+    long double result = 0.0L;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      if (fp32) {
+        Bit32u source_bits = 0;
+        mapped = read_poly_aarch64_fp32_reg(0, &source_bits);
+        result = (long double) bx_poly_fp32_from_bits(source_bits);
+      }
+      else {
+        Bit64u source_bits = 0;
+        mapped = read_poly_aarch64_fp64_reg(0, &source_bits);
+        result = (long double) bx_poly_fp64_from_bits(source_bits);
+      }
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      if (fp32) {
+        Bit32u source_bits = 0;
+        mapped = read_poly_riscv_fp32_reg(10, &source_bits);
+        result = (long double) bx_poly_fp32_from_bits(source_bits);
+      }
+      else {
+        Bit64u source_bits = 0;
+        mapped = read_poly_riscv_fp64_reg(10, &source_bits);
+        result = (long double) bx_poly_fp64_from_bits(source_bits);
+      }
+    }
+    if (!mapped)
+      return false;
+
+    Bit64u result_lo = 0, result_hi = 0;
+    bx_poly_fp128_to_bits(result, &result_lo, &result_hi);
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = write_poly_aarch64_fp128_reg(0, result_lo, result_hi);
+    else
+      mapped = write_poly_riscv_reg(10, result_lo) &&
+        write_poly_riscv_reg(11, result_hi);
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import fp-to-tf helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_TRUNCTFSF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_TRUNCTFDF2) {
+    Bit64u source_lo = 0, source_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp128_reg(0, &source_lo, &source_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &source_lo) &&
+        read_poly_riscv_reg(11, &source_hi);
+    }
+    if (!mapped)
+      return false;
+
+    long double source = bx_poly_fp128_from_bits(source_lo, source_hi);
+    if (import_id == BX_POLY_IMPORT_FUNC_TRUNCTFSF2) {
+      Bit32u result_bits = bx_poly_fp32_to_bits((float) source);
+      if (mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_fp32_reg(0, result_bits);
+      else
+        mapped = write_poly_riscv_fp32_reg(10, result_bits);
+    }
+    else {
+      Bit64u result_bits = bx_poly_fp64_to_bits((double) source);
+      if (mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_fp64_reg(0, result_bits);
+      else
+        mapped = write_poly_riscv_fp64_reg(10, result_bits);
+    }
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import tf-to-fp helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_EQTF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_NETF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_LTTF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_LETF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_GTTF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_GETF2 ||
+      import_id == BX_POLY_IMPORT_FUNC_UNORDTF2) {
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp128_reg(0, &left_lo, &left_hi) &&
+        read_poly_aarch64_fp128_reg(1, &right_lo, &right_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &left_lo) &&
+        read_poly_riscv_reg(11, &left_hi) &&
+        read_poly_riscv_reg(12, &right_lo) &&
+        read_poly_riscv_reg(13, &right_hi);
+    }
+    if (!mapped)
+      return false;
+
+    long double left = bx_poly_fp128_from_bits(left_lo, left_hi);
+    long double right = bx_poly_fp128_from_bits(right_lo, right_hi);
+    bool unordered = (left != left) || (right != right);
+    Bit64u result = 0;
+    if (import_id == BX_POLY_IMPORT_FUNC_UNORDTF2) {
+      result = unordered ? 1 : 0;
+    }
+    else if (unordered) {
+      if (import_id == BX_POLY_IMPORT_FUNC_EQTF2 ||
+          import_id == BX_POLY_IMPORT_FUNC_NETF2 ||
+          import_id == BX_POLY_IMPORT_FUNC_LTTF2 ||
+          import_id == BX_POLY_IMPORT_FUNC_LETF2)
+        result = 1;
+      else
+        result = (Bit64u) (Bit64s) -1;
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_EQTF2 ||
+             import_id == BX_POLY_IMPORT_FUNC_NETF2) {
+      result = left == right ? 0 : 1;
+    }
+    else if (left < right) {
+      result = (Bit64u) (Bit64s) -1;
+    }
+    else if (left > right) {
+      result = 1;
+    }
+    else {
+      result = 0;
+    }
+
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = write_poly_aarch64_reg(0, result);
+    else
+      mapped = write_poly_riscv_reg(10, result);
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import tf compare helper id=%u result=%llx target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) result,
+      (unsigned long long) target_rip, (unsigned long long) return_rip));
     return true;
   }
 
