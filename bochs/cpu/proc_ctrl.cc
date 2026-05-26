@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 15;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 16;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -107,7 +107,8 @@ enum {
   BX_POLY_IMPORT_FUNC_MEMCMP = 11,
   BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC = 12,
   BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR = 13,
-  BX_POLY_IMPORT_FUNC_FP32_ADD = 14
+  BX_POLY_IMPORT_FUNC_FP32_ADD = 14,
+  BX_POLY_IMPORT_FUNC_MEMMOVE = 15
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1866,7 +1867,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
          import_id == BX_POLY_IMPORT_FUNC_MEMSET ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCMP))
+         import_id == BX_POLY_IMPORT_FUNC_MEMCMP ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMMOVE))
       mapped = read_poly_aarch64_reg(2, &arg2);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
@@ -1876,7 +1878,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
          import_id == BX_POLY_IMPORT_FUNC_MEMSET ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCMP))
+         import_id == BX_POLY_IMPORT_FUNC_MEMCMP ||
+         import_id == BX_POLY_IMPORT_FUNC_MEMMOVE))
       mapped = read_poly_riscv_reg(12, &arg2);
   }
 
@@ -1907,6 +1910,23 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     }
     result = arg0;
     op_name = "memcpy";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_MEMMOVE) {
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
+    if (arg0 <= arg1) {
+      for (Bit64u n = 0; n < count; n++) {
+        Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), value);
+      }
+    }
+    else {
+      for (Bit64u n = count; n > 0; n--) {
+        Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n - 1));
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n - 1), value);
+      }
+    }
+    result = arg0;
+    op_name = "memmove";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_MEMSET) {
     Bit64u count = arg2 < 4096 ? arg2 : 4096;
