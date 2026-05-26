@@ -57,7 +57,7 @@ static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
-static const Bit32u BX_POLY_CPUID_MAX = 0x40000001;
+static const Bit32u BX_POLY_CPUID_MAX = 0x40000002;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_RISCV = (1U << 1);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH = (1U << 2);
@@ -6449,6 +6449,29 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_THREAD_BANKS |
           BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
     RDX = 0; // no architectural XSAVE component is exposed yet
+    BX_NEXT_INSTR(i);
+    return;
+  }
+  if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 2) {
+    if (ECX == 0) {
+      RAX = BX_POLY_AARCH64_BRK_X86_ESCAPE |
+            (BX_POLY_AARCH64_BRK_RISCV_SWITCH << 16);
+      RBX = BX_POLY_AARCH64_BRK_RISCV_CALL;
+      RCX = BX_POLY_RISCV_X86_ESCAPE;
+      RDX = BX_POLY_RISCV_AARCH64_SWITCH;
+    }
+    else if (ECX == 1) {
+      RAX = BX_POLY_RISCV_AARCH64_CALL;
+      RBX = 0;
+      RCX = 0;
+      RDX = 0;
+    }
+    else {
+      RAX = 0;
+      RBX = 0;
+      RCX = 0;
+      RDX = 0;
+    }
     BX_NEXT_INSTR(i);
     return;
   }
