@@ -5905,6 +5905,8 @@ struct bx_poly_scalar_syscall_entry {
 };
 
 static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
+  { 96, 4243, "set_tid_address", "tid", false },
+  { 99, 0, "set_robust_list", "result", false },
   { 155, 4242, "getpgid", "pgid", true },
   { 156, 4242, "getsid", "sid", true },
   { 172, 4242, "getpid", "pid", false },
@@ -6286,6 +6288,24 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg0 + 8), 111);
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s sysinfo addr=%llx uptime=98765 load0=111", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 261 && arg3 != 0) {
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg3, 8388608);
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 8), (Bit64u) -1);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s prlimit64 pid=%llu resource=%llu old_limit=%llx", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg3));
+    return true;
+  }
+
+  if (syscall_number == 278 && arg0 != 0) {
+    const Bit8u random_data[] = {'P', 'R', 'N', 'D', '!', '!', '\0', '\0'};
+    Bit64u count = arg1 < sizeof(random_data) ? arg1 : sizeof(random_data);
+    for (Bit64u n = 0; n < count; n++)
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), random_data[n]);
+    RAX = count;
+    BX_INFO(("poly_ud: emulated %s getrandom addr=%llx count=%llu flags=%llu result=%llu", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) RAX));
     return true;
   }
 
