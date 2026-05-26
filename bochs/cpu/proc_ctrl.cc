@@ -58,6 +58,8 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 3;
+static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
+static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
 enum {
   BX_POLY_IMPORT_FUNC_ADD = 0,
@@ -698,7 +700,13 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
   Bit64u arg6 = read_virtual_qword(BX_SEG_REG_SS, RSP + 8);
   Bit64u arg7 = read_virtual_qword(BX_SEG_REG_SS, RSP + 16);
   bx_address original_rsp = RSP;
-  bx_address foreign_stack_rsp = RSP + 24;
+  bx_address foreign_stack_rsp =
+    (bx_address) ((RSP - BX_POLY_FOREIGN_STACK_GAP) & ~BX_CONST64(0xf));
+
+  for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
+    Bit64u value = read_virtual_qword(BX_SEG_REG_SS, original_rsp + 24 + n * 8);
+    write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
+  }
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
   bx_poly_current_mode = mode;
@@ -1237,9 +1245,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
     if (link && !write_poly_aarch64_reg(30, next_rip))
       return false;
-    if (link && handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) target, next_rip))
-      return true;
+    if (target >= (Bit64u) BX_POLY_IMPORT_CALL_BASE) {
+      Bit64u import_return = next_rip;
+      // AArch64 PLT stubs branch with br x17 after the caller's bl set x30.
+      if (!link && !read_poly_aarch64_reg(30, &import_return))
+        return false;
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+            (bx_address) target, (bx_address) import_return))
+        return true;
+    }
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u target=%llx", link ? "blr" : "br", rn, (unsigned long long) target));
     return true;
@@ -1862,9 +1876,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
     if (return_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
       return true;
-    if (rd != 0 && handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
-          (bx_address) target, next_rip))
-      return true;
+    if (rd != 0) {
+      Bit64u import_return = next_rip;
+      // RISC-V PLT stubs use a scratch link register while preserving ra as
+      // the caller continuation. Direct jalr ra imports still return to next.
+      if (rd != 1 && !read_poly_riscv_reg(1, &import_return))
+        return false;
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+            (bx_address) target, (bx_address) import_return))
+        return true;
+    }
     target = (target & ~BX_CONST64(3)) | (pc & 0x3);
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
