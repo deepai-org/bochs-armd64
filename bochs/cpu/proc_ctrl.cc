@@ -8720,6 +8720,24 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 26) {
+    RAX = 14;
+    BX_INFO(("poly_ud: emulated %s inotify_init1 flags=%llu result=14", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 27) {
+    RAX = (arg0 == 14 && arg1) ? 31 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s inotify_add_watch fd=%llu pathname=%llx mask=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 28) {
+    RAX = (arg0 == 14 && arg1 == 31) ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s inotify_rm_watch fd=%llu wd=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 24) {
     RAX = (arg0 == 5 || arg0 == 7) ? arg1 : (Bit64u) -9;
     BX_INFO(("poly_ud: emulated %s dup3 oldfd=%llu newfd=%llu flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
