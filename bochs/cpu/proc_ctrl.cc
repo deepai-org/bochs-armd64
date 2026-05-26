@@ -1766,10 +1766,6 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
 void BX_CPU_C::execute_poly_raw_step(void)
 {
   bx_address pc = RIP;
-  bx_address raw_owner_cr3 = bx_poly_raw_owner_cr3;
-  bx_address raw_owner_fsbase = bx_poly_raw_owner_fsbase;
-  bx_poly_raw_owner_cr3 = 0;
-  bx_poly_raw_owner_fsbase = 0;
   Bit32u insn = 0;
   bool handled = false;
 
@@ -1796,11 +1792,6 @@ void BX_CPU_C::execute_poly_raw_step(void)
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
     exception(BX_UD_EXCEPTION, 0);
-  }
-
-  if (bx_poly_is_raw_mode(bx_poly_current_mode)) {
-    bx_poly_raw_owner_cr3 = raw_owner_cr3;
-    bx_poly_raw_owner_fsbase = raw_owner_fsbase;
   }
 }
 
