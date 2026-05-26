@@ -912,6 +912,87 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  {
+    Bit32u pair_op = insn & 0xffc00000;
+    bool is_load = false;
+    bool writeback = false;
+    bool post_index = false;
+    const char *op_name = 0;
+
+    switch (pair_op) {
+    case 0xa8800000:
+      writeback = true;
+      post_index = true;
+      op_name = "stp-post";
+      break;
+    case 0xa8c00000:
+      is_load = true;
+      writeback = true;
+      post_index = true;
+      op_name = "ldp-post";
+      break;
+    case 0xa9000000:
+      op_name = "stp";
+      break;
+    case 0xa9400000:
+      is_load = true;
+      op_name = "ldp";
+      break;
+    case 0xa9800000:
+      writeback = true;
+      op_name = "stp-pre";
+      break;
+    case 0xa9c00000:
+      is_load = true;
+      writeback = true;
+      op_name = "ldp-pre";
+      break;
+    }
+
+    if (op_name != 0) {
+      Bit32u rt = insn & 0x1f;
+      Bit32u rn = (insn >> 5) & 0x1f;
+      Bit32u rt2 = (insn >> 10) & 0x1f;
+      Bit64s offset = bx_poly_sign_extend((insn >> 15) & 0x7f, 7) << 3;
+      Bit64u base = 0;
+      Bit64u value0 = 0;
+      Bit64u value1 = 0;
+
+      if (rn == 31)
+        base = RSP;
+      else if (!read_poly_aarch64_reg(rn, &base))
+        return false;
+
+      bx_address addr = (bx_address) (post_index ? base : base + offset);
+      if (is_load) {
+        value0 = read_virtual_qword(BX_SEG_REG_DS, addr);
+        value1 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+        if (!write_poly_aarch64_reg(rt, value0) ||
+            !write_poly_aarch64_reg(rt2, value1))
+          return false;
+      }
+      else {
+        if (!read_poly_aarch64_reg(rt, &value0) ||
+            !read_poly_aarch64_reg(rt2, &value1))
+          return false;
+        write_virtual_qword(BX_SEG_REG_DS, addr, value0);
+        write_virtual_qword(BX_SEG_REG_DS, addr + 8, value1);
+      }
+
+      if (writeback) {
+        Bit64u new_base = base + offset;
+        if (rn == 31)
+          RSP = new_base;
+        else if (!write_poly_aarch64_reg(rn, new_base))
+          return false;
+      }
+
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,x%u,[x%u],offset=%lld addr=%llx", op_name, rt, rt2, rn, (long long) offset, (unsigned long long) addr));
+      return true;
+    }
+  }
+
   if ((insn & 0x3b000000) == 0x39000000) {
     Bit32u rt = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
