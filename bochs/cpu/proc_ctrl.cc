@@ -215,6 +215,26 @@ static Bit32u bx_poly_fp32_to_bits(float value)
   return fp.bits;
 }
 
+static Bit64u bx_poly_aarch64_expand_fp64_imm(Bit32u imm8)
+{
+  Bit64u sign = (Bit64u) (imm8 >> 7) << 63;
+  Bit64u exp_bit = (imm8 >> 6) & 1;
+  Bit64u exponent = ((exp_bit ^ 1) << 10) |
+    (exp_bit ? 0x3fc : 0) | ((imm8 >> 4) & 0x3);
+  Bit64u fraction = (Bit64u) (imm8 & 0xf) << 48;
+  return sign | (exponent << 52) | fraction;
+}
+
+static Bit32u bx_poly_aarch64_expand_fp32_imm(Bit32u imm8)
+{
+  Bit32u sign = (imm8 >> 7) << 31;
+  Bit32u exp_bit = (imm8 >> 6) & 1;
+  Bit32u exponent = ((exp_bit ^ 1) << 7) |
+    (exp_bit ? 0x7c : 0) | ((imm8 >> 4) & 0x3);
+  Bit32u fraction = (imm8 & 0xf) << 19;
+  return sign | (exponent << 23) | fraction;
+}
+
 static softfloat_status_t bx_poly_softfloat_status()
 {
   softfloat_status_t status = {};
@@ -2131,6 +2151,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_sqrt(left32_bits, &status);
     }
+    else if ((insn & 0xffe01c00) == 0x1e201000) {
+      op_name = "fmov.s.imm";
+      fp32_op = true;
+      result32_bits = bx_poly_aarch64_expand_fp32_imm((insn >> 13) & 0xff);
+    }
     else if ((insn & 0xfffffc00) == 0x1e204000) {
       op_name = "fmov.s";
       fp32_op = true;
@@ -2206,6 +2231,10 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
         return false;
       result_bits = f64_sqrt(left_bits, &status);
+    }
+    else if ((insn & 0xffe01c00) == 0x1e601000) {
+      op_name = "fmov.d.imm";
+      result_bits = bx_poly_aarch64_expand_fp64_imm((insn >> 13) & 0xff);
     }
     else if ((insn & 0xfffffc00) == 0x1e604000) {
       op_name = "fmov.d";
