@@ -1303,6 +1303,13 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       target_rip != (bx_address) BX_POLY_RETURN_COOKIE)
     return false;
 
+  Bit64u second_result = 0;
+  bool has_second_result = false;
+  if (mode == BX_POLY_MODE_RAW_AARCH64)
+    has_second_result = read_poly_aarch64_reg(1, &second_result);
+  else if (mode == BX_POLY_MODE_RAW_RISCV)
+    has_second_result = read_poly_riscv_reg(11, &second_result);
+
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
@@ -1310,6 +1317,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
   RSP = bx_poly_return_cookie_rsp;
   RIP = bx_poly_return_cookie_rip;
+  if (has_second_result)
+    RDX = second_result;
   bx_poly_return_cookie_rsp = 0;
   bx_poly_return_cookie_rip = 0;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
