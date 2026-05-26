@@ -277,6 +277,14 @@ static Bit64u bx_poly_low_mask(unsigned bits)
   return bits >= 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
 }
 
+static Bit64s bx_poly_sign_extend64(Bit64u value, unsigned bits)
+{
+  Bit64u mask = bx_poly_low_mask(bits);
+  Bit64u sign = BX_CONST64(1) << (bits - 1);
+  value &= mask;
+  return (Bit64s) ((value ^ sign) - sign);
+}
+
 static Bit64s bx_poly_marker_offset(Bit64s guest_offset)
 {
   return (guest_offset / 4) * 8;
@@ -1987,22 +1995,53 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if ((insn & 0xffc00000) == 0x93400000) {
+  if ((insn & 0x7f800000) == 0x13000000) {
+    bool sf = (insn & 0x80000000) != 0;
+    Bit32u n = (insn >> 22) & 0x1;
     Bit32u immr = (insn >> 16) & 0x3f;
     Bit32u imms = (insn >> 10) & 0x3f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rd = insn & 0x1f;
+    unsigned bits = sf ? 64 : 32;
     Bit64u value = 0;
-    if (immr != 0 || (imms != 7 && imms != 15 && imms != 31))
+    Bit64u result = 0;
+    const char *op_name = "sbfm";
+
+    if ((sf && n == 0) || (!sf && (n != 0 || immr >= 32 || imms >= 32)))
       return false;
     if (!read_poly_aarch64_reg(rn, &value))
       return false;
-    Bit64u result = (Bit64u) bx_poly_sign_extend(value, imms + 1);
+    value &= bx_poly_low_mask(bits);
+
+    if (immr <= imms) {
+      unsigned width = imms - immr + 1;
+      result = (Bit64u) bx_poly_sign_extend64(value >> immr, width);
+      if (immr == 0 && imms == 7)
+        op_name = "sxtb";
+      else if (immr == 0 && imms == 15)
+        op_name = "sxth";
+      else if (immr == 0 && imms == 31)
+        op_name = "sxtw";
+      else if (imms == bits - 1)
+        op_name = "asr";
+      else
+        op_name = "sbfx";
+    }
+    else {
+      unsigned shift = bits - immr;
+      unsigned width = imms + 1 + shift;
+      result = (Bit64u) bx_poly_sign_extend64(
+        (value & bx_poly_low_mask(imms + 1)) << shift, width);
+      op_name = "sbfiz";
+    }
+    result &= bx_poly_low_mask(bits);
+
     if (!write_poly_aarch64_reg(rd, result))
       return false;
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 sxt%u x%u,w%u result=%llu",
-      imms + 1, rd, rn, (unsigned long long) result));
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,immr=%u,imms=%u result=%llu",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn, immr, imms,
+      (unsigned long long) result));
     return true;
   }
 
@@ -2209,67 +2248,73 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rm = (insn >> 16) & 0x1f;
     Bit32u shift_type = (insn >> 22) & 0x3;
     Bit32u shift_amount = (insn >> 10) & 0x3f;
+    bool sf = (insn & 0x80000000) != 0;
+    unsigned bits = sf ? 64 : 32;
     Bit64u left = 0;
     Bit64u right = 0;
     Bit64u result = 0;
     const char *op_name = 0;
 
-    if ((insn & 0xff200000) == 0x8b000000) {
+    if ((insn & 0x7f200000) == 0x0b000000) {
       if (shift_type == 3)
         return false;
       op_name = "add";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
-      if (!bx_poly_aarch64_shifted_reg(right, shift_type, shift_amount, &right))
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
         return false;
       result = left + right;
     }
-    else if ((insn & 0xff200000) == 0xcb000000) {
+    else if ((insn & 0x7f200000) == 0x4b000000) {
       if (shift_type == 3)
         return false;
       op_name = "sub";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
-      if (!bx_poly_aarch64_shifted_reg(right, shift_type, shift_amount, &right))
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
         return false;
       result = left - right;
     }
-    else if ((insn & 0xffe0fc00) == 0x9b007c00) {
+    else if ((insn & 0x7fe0fc00) == 0x1b007c00) {
       op_name = "mul";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
       result = left * right;
     }
-    else if ((insn & 0xff200000) == 0xca000000) {
+    else if ((insn & 0x7f200000) == 0x4a000000) {
       op_name = "eor";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
-      if (!bx_poly_aarch64_shifted_reg(right, shift_type, shift_amount, &right))
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
         return false;
       result = left ^ right;
     }
-    else if ((insn & 0xff200000) == 0x8a000000) {
+    else if ((insn & 0x7f200000) == 0x0a000000) {
       op_name = "and";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
-      if (!bx_poly_aarch64_shifted_reg(right, shift_type, shift_amount, &right))
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
         return false;
       result = left & right;
     }
-    else if ((insn & 0xff200000) == 0xaa000000) {
+    else if ((insn & 0x7f200000) == 0x2a000000) {
       op_name = "orr";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
         return false;
-      if (!bx_poly_aarch64_shifted_reg(right, shift_type, shift_amount, &right))
+      if (!bx_poly_aarch64_shifted_reg_width(right, shift_type, shift_amount, bits, &right))
         return false;
       result = left | right;
     }
 
     if (op_name != 0) {
+      result &= bx_poly_low_mask(bits);
       if (!write_poly_aarch64_reg(rd, result))
         return false;
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,x%u,x%u,shift=%u,#%u result=%llu", op_name, rd, rn, rm, shift_type, shift_amount, (unsigned long long) result));
+      BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u,shift=%u,#%u result=%llu",
+        op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+        sf ? "x" : "w", rm, shift_type, shift_amount,
+        (unsigned long long) result));
       return true;
     }
   }
