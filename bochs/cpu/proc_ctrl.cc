@@ -1828,6 +1828,53 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0xfffffc00) == 0x1e260000 ||
+      (insn & 0xfffffc00) == 0x1e270000 ||
+      (insn & 0xfffffc00) == 0x9e660000 ||
+      (insn & 0xfffffc00) == 0x9e670000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u op = insn & 0xfffffc00;
+    bool fp_to_gpr = op == 0x1e260000 || op == 0x9e660000;
+    bool fp64_op = op == 0x9e660000 || op == 0x9e670000;
+
+    if (fp_to_gpr) {
+      Bit64u result = 0;
+      if (fp64_op) {
+        if (!read_poly_aarch64_fp64_reg(rn, &result))
+          return false;
+      }
+      else {
+        Bit32u value = 0;
+        if (!read_poly_aarch64_fp32_reg(rn, &value))
+          return false;
+        result = value;
+      }
+      if (!write_poly_aarch64_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 fmov %c%u,%c%u value=%llu",
+        fp64_op ? 'x' : 'w', rd, fp64_op ? 'd' : 's', rn,
+        (unsigned long long) result));
+      return true;
+    }
+
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    if (fp64_op) {
+      if (!write_poly_aarch64_fp64_reg(rd, value))
+        return false;
+    }
+    else if (!write_poly_aarch64_fp32_reg(rd, (Bit32u) value))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 fmov %c%u,%c%u value=%llu",
+      fp64_op ? 'd' : 's', rd, fp64_op ? 'x' : 'w', rn,
+      (unsigned long long) value));
+    return true;
+  }
+
   if ((insn & 0xfffffc00) == 0x1e220000 ||
       (insn & 0xfffffc00) == 0x1e230000 ||
       (insn & 0xfffffc00) == 0x1e620000 ||
@@ -1902,33 +1949,49 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if ((insn & 0xfffffc00) == 0x1e780000 ||
+  if ((insn & 0xfffffc00) == 0x1e380000 ||
+      (insn & 0xfffffc00) == 0x1e390000 ||
+      (insn & 0xfffffc00) == 0x1e780000 ||
       (insn & 0xfffffc00) == 0x1e790000 ||
+      (insn & 0xfffffc00) == 0x9e380000 ||
+      (insn & 0xfffffc00) == 0x9e390000 ||
       (insn & 0xfffffc00) == 0x9e780000 ||
       (insn & 0xfffffc00) == 0x9e790000) {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u op = insn & 0xfffffc00;
-    bool is_signed = op == 0x1e780000 || op == 0x9e780000;
-    bool is_64 = op == 0x9e780000 || op == 0x9e790000;
+    bool source_fp32 = op == 0x1e380000 || op == 0x1e390000 ||
+      op == 0x9e380000 || op == 0x9e390000;
+    bool is_signed = op == 0x1e380000 || op == 0x1e780000 ||
+      op == 0x9e380000 || op == 0x9e780000;
+    bool is_64 = op == 0x9e380000 || op == 0x9e390000 ||
+      op == 0x9e780000 || op == 0x9e790000;
     Bit64u fp_bits = 0;
+    Bit32u fp32_bits = 0;
     Bit64u result = 0;
 
-    if (!read_poly_aarch64_fp64_reg(rn, &fp_bits))
+    if (source_fp32) {
+      if (!read_poly_aarch64_fp32_reg(rn, &fp32_bits))
+        return false;
+    }
+    else if (!read_poly_aarch64_fp64_reg(rn, &fp_bits))
       return false;
+    double source_value = source_fp32 ?
+      (double) bx_poly_fp32_from_bits(fp32_bits) : bx_poly_fp64_from_bits(fp_bits);
     if (is_64)
       result = is_signed ?
-        bx_poly_fp64_to_int64_rtz(bx_poly_fp64_from_bits(fp_bits)) :
-        bx_poly_fp64_to_uint64_rtz(bx_poly_fp64_from_bits(fp_bits));
+        bx_poly_fp64_to_int64_rtz(source_value) :
+        bx_poly_fp64_to_uint64_rtz(source_value);
     else
       result = is_signed ?
-        (Bit32u) bx_poly_fp64_to_int32_rtz(bx_poly_fp64_from_bits(fp_bits)) :
-        bx_poly_fp64_to_uint32_rtz(bx_poly_fp64_from_bits(fp_bits));
+        (Bit32u) bx_poly_fp64_to_int32_rtz(source_value) :
+        bx_poly_fp64_to_uint32_rtz(source_value);
     if (!write_poly_aarch64_reg(rd, result))
       return false;
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,d%u result=%llu",
-      is_signed ? "fcvtzs" : "fcvtzu", is_64 ? "x" : "w", rd, rn,
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%c%u result=%llu",
+      is_signed ? "fcvtzs" : "fcvtzu", is_64 ? "x" : "w", rd,
+      source_fp32 ? 's' : 'd', rn,
       (unsigned long long) result));
     return true;
   }
