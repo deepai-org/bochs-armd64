@@ -5905,6 +5905,8 @@ struct bx_poly_scalar_syscall_entry {
 };
 
 static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
+  { 25, 0, "fcntl", "result", false },
+  { 29, 0, "ioctl", "result", false },
   { 48, 0, "faccessat", "result", false },
   { 96, 4243, "set_tid_address", "tid", false },
   { 98, 0, "futex", "result", false },
@@ -6242,6 +6244,18 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
   if (syscall_number == 57) {
     RAX = arg0 == 3 ? 0 : (Bit64u) -9;
     BX_INFO(("poly_ud: emulated %s close fd=%llu result=%lld", arch_name, (unsigned long long) arg0, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 61 && arg1 != 0 && arg2 >= 24 && arg0 <= 3) {
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 1);
+    write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 1);
+    write_virtual_word(BX_SEG_REG_DS, (bx_address) (arg1 + 16), 24);
+    write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 18), 4);
+    write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 19), '.');
+    write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + 20), '\0');
+    RAX = 24;
+    BX_INFO(("poly_ud: emulated %s getdents64 fd=%llu dirent=%llx count=%llu result=24", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
     return true;
   }
 
