@@ -244,6 +244,42 @@ static Bit64u bx_poly_fp64_to_int32_rtz(double value)
   return (Bit64u) (Bit64s) (Bit32s) value;
 }
 
+static Bit64u bx_poly_riscv_fclass32(Bit32u bits)
+{
+  Bit32u sign = bits >> 31;
+  Bit32u exp = (bits >> 23) & 0xff;
+  Bit32u frac = bits & 0x7fffff;
+  if (exp == 0xff) {
+    if (frac == 0)
+      return sign ? 0x1 : 0x80;
+    return (frac & 0x400000) ? 0x200 : 0x100;
+  }
+  if (exp == 0) {
+    if (frac == 0)
+      return sign ? 0x8 : 0x10;
+    return sign ? 0x4 : 0x20;
+  }
+  return sign ? 0x2 : 0x40;
+}
+
+static Bit64u bx_poly_riscv_fclass64(Bit64u bits)
+{
+  Bit32u sign = (Bit32u) (bits >> 63);
+  Bit64u exp = (bits >> 52) & 0x7ff;
+  Bit64u frac = bits & BX_CONST64(0x000fffffffffffff);
+  if (exp == 0x7ff) {
+    if (frac == 0)
+      return sign ? 0x1 : 0x80;
+    return (frac & BX_CONST64(0x0008000000000000)) ? 0x200 : 0x100;
+  }
+  if (exp == 0) {
+    if (frac == 0)
+      return sign ? 0x8 : 0x10;
+    return sign ? 0x4 : 0x20;
+  }
+  return sign ? 0x2 : 0x40;
+}
+
 static void bx_poly_aarch64_set_fp64_compare_nzcv(double left, double right)
 {
   if (left != left || right != right)
@@ -3434,34 +3470,81 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         op_name, rd, rs1, (unsigned long long) value));
       return true;
     }
-    else if (funct7 == 0x61 &&
+    else if ((funct7 == 0x60 || funct7 == 0x61) &&
              (rs2 == 0 || rs2 == 1 || rs2 == 2 || rs2 == 3)) {
       if (rm != 1)
         return false;
-      if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
+      bool source_fp32 = funct7 == 0x60;
+      if (source_fp32) {
+        if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
+          return false;
+      }
+      else if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
         return false;
+      double source_value = source_fp32 ?
+        (double) bx_poly_fp32_from_bits(left32_bits) : bx_poly_fp64_from_bits(left_bits);
       bool is_64 = rs2 >= 2;
       bool is_signed = (rs2 & 1) == 0;
       Bit64u result = 0;
       if (is_64) {
         result = is_signed ?
-          bx_poly_fp64_to_int64_rtz(bx_poly_fp64_from_bits(left_bits)) :
-          bx_poly_fp64_to_uint64_rtz(bx_poly_fp64_from_bits(left_bits));
+          bx_poly_fp64_to_int64_rtz(source_value) :
+          bx_poly_fp64_to_uint64_rtz(source_value);
       }
       else {
         result = is_signed ?
-          bx_poly_fp64_to_int32_rtz(bx_poly_fp64_from_bits(left_bits)) :
-          (Bit64u) (Bit64s) (Bit32s) bx_poly_fp64_to_uint32_rtz(
-            bx_poly_fp64_from_bits(left_bits));
+          bx_poly_fp64_to_int32_rtz(source_value) :
+          (Bit64u) (Bit64s) (Bit32s) bx_poly_fp64_to_uint32_rtz(source_value);
       }
       if (!write_poly_riscv_reg(rd, result))
         return false;
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv %s x%u,f%u result=%llu",
-        is_64 ? (is_signed ? "fcvt.l.d" : "fcvt.lu.d") :
-          (is_signed ? "fcvt.w.d" : "fcvt.wu.d"),
+        source_fp32 ?
+          (is_64 ? (is_signed ? "fcvt.l.s" : "fcvt.lu.s") :
+            (is_signed ? "fcvt.w.s" : "fcvt.wu.s")) :
+          (is_64 ? (is_signed ? "fcvt.l.d" : "fcvt.lu.d") :
+            (is_signed ? "fcvt.w.d" : "fcvt.wu.d")),
         rd, rs1,
         (unsigned long long) result));
+      return true;
+    }
+    else if ((funct7 == 0x70 || funct7 == 0x71) && rs2 == 0) {
+      bool source_fp32 = funct7 == 0x70;
+      Bit64u result = 0;
+      if (source_fp32) {
+        if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
+          return false;
+        if (rm == 0) {
+          result = (Bit64u) (Bit64s) (Bit32s) left32_bits;
+          op_name = "fmv.x.w";
+        }
+        else if (rm == 1) {
+          result = bx_poly_riscv_fclass32(left32_bits);
+          op_name = "fclass.s";
+        }
+        else
+          return false;
+      }
+      else {
+        if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
+          return false;
+        if (rm == 0) {
+          result = left_bits;
+          op_name = "fmv.x.d";
+        }
+        else if (rm == 1) {
+          result = bx_poly_riscv_fclass64(left_bits);
+          op_name = "fclass.d";
+        }
+        else
+          return false;
+      }
+      if (!write_poly_riscv_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv %s x%u,f%u result=%llu",
+        op_name, rd, rs1, (unsigned long long) result));
       return true;
     }
     else if (funct7 == 0x10) {
