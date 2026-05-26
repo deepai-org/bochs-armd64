@@ -2487,6 +2487,56 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x7fe0f000) == 0x1ac02000) {
+    bool sf = (insn & 0x80000000) != 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u shift_type = (insn >> 10) & 0x3;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u mask = bx_poly_low_mask(bits);
+    Bit64u value = 0;
+    Bit64u shift = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
+    if (!read_poly_aarch64_reg(rn, &value) ||
+        !read_poly_aarch64_reg(rm, &shift))
+      return false;
+    value &= mask;
+    shift &= bits - 1;
+
+    switch (shift_type) {
+      case 0:
+        op_name = "lsl";
+        result = (value << shift) & mask;
+        break;
+      case 1:
+        op_name = "lsr";
+        result = value >> shift;
+        break;
+      case 2:
+        op_name = "asr";
+        result = bits == 32 ?
+          (Bit32u) ((Bit32s) (Bit32u) value >> shift) :
+          (Bit64u) ((Bit64s) value >> shift);
+        break;
+      case 3:
+        op_name = "ror";
+        result = shift == 0 ? value :
+          ((value >> shift) | (value << (bits - shift))) & mask;
+        break;
+    }
+
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,%s%u result=%llu",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
+      sf ? "x" : "w", rm, (unsigned long long) result));
+    return true;
+  }
+
   {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
