@@ -2722,6 +2722,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
 
+  if (insn == 0xd503201f) {
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 nop"));
+    return true;
+  }
+
   if (insn == 0xd503305f) {
     bx_poly_aarch64_reservation_valid = false;
     bx_poly_aarch64_reservation_addr = 0;
@@ -2889,6 +2895,30 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         op_name = "ldset";
         new_value = (old_value | source) & mask;
         break;
+      case 0x4: {
+        op_name = "ldsmax";
+        Bit32u bits = size * 8;
+        Bit64s old_signed = (Bit64s) bx_poly_sign_extend(old_value, bits);
+        Bit64s source_signed = (Bit64s) bx_poly_sign_extend(source, bits);
+        new_value = old_signed > source_signed ? old_value : source;
+        break;
+      }
+      case 0x5: {
+        op_name = "ldsmin";
+        Bit32u bits = size * 8;
+        Bit64s old_signed = (Bit64s) bx_poly_sign_extend(old_value, bits);
+        Bit64s source_signed = (Bit64s) bx_poly_sign_extend(source, bits);
+        new_value = old_signed < source_signed ? old_value : source;
+        break;
+      }
+      case 0x6:
+        op_name = "ldumax";
+        new_value = old_value > source ? old_value : source;
+        break;
+      case 0x7:
+        op_name = "ldumin";
+        new_value = old_value < source ? old_value : source;
+        break;
       case 0x8:
         op_name = "swp";
         new_value = source;
@@ -2896,6 +2926,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       default:
         return false;
     }
+    new_value &= mask;
 
     if (size == 1)
       write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) new_value);
