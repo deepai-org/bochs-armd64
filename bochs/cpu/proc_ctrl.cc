@@ -505,6 +505,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
   Bit64u arg3 = RCX;
   Bit64u arg4 = R8;
   Bit64u arg5 = R9;
+  Bit64u arg6 = read_virtual_qword(BX_SEG_REG_SS, RSP + 8);
+  Bit64u arg7 = read_virtual_qword(BX_SEG_REG_SS, RSP + 16);
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE);
   bx_poly_current_mode = mode;
@@ -520,6 +522,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
         !write_poly_aarch64_reg(3, arg3) ||
         !write_poly_aarch64_reg(4, arg4) ||
         !write_poly_aarch64_reg(5, arg5) ||
+        !write_poly_aarch64_reg(6, arg6) ||
+        !write_poly_aarch64_reg(7, arg7) ||
         !write_poly_aarch64_reg(30, BX_POLY_RETURN_COOKIE))
       return false;
   }
@@ -531,6 +535,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
         !write_poly_riscv_reg(13, arg3) ||
         !write_poly_riscv_reg(14, arg4) ||
         !write_poly_riscv_reg(15, arg5) ||
+        !write_poly_riscv_reg(16, arg6) ||
+        !write_poly_riscv_reg(17, arg7) ||
         !write_poly_riscv_reg(1, BX_POLY_RETURN_COOKIE))
       return false;
   }
