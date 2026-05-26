@@ -85,6 +85,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 = (1U << 19);
 static const Bit32u BX_POLY_CPUID_FEATURE_COMPACT_F32_U32 = (1U << 20);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT = (1U << 21);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS = (1U << 22);
+static const Bit32u BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS = (1U << 23);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -114,7 +115,8 @@ enum {
   BX_POLY_ARG_KIND_HETERO_U64_F32 = 4,
   BX_POLY_ARG_KIND_HETERO_F32_U64 = 5,
   BX_POLY_ARG_KIND_COMPACT_U32_F32 = 6,
-  BX_POLY_ARG_KIND_COMPACT_F32_U32 = 7
+  BX_POLY_ARG_KIND_COMPACT_F32_U32 = 7,
+  BX_POLY_ARG_KIND_FP64_STACK = 8
 };
 
 enum {
@@ -1755,7 +1757,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address original_rsp = RSP;
   bx_address foreign_stack_rsp =
     (bx_address) ((RSP - BX_POLY_FOREIGN_STACK_GAP) & ~BX_CONST64(0xf));
-  bx_address stack_copy_base = original_rsp + 24;
+  bx_address stack_copy_base = arg_kind == BX_POLY_ARG_KIND_FP64_STACK ?
+    original_rsp + 8 : original_rsp + 24;
 
   if (sret_call) {
     args[0] = RSI;
@@ -1903,6 +1906,14 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       mapped =
         write_poly_riscv_reg(10, int_lane) &&
         write_poly_riscv_fp32_reg(10, fp_lane);
+    }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP64_STACK) {
+      // RISC-V psABI falls back to integer arg registers after fa0-fa7.
+      mapped =
+        write_poly_riscv_reg(10,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8)) &&
+        write_poly_riscv_reg(11,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 16));
     }
   }
   else {
@@ -8999,6 +9010,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_COMPACT_F32_U32,
           BX_POLY_ARG_KIND_COMPACT_F32_U32);
+      if (op == 0x1e)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FP64_STACK);
+      if (op == 0x1f)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FP64_STACK);
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op >= 0x30 && op <= 0x32) {
@@ -9164,7 +9183,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_COMPACT_U32_F32 |
           BX_POLY_CPUID_FEATURE_COMPACT_F32_U32 |
           BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT |
-          BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS;
+          BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS |
+          BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
