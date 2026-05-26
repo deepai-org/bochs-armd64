@@ -325,6 +325,55 @@ static Bit64s bx_poly_sign_extend64(Bit64u value, unsigned bits)
   return (Bit64s) ((value ^ sign) - sign);
 }
 
+static Bit64u bx_poly_reverse_bits(Bit64u value, unsigned bits)
+{
+  Bit64u result = 0;
+  for (unsigned i = 0; i < bits; i++) {
+    if (value & (BX_CONST64(1) << i))
+      result |= BX_CONST64(1) << (bits - 1 - i);
+  }
+  return result;
+}
+
+static Bit64u bx_poly_reverse_bytes_in_lanes(Bit64u value, unsigned bits,
+  unsigned lane_bits)
+{
+  Bit64u result = 0;
+  for (unsigned lane = 0; lane < bits; lane += lane_bits) {
+    for (unsigned byte = 0; byte < lane_bits; byte += 8) {
+      Bit64u b = (value >> (lane + byte)) & 0xff;
+      result |= b << (lane + lane_bits - 8 - byte);
+    }
+  }
+  return result;
+}
+
+static Bit64u bx_poly_count_leading_zeroes(Bit64u value, unsigned bits)
+{
+  value &= bx_poly_low_mask(bits);
+  Bit64u count = 0;
+  for (int bit = (int) bits - 1; bit >= 0; bit--) {
+    if (value & (BX_CONST64(1) << bit))
+      break;
+    count++;
+  }
+  return count;
+}
+
+static Bit64u bx_poly_count_leading_sign_bits(Bit64u value, unsigned bits)
+{
+  value &= bx_poly_low_mask(bits);
+  bool sign = (value & (BX_CONST64(1) << (bits - 1))) != 0;
+  Bit64u count = 0;
+  for (int bit = (int) bits - 2; bit >= 0; bit--) {
+    bool current = (value & (BX_CONST64(1) << bit)) != 0;
+    if (current != sign)
+      break;
+    count++;
+  }
+  return count;
+}
+
 static Bit64s bx_poly_marker_offset(Bit64s guest_offset)
 {
   return (guest_offset / 4) * 8;
@@ -2222,6 +2271,58 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u,immr=%u,imms=%u result=%llu",
       op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn, immr, imms,
+      (unsigned long long) result));
+    return true;
+  }
+
+  if ((insn & 0x7fffe000) == 0x5ac00000) {
+    bool sf = (insn & 0x80000000) != 0;
+    Bit32u op = (insn >> 10) & 0x3f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rd = insn & 0x1f;
+    unsigned bits = sf ? 64 : 32;
+    Bit64u value = 0;
+    Bit64u result = 0;
+    const char *op_name = 0;
+
+    if (op > 5 || (!sf && op == 3))
+      return false;
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    value &= bx_poly_low_mask(bits);
+
+    switch (op) {
+      case 0:
+        op_name = "rbit";
+        result = bx_poly_reverse_bits(value, bits);
+        break;
+      case 1:
+        op_name = "rev16";
+        result = bx_poly_reverse_bytes_in_lanes(value, bits, 16);
+        break;
+      case 2:
+        op_name = sf ? "rev32" : "rev";
+        result = bx_poly_reverse_bytes_in_lanes(value, bits, 32);
+        break;
+      case 3:
+        op_name = "rev";
+        result = bx_poly_reverse_bytes_in_lanes(value, bits, 64);
+        break;
+      case 4:
+        op_name = "clz";
+        result = bx_poly_count_leading_zeroes(value, bits);
+        break;
+      case 5:
+        op_name = "cls";
+        result = bx_poly_count_leading_sign_bits(value, bits);
+        break;
+    }
+
+    if (!write_poly_aarch64_reg(rd, result))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%s%u result=%llu",
+      op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
       (unsigned long long) result));
     return true;
   }
