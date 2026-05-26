@@ -190,6 +190,30 @@ static Bit32u bx_poly_fp32_to_bits(float value)
   return fp.bits;
 }
 
+static void bx_poly_aarch64_set_fp64_compare_nzcv(double left, double right)
+{
+  if (left != left || right != right)
+    bx_poly_aarch64_nzcv = 0x3;
+  else if (left < right)
+    bx_poly_aarch64_nzcv = 0x8;
+  else if (left > right)
+    bx_poly_aarch64_nzcv = 0x2;
+  else
+    bx_poly_aarch64_nzcv = 0x6;
+}
+
+static void bx_poly_aarch64_set_fp32_compare_nzcv(float left, float right)
+{
+  if (left != left || right != right)
+    bx_poly_aarch64_nzcv = 0x3;
+  else if (left < right)
+    bx_poly_aarch64_nzcv = 0x8;
+  else if (left > right)
+    bx_poly_aarch64_nzcv = 0x2;
+  else
+    bx_poly_aarch64_nzcv = 0x6;
+}
+
 static Bit64s bx_poly_sign_extend(Bit32u value, unsigned bits)
 {
   Bit64s extended = value & ((BX_CONST64(1) << bits) - 1);
@@ -1393,6 +1417,40 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & 0xffe0fc1f) == 0x1e202000 ||
+      (insn & 0xffe0fc1f) == 0x1e202010 ||
+      (insn & 0xffe0fc1f) == 0x1e602000 ||
+      (insn & 0xffe0fc1f) == 0x1e602010) {
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    bool fp32_op = (insn & 0xffe0fc1f) == 0x1e202000 ||
+      (insn & 0xffe0fc1f) == 0x1e202010;
+
+    if (fp32_op) {
+      Bit32u left_bits = 0;
+      Bit32u right_bits = 0;
+      if (!read_poly_aarch64_fp32_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right_bits))
+        return false;
+      bx_poly_aarch64_set_fp32_compare_nzcv(
+        bx_poly_fp32_from_bits(left_bits), bx_poly_fp32_from_bits(right_bits));
+    }
+    else {
+      Bit64u left_bits = 0;
+      Bit64u right_bits = 0;
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      bx_poly_aarch64_set_fp64_compare_nzcv(
+        bx_poly_fp64_from_bits(left_bits), bx_poly_fp64_from_bits(right_bits));
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 fcmp%s v%u,v%u nzcv=%x",
+      fp32_op ? ".s" : ".d", rn, rm, bx_poly_aarch64_nzcv));
+    return true;
+  }
+
   if ((insn & 0x9f000000) == 0x10000000) {
     Bit32u rd = insn & 0x1f;
     Bit32u immlo = (insn >> 29) & 0x3;
@@ -2095,6 +2153,93 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
       result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) * bx_poly_fp64_from_bits(right_bits));
+    }
+    else if (funct7 == 0x10) {
+      fp32_op = true;
+      if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
+          !read_poly_riscv_fp32_reg(rs2, &right32_bits))
+        return false;
+      if (rm == 0) {
+        op_name = "fsgnj.s";
+        result32_bits = (left32_bits & 0x7fffffff) | (right32_bits & 0x80000000);
+      }
+      else if (rm == 1) {
+        op_name = "fsgnjn.s";
+        result32_bits = (left32_bits & 0x7fffffff) | ((~right32_bits) & 0x80000000);
+      }
+      else if (rm == 2) {
+        op_name = "fsgnjx.s";
+        result32_bits = left32_bits ^ (right32_bits & 0x80000000);
+      }
+      else {
+        return false;
+      }
+    }
+    else if (funct7 == 0x11) {
+      if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
+          !read_poly_riscv_fp64_reg(rs2, &right_bits))
+        return false;
+      if (rm == 0) {
+        op_name = "fsgnj.d";
+        result_bits = (left_bits & BX_CONST64(0x7fffffffffffffff)) |
+          (right_bits & BX_CONST64(0x8000000000000000));
+      }
+      else if (rm == 1) {
+        op_name = "fsgnjn.d";
+        result_bits = (left_bits & BX_CONST64(0x7fffffffffffffff)) |
+          ((~right_bits) & BX_CONST64(0x8000000000000000));
+      }
+      else if (rm == 2) {
+        op_name = "fsgnjx.d";
+        result_bits = left_bits ^ (right_bits & BX_CONST64(0x8000000000000000));
+      }
+      else {
+        return false;
+      }
+    }
+    else if (funct7 == 0x50 || funct7 == 0x51) {
+      bool fp32_cmp = funct7 == 0x50;
+      Bit64u result = 0;
+      if (fp32_cmp) {
+        if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
+            !read_poly_riscv_fp32_reg(rs2, &right32_bits))
+          return false;
+        float left = bx_poly_fp32_from_bits(left32_bits);
+        float right = bx_poly_fp32_from_bits(right32_bits);
+        if (left != left || right != right)
+          result = 0;
+        else if (rm == 0)
+          result = left <= right;
+        else if (rm == 1)
+          result = left < right;
+        else if (rm == 2)
+          result = left == right;
+        else
+          return false;
+      }
+      else {
+        if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
+            !read_poly_riscv_fp64_reg(rs2, &right_bits))
+          return false;
+        double left = bx_poly_fp64_from_bits(left_bits);
+        double right = bx_poly_fp64_from_bits(right_bits);
+        if (left != left || right != right)
+          result = 0;
+        else if (rm == 0)
+          result = left <= right;
+        else if (rm == 1)
+          result = left < right;
+        else if (rm == 2)
+          result = left == right;
+        else
+          return false;
+      }
+      if (!write_poly_riscv_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated riscv fcmp%s x%u,f%u,f%u result=%llu",
+        fp32_cmp ? ".s" : ".d", rd, rs1, rs2, (unsigned long long) result));
+      return true;
     }
     else {
       return false;
