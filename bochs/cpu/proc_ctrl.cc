@@ -74,6 +74,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES = (1U << 12);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_RET = (1U << 13);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_ARG = (1U << 14);
 static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_U64_F64 = (1U << 15);
+static const Bit32u BX_POLY_CPUID_FEATURE_HETERO_F64_U64 = (1U << 16);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -86,13 +87,15 @@ static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 enum {
   BX_POLY_RETURN_KIND_DEFAULT = 0,
   BX_POLY_RETURN_KIND_FPAIR32 = 1,
-  BX_POLY_RETURN_KIND_HETERO_U64_F64 = 2
+  BX_POLY_RETURN_KIND_HETERO_U64_F64 = 2,
+  BX_POLY_RETURN_KIND_HETERO_F64_U64 = 3
 };
 
 enum {
   BX_POLY_ARG_KIND_DEFAULT = 0,
   BX_POLY_ARG_KIND_FPAIR32 = 1,
-  BX_POLY_ARG_KIND_HETERO_U64_F64 = 2
+  BX_POLY_ARG_KIND_HETERO_U64_F64 = 2,
+  BX_POLY_ARG_KIND_HETERO_F64_U64 = 3
 };
 
 enum {
@@ -1780,6 +1783,14 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 2; mapped && n < 7; n++)
         mapped = write_poly_aarch64_reg(n + 1, args[n]);
     }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_HETERO_F64_U64) {
+      mapped =
+        write_poly_aarch64_reg(0, fp_args[0]) &&
+        write_poly_aarch64_reg(1, args[0]) &&
+        write_poly_aarch64_reg(2, args[1]);
+      for (Bit32u n = 2; mapped && n < 7; n++)
+        mapped = write_poly_aarch64_reg(n + 1, args[n]);
+    }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     bx_poly_reset_riscv_regs();
@@ -1855,6 +1866,9 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
 
   Bit64u second_result = 0;
   bool has_second_result = false;
+  Bit64u hetero_f64_u64_fp_result = 0;
+  Bit64u hetero_f64_u64_int_result = 0;
+  bool has_hetero_f64_u64_result = false;
   Bit32u fpair32_lo = 0, fpair32_hi = 0;
   bool has_fpair32_result = false;
   bool sret_call = bx_poly_return_cookie_sret;
@@ -1873,6 +1887,12 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   else if (return_kind == BX_POLY_RETURN_KIND_HETERO_U64_F64 &&
       mode == BX_POLY_MODE_RAW_AARCH64) {
     has_second_result = read_poly_aarch64_reg(1, &second_result);
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_HETERO_F64_U64 &&
+      mode == BX_POLY_MODE_RAW_AARCH64) {
+    has_hetero_f64_u64_result =
+      read_poly_aarch64_reg(0, &hetero_f64_u64_fp_result) &&
+      read_poly_aarch64_reg(1, &hetero_f64_u64_int_result);
   }
   else if (mode == BX_POLY_MODE_RAW_AARCH64)
     has_second_result = read_poly_aarch64_reg(1, &second_result);
@@ -1895,6 +1915,10 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   else if (return_kind == BX_POLY_RETURN_KIND_HETERO_U64_F64 &&
       has_second_result) {
     BX_WRITE_XMM_REG_LO_QWORD(0, second_result);
+  }
+  else if (has_hetero_f64_u64_result) {
+    RAX = hetero_f64_u64_int_result;
+    BX_WRITE_XMM_REG_LO_QWORD(0, hetero_f64_u64_fp_result);
   }
   else if (has_second_result)
     RDX = second_result;
@@ -8644,6 +8668,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_U64_F64,
           BX_POLY_ARG_KIND_HETERO_U64_F64);
+      if (op == 0x19)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_HETERO_F64_U64,
+          BX_POLY_ARG_KIND_HETERO_F64_U64);
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op >= 0x30 && op <= 0x32) {
@@ -8802,7 +8831,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES |
           BX_POLY_CPUID_FEATURE_FPAIR32_RET |
           BX_POLY_CPUID_FEATURE_FPAIR32_ARG |
-          BX_POLY_CPUID_FEATURE_HETERO_U64_F64;
+          BX_POLY_CPUID_FEATURE_HETERO_U64_F64 |
+          BX_POLY_CPUID_FEATURE_HETERO_F64_U64;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
