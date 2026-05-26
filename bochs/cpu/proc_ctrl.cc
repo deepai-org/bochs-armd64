@@ -6070,7 +6070,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 
 bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_number)
 {
-  if (syscall_number != 93)
+  if (syscall_number != 93 && syscall_number != 94)
     return false;
 
   Bit64u exit_code = RAX;
@@ -6081,7 +6081,9 @@ bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_nu
   bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
   RIP = ret_addr;
-  BX_INFO(("poly_ud: emulated %s exit code=%llu rip=%llx", arch_name, (unsigned long long) exit_code, (unsigned long long) ret_addr));
+  BX_INFO(("poly_ud: emulated %s %s code=%llu rip=%llx", arch_name,
+    syscall_number == 94 ? "exit_group" : "exit",
+    (unsigned long long) exit_code, (unsigned long long) ret_addr));
   return true;
 }
 
