@@ -2050,6 +2050,40 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffe00c00) == 0x1e200c00 ||
+      (insn & 0xffe00c00) == 0x1e600c00) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u cond = (insn >> 12) & 0xf;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    bool fp32_op = (insn & 0x00400000) == 0;
+    bool take_left = bx_poly_aarch64_condition_holds(cond);
+
+    if (fp32_op) {
+      Bit32u left_bits = 0;
+      Bit32u right_bits = 0;
+      if (!read_poly_aarch64_fp32_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right_bits))
+        return false;
+      if (!write_poly_aarch64_fp32_reg(rd, take_left ? left_bits : right_bits))
+        return false;
+    }
+    else {
+      Bit64u left_bits = 0;
+      Bit64u right_bits = 0;
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      if (!write_poly_aarch64_fp64_reg(rd, take_left ? left_bits : right_bits))
+        return false;
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 fcsel%s v%u,v%u,v%u,cond=%u %s",
+      fp32_op ? ".s" : ".d", rd, rn, rm, cond, take_left ? "left" : "right"));
+    return true;
+  }
+
   {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
