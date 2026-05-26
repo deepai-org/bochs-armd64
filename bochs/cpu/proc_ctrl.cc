@@ -2468,6 +2468,32 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result = left * right;
     }
+    else if ((insn & 0x7fe0fc00) == 0x1ac00800 ||
+             (insn & 0x7fe0fc00) == 0x1ac00c00) {
+      bool signed_divide = (insn & 0x00000400) != 0;
+      op_name = signed_divide ? "sdiv" : "udiv";
+      if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
+        return false;
+      left &= bx_poly_low_mask(bits);
+      right &= bx_poly_low_mask(bits);
+      if (right == 0) {
+        result = 0;
+      }
+      else if (signed_divide) {
+        Bit64u sign_bit = BX_CONST64(1) << (bits - 1);
+        if (left == sign_bit && right == bx_poly_low_mask(bits)) {
+          result = left;
+        }
+        else {
+          Bit64s signed_left = bx_poly_sign_extend64(left, bits);
+          Bit64s signed_right = bx_poly_sign_extend64(right, bits);
+          result = (Bit64u) (signed_left / signed_right);
+        }
+      }
+      else {
+        result = left / right;
+      }
+    }
     else if ((insn & 0x7f200000) == 0x4a000000) {
       op_name = "eor";
       if (!read_poly_aarch64_reg(rn, &left) || !read_poly_aarch64_reg(rm, &right))
