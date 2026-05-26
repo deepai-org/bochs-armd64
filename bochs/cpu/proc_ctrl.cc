@@ -8758,6 +8758,44 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 69 && arg0 == 3) {
+    const Bit8u input[] = {'P', 'V', '!', '!'};
+    const Bit64u input_size = 4;
+    Bit64u total = 0;
+    Bit64u copied = 0;
+    Bit64u iovcnt = arg2 < 16 ? arg2 : 16;
+    for (Bit64u iov = 0; iov < iovcnt && copied < input_size; iov++) {
+      bx_address iov_addr = (bx_address) (arg1 + iov * 16);
+      Bit64u base = read_virtual_qword(BX_SEG_REG_DS, iov_addr);
+      Bit64u len = read_virtual_qword(BX_SEG_REG_DS, iov_addr + 8);
+      Bit64u count = len < (input_size - copied) ? len : (input_size - copied);
+      for (Bit64u n = 0; n < count; n++)
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (base + n), input[copied + n]);
+      copied += count;
+      total += count;
+    }
+    RAX = total;
+    BX_INFO(("poly_ud: emulated %s preadv fd=3 iov=%llx iovcnt=%llu offset=%llu offset_hi=%llu total=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) total));
+    return true;
+  }
+
+  if (syscall_number == 70 && arg0 == 1) {
+    Bit64u total = 0;
+    Bit64u checksum = 0;
+    Bit64u iovcnt = arg2 < 16 ? arg2 : 16;
+    for (Bit64u iov = 0; iov < iovcnt; iov++) {
+      bx_address iov_addr = (bx_address) (arg1 + iov * 16);
+      Bit64u base = read_virtual_qword(BX_SEG_REG_DS, iov_addr);
+      Bit64u len = read_virtual_qword(BX_SEG_REG_DS, iov_addr + 8);
+      total += len;
+      for (Bit64u n = 0; n < len && n < 4096; n++)
+        checksum += read_virtual_byte(BX_SEG_REG_DS, (bx_address) (base + n));
+    }
+    RAX = total;
+    BX_INFO(("poly_ud: emulated %s pwritev fd=1 iov=%llx iovcnt=%llu offset=%llu offset_hi=%llu total=%llu checksum=%llu", arch_name, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) total, (unsigned long long) checksum));
+    return true;
+  }
+
   if (syscall_number == 72) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s pselect6 nfds=%llu readfds=%llx writefds=%llx exceptfds=%llx timeout=%llx sigmask=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (unsigned long long) arg5));
