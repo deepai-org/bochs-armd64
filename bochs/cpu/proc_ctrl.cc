@@ -106,6 +106,8 @@ static bool bx_poly_return_cookie_valid = false;
 static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_return_cookie_rip = 0;
 static bx_address bx_poly_return_cookie_rsp = 0;
+static bool bx_poly_return_cookie_sret = false;
+static bx_address bx_poly_return_cookie_sret_ptr = 0;
 static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
 static unsigned bx_poly_cross_return_top = 0;
 static bool bx_poly_import_x86_return_valid = false;
@@ -140,6 +142,8 @@ struct bx_poly_reg_state_t {
   Bit32u return_cookie_mode;
   bx_address return_cookie_rip;
   bx_address return_cookie_rsp;
+  bool return_cookie_sret;
+  bx_address return_cookie_sret_ptr;
   bx_poly_cross_return_frame_t cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
   unsigned cross_return_top;
   bool import_x86_return_valid;
@@ -802,6 +806,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].return_cookie_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].return_cookie_rip = 0;
   bx_poly_reg_states[victim].return_cookie_rsp = 0;
+  bx_poly_reg_states[victim].return_cookie_sret = false;
+  bx_poly_reg_states[victim].return_cookie_sret_ptr = 0;
   bx_poly_reg_states[victim].cross_return_top = 0;
   bx_poly_reg_states[victim].import_x86_return_valid = false;
   bx_poly_reg_states[victim].import_x86_return_mode = BX_POLY_MODE_X86;
@@ -843,6 +849,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].return_cookie_mode = bx_poly_return_cookie_mode;
   bx_poly_reg_states[slot].return_cookie_rip = bx_poly_return_cookie_rip;
   bx_poly_reg_states[slot].return_cookie_rsp = bx_poly_return_cookie_rsp;
+  bx_poly_reg_states[slot].return_cookie_sret = bx_poly_return_cookie_sret;
+  bx_poly_reg_states[slot].return_cookie_sret_ptr = bx_poly_return_cookie_sret_ptr;
   bx_poly_reg_states[slot].cross_return_top = bx_poly_cross_return_top;
   bx_poly_reg_states[slot].import_x86_return_valid = bx_poly_import_x86_return_valid;
   bx_poly_reg_states[slot].import_x86_return_mode = bx_poly_import_x86_return_mode;
@@ -880,6 +888,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_return_cookie_mode = bx_poly_reg_states[slot].return_cookie_mode;
   bx_poly_return_cookie_rip = bx_poly_reg_states[slot].return_cookie_rip;
   bx_poly_return_cookie_rsp = bx_poly_reg_states[slot].return_cookie_rsp;
+  bx_poly_return_cookie_sret = bx_poly_reg_states[slot].return_cookie_sret;
+  bx_poly_return_cookie_sret_ptr = bx_poly_reg_states[slot].return_cookie_sret_ptr;
   bx_poly_cross_return_top = bx_poly_reg_states[slot].cross_return_top;
   bx_poly_import_x86_return_valid = bx_poly_reg_states[slot].import_x86_return_valid;
   bx_poly_import_x86_return_mode = bx_poly_reg_states[slot].import_x86_return_mode;
@@ -1220,22 +1230,41 @@ bool BX_CPU_C::write_poly_riscv_fp32_reg(Bit32u reg, Bit32u value)
   return false;
 }
 
-bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_address return_rip)
+bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
+  bx_address return_rip, bool sret_call)
 {
-  Bit64u arg0 = RDI;
-  Bit64u arg1 = RSI;
-  Bit64u arg2 = RDX;
-  Bit64u arg3 = RCX;
-  Bit64u arg4 = R8;
-  Bit64u arg5 = R9;
-  Bit64u arg6 = read_virtual_qword(BX_SEG_REG_SS, RSP + 8);
-  Bit64u arg7 = read_virtual_qword(BX_SEG_REG_SS, RSP + 16);
+  Bit64u args[8];
+  bx_address sret_ptr = sret_call ? (bx_address) RDI : 0;
   bx_address original_rsp = RSP;
   bx_address foreign_stack_rsp =
     (bx_address) ((RSP - BX_POLY_FOREIGN_STACK_GAP) & ~BX_CONST64(0xf));
+  bx_address stack_copy_base = original_rsp + 24;
+
+  if (sret_call) {
+    args[0] = RSI;
+    args[1] = RDX;
+    args[2] = RCX;
+    args[3] = R8;
+    args[4] = R9;
+    args[5] = read_virtual_qword(BX_SEG_REG_SS, RSP + 8);
+    args[6] = read_virtual_qword(BX_SEG_REG_SS, RSP + 16);
+    args[7] = read_virtual_qword(BX_SEG_REG_SS, RSP + 24);
+    stack_copy_base = original_rsp +
+      (mode == BX_POLY_MODE_RAW_AARCH64 ? 32 : 24);
+  }
+  else {
+    args[0] = RDI;
+    args[1] = RSI;
+    args[2] = RDX;
+    args[3] = RCX;
+    args[4] = R8;
+    args[5] = R9;
+    args[6] = read_virtual_qword(BX_SEG_REG_SS, RSP + 8);
+    args[7] = read_virtual_qword(BX_SEG_REG_SS, RSP + 16);
+  }
 
   for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
-    Bit64u value = read_virtual_qword(BX_SEG_REG_SS, original_rsp + 24 + n * 8);
+    Bit64u value = read_virtual_qword(BX_SEG_REG_SS, stack_copy_base + n * 8);
     write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
   }
 
@@ -1245,34 +1274,51 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
   bx_poly_return_cookie_mode = mode;
   bx_poly_return_cookie_rip = return_rip;
   bx_poly_return_cookie_rsp = original_rsp;
+  bx_poly_return_cookie_sret = sret_call;
+  bx_poly_return_cookie_sret_ptr = sret_ptr;
   RSP = foreign_stack_rsp;
 
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     bx_poly_reset_aarch64_regs();
     mapped =
-      write_poly_aarch64_reg(0, arg0) &&
-      write_poly_aarch64_reg(1, arg1) &&
-      write_poly_aarch64_reg(2, arg2) &&
-      write_poly_aarch64_reg(3, arg3) &&
-      write_poly_aarch64_reg(4, arg4) &&
-      write_poly_aarch64_reg(5, arg5) &&
-      write_poly_aarch64_reg(6, arg6) &&
-      write_poly_aarch64_reg(7, arg7) &&
+      write_poly_aarch64_reg(0, args[0]) &&
+      write_poly_aarch64_reg(1, args[1]) &&
+      write_poly_aarch64_reg(2, args[2]) &&
+      write_poly_aarch64_reg(3, args[3]) &&
+      write_poly_aarch64_reg(4, args[4]) &&
+      write_poly_aarch64_reg(5, args[5]) &&
+      write_poly_aarch64_reg(6, args[6]) &&
+      write_poly_aarch64_reg(7, args[7]) &&
+      (!sret_call || write_poly_aarch64_reg(8, sret_ptr)) &&
       write_poly_aarch64_reg(30, BX_POLY_RETURN_COOKIE);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     bx_poly_reset_riscv_regs();
-    mapped =
-      write_poly_riscv_reg(10, arg0) &&
-      write_poly_riscv_reg(11, arg1) &&
-      write_poly_riscv_reg(12, arg2) &&
-      write_poly_riscv_reg(13, arg3) &&
-      write_poly_riscv_reg(14, arg4) &&
-      write_poly_riscv_reg(15, arg5) &&
-      write_poly_riscv_reg(16, arg6) &&
-      write_poly_riscv_reg(17, arg7) &&
-      write_poly_riscv_reg(1, BX_POLY_RETURN_COOKIE);
+    if (sret_call) {
+      mapped =
+        write_poly_riscv_reg(10, sret_ptr) &&
+        write_poly_riscv_reg(11, args[0]) &&
+        write_poly_riscv_reg(12, args[1]) &&
+        write_poly_riscv_reg(13, args[2]) &&
+        write_poly_riscv_reg(14, args[3]) &&
+        write_poly_riscv_reg(15, args[4]) &&
+        write_poly_riscv_reg(16, args[5]) &&
+        write_poly_riscv_reg(17, args[6]) &&
+        write_poly_riscv_reg(1, BX_POLY_RETURN_COOKIE);
+    }
+    else {
+      mapped =
+        write_poly_riscv_reg(10, args[0]) &&
+        write_poly_riscv_reg(11, args[1]) &&
+        write_poly_riscv_reg(12, args[2]) &&
+        write_poly_riscv_reg(13, args[3]) &&
+        write_poly_riscv_reg(14, args[4]) &&
+        write_poly_riscv_reg(15, args[5]) &&
+        write_poly_riscv_reg(16, args[6]) &&
+        write_poly_riscv_reg(17, args[7]) &&
+        write_poly_riscv_reg(1, BX_POLY_RETURN_COOKIE);
+    }
   }
   else {
     mapped = false;
@@ -1283,6 +1329,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
     bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
     bx_poly_return_cookie_rsp = 0;
     bx_poly_return_cookie_rip = 0;
+    bx_poly_return_cookie_sret = false;
+    bx_poly_return_cookie_sret_ptr = 0;
     RSP = original_rsp;
     return false;
   }
@@ -1292,7 +1340,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip, bx_addres
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   RIP = target_rip;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
-  BX_INFO(("poly_ud: pcall mode=%u target=%llx return=%llx", mode, (unsigned long long) target_rip, (unsigned long long) return_rip));
+  BX_INFO(("poly_ud: pcall mode=%u target=%llx return=%llx sret=%u", mode, (unsigned long long) target_rip, (unsigned long long) return_rip, sret_call ? 1 : 0));
   return true;
 }
 
@@ -1305,6 +1353,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
 
   Bit64u second_result = 0;
   bool has_second_result = false;
+  bool sret_call = bx_poly_return_cookie_sret;
+  bx_address sret_ptr = bx_poly_return_cookie_sret_ptr;
   if (mode == BX_POLY_MODE_RAW_AARCH64)
     has_second_result = read_poly_aarch64_reg(1, &second_result);
   else if (mode == BX_POLY_MODE_RAW_RISCV)
@@ -1317,10 +1367,14 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
   RSP = bx_poly_return_cookie_rsp;
   RIP = bx_poly_return_cookie_rip;
-  if (has_second_result)
+  if (sret_call)
+    RAX = sret_ptr;
+  else if (has_second_result)
     RDX = second_result;
   bx_poly_return_cookie_rsp = 0;
   bx_poly_return_cookie_rip = 0;
+  bx_poly_return_cookie_sret = false;
+  bx_poly_return_cookie_sret_ptr = 0;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
   BX_INFO(("poly_raw: pcall return mode=%u rip=%llx", mode, (unsigned long long) RIP));
@@ -6193,9 +6247,22 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       Bit8u call6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
       Bit8u call7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
       if (call3 == 'P' && call4 == 'C' && call5 == 'A' && call6 == '6' && call7 == '4')
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) R10, (bx_address) R11);
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) R10, (bx_address) R11, false);
       if (call3 == 'P' && call4 == 'C' && call5 == 'R' && call6 == 'V' && call7 == '6')
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) R10, (bx_address) R11);
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) R10, (bx_address) R11, false);
+      break;
+    }
+
+    if (prefix == 0x42) {
+      Bit8u call3 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 3);
+      Bit8u call4 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 4);
+      Bit8u call5 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 5);
+      Bit8u call6 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 6);
+      Bit8u call7 = read_virtual_byte(BX_SEG_REG_CS, marker_rip + 7);
+      if (call3 == 'P' && call4 == 'S' && call5 == 'A' && call6 == '6' && call7 == '4')
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) R10, (bx_address) R11, true);
+      if (call3 == 'P' && call4 == 'S' && call5 == 'R' && call6 == 'V' && call7 == '6')
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV, (bx_address) R10, (bx_address) R11, true);
       break;
     }
 
