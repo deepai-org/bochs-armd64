@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 67;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 71;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -159,7 +159,11 @@ enum {
   BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL = 63,
   BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16 = 64,
   BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16 = 65,
-  BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 = 66
+  BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 = 66,
+  BX_POLY_IMPORT_FUNC_UDIVTI3 = 67,
+  BX_POLY_IMPORT_FUNC_UMODTI3 = 68,
+  BX_POLY_IMPORT_FUNC_DIVTI3 = 69,
+  BX_POLY_IMPORT_FUNC_MODTI3 = 70
 };
 
 enum {
@@ -1935,6 +1939,74 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   Bit32u aarch64_atomic_op = 0;
   Bit32u aarch64_atomic_size = 0;
   const char *aarch64_atomic_name = 0;
+  if (import_id == BX_POLY_IMPORT_FUNC_UDIVTI3 ||
+      import_id == BX_POLY_IMPORT_FUNC_UMODTI3 ||
+      import_id == BX_POLY_IMPORT_FUNC_DIVTI3 ||
+      import_id == BX_POLY_IMPORT_FUNC_MODTI3) {
+    Bit64u dividend_lo = 0, dividend_hi = 0, divisor_lo = 0, divisor_hi = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_reg(0, &dividend_lo) &&
+        read_poly_aarch64_reg(1, &dividend_hi) &&
+        read_poly_aarch64_reg(2, &divisor_lo) &&
+        read_poly_aarch64_reg(3, &divisor_hi);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(10, &dividend_lo) &&
+        read_poly_riscv_reg(11, &dividend_hi) &&
+        read_poly_riscv_reg(12, &divisor_lo) &&
+        read_poly_riscv_reg(13, &divisor_hi);
+    }
+    if (!mapped)
+      return false;
+
+    unsigned __int128 divisor =
+      ((unsigned __int128) divisor_hi << 64) | divisor_lo;
+    if (divisor == 0)
+      return false;
+
+    unsigned __int128 result = 0;
+    unsigned __int128 dividend =
+      ((unsigned __int128) dividend_hi << 64) | dividend_lo;
+    if (import_id == BX_POLY_IMPORT_FUNC_UDIVTI3) {
+      result = dividend / divisor;
+    }
+    else if (import_id == BX_POLY_IMPORT_FUNC_UMODTI3) {
+      result = dividend % divisor;
+    }
+    else {
+      __int128 signed_dividend = (__int128) dividend;
+      __int128 signed_divisor = (__int128) divisor;
+      __int128 signed_result =
+        import_id == BX_POLY_IMPORT_FUNC_DIVTI3 ?
+        (signed_dividend / signed_divisor) :
+        (signed_dividend % signed_divisor);
+      result = (unsigned __int128) signed_result;
+    }
+
+    Bit64u result_lo = (Bit64u) result;
+    Bit64u result_hi = (Bit64u) (result >> 64);
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = write_poly_aarch64_reg(0, result_lo) &&
+        write_poly_aarch64_reg(1, result_hi);
+    }
+    else {
+      mapped = write_poly_riscv_reg(10, result_lo) &&
+        write_poly_riscv_reg(11, result_hi);
+    }
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import int128 helper id=%u target=%llx return=%llx",
+      (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned long long) return_rip));
+    return true;
+  }
+
   if (mode == BX_POLY_MODE_RAW_RISCV &&
       import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
     Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
