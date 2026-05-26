@@ -1472,7 +1472,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u result_bits = 0;
     const char *op_name = 0;
 
-    if (rm != 0)
+    if (rm > 4 && rm != 7)
       return false;
     if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
         !read_poly_riscv_fp64_reg(rs2, &right_bits))
