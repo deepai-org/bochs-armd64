@@ -78,7 +78,7 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 14;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 15;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -106,7 +106,8 @@ enum {
   BX_POLY_IMPORT_FUNC_MEMSET = 10,
   BX_POLY_IMPORT_FUNC_MEMCMP = 11,
   BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC = 12,
-  BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR = 13
+  BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR = 13,
+  BX_POLY_IMPORT_FUNC_FP32_ADD = 14
 };
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
@@ -1818,6 +1819,40 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       mode, (unsigned) import_id, (unsigned long long) target_rip,
       (unsigned long long) left_bits, (unsigned long long) right_bits,
       (unsigned long long) result_bits, (unsigned long long) return_rip));
+    return true;
+  }
+
+  if (import_id == BX_POLY_IMPORT_FUNC_FP32_ADD) {
+    Bit32u left_bits = 0, right_bits = 0;
+    bool mapped = false;
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_fp32_reg(0, &left_bits) &&
+        read_poly_aarch64_fp32_reg(1, &right_bits);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_fp32_reg(10, &left_bits) &&
+        read_poly_riscv_fp32_reg(11, &right_bits);
+    }
+    if (!mapped)
+      return false;
+
+    Bit32u result_bits = bx_poly_fp32_to_bits(
+      bx_poly_fp32_from_bits(left_bits) + bx_poly_fp32_from_bits(right_bits) + 10.0f);
+    if (mode == BX_POLY_MODE_RAW_AARCH64)
+      mapped = write_poly_aarch64_fp32_reg(0, result_bits);
+    else if (mode == BX_POLY_MODE_RAW_RISCV)
+      mapped = write_poly_riscv_fp32_reg(10, result_bits);
+    if (!mapped)
+      return false;
+
+    if (return_poly_abi_call(mode, return_rip))
+      return true;
+    RIP = return_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_raw: import fp32 call mode=%u descriptor=%u target=%llx arg0=%x arg1=%x result=%x return=%llx",
+      mode, (unsigned) import_id, (unsigned long long) target_rip,
+      (unsigned) left_bits, (unsigned) right_bits,
+      (unsigned) result_bits, (unsigned long long) return_rip));
     return true;
   }
 
