@@ -8859,6 +8859,12 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 223) {
+    RAX = arg0 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s fadvise64 fd=%llu offset=%llu len=%llu advice=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 242) {
     RAX = arg0 == 5 ? 6 : (Bit64u) -9;
     if (arg0 == 5 && arg1 && arg2) {
@@ -8886,6 +8892,18 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
       RAX = (Bit64u) -14;
     }
     BX_INFO(("poly_ud: emulated %s pipe2 pipefd=%llx flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 82 || syscall_number == 83) {
+    RAX = arg0 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s %s fd=%llu result=%lld", arch_name, syscall_number == 82 ? "fsync" : "fdatasync", (unsigned long long) arg0, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 84) {
+    RAX = arg0 ? 0 : (Bit64u) -9;
+    BX_INFO(("poly_ud: emulated %s sync_file_range fd=%llu offset=%llu nbytes=%llu flags=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
     return true;
   }
 
@@ -9245,6 +9263,12 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 216) {
+    RAX = arg0 != 0 ? arg0 : (Bit64u) -22;
+    BX_INFO(("poly_ud: emulated %s mremap old_addr=%llx old_size=%llu new_size=%llu flags=%llu new_addr=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 215 && arg0 != 0 && arg1 != 0) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s munmap addr=%llx len=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
@@ -9254,6 +9278,12 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
   if (syscall_number == 226 && arg0 != 0 && arg1 != 0) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s mprotect addr=%llx len=%llu prot=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 283) {
+    RAX = arg0 == 0 ? 1 : 0;
+    BX_INFO(("poly_ud: emulated %s membarrier cmd=%llu flags=%llu cpu_id=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
     return true;
   }
 
