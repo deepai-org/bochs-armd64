@@ -1077,7 +1077,7 @@ void BX_CPU_C::poly_interrupt_enter(void)
     bx_poly_interrupted_raw_mode, (unsigned long long) bx_poly_interrupted_raw_rip));
 }
 
-void BX_CPU_C::poly_iret_return_to_user(void)
+void BX_CPU_C::poly_restore_raw_return_to_user(const char *source)
 {
   if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
     return;
@@ -1096,8 +1096,23 @@ void BX_CPU_C::poly_iret_return_to_user(void)
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-  BX_INFO(("poly_raw: iret restore mode=%u rip=%llx",
-    bx_poly_current_mode, (unsigned long long) RIP));
+  BX_INFO(("poly_raw: %s restore mode=%u rip=%llx",
+    source, bx_poly_current_mode, (unsigned long long) RIP));
+}
+
+void BX_CPU_C::poly_iret_return_to_user(void)
+{
+  poly_restore_raw_return_to_user("iret");
+}
+
+void BX_CPU_C::poly_sysret_return_to_user(void)
+{
+  poly_restore_raw_return_to_user("sysret");
+}
+
+void BX_CPU_C::poly_sysexit_return_to_user(void)
+{
+  poly_restore_raw_return_to_user("sysexit");
 }
 
 bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
@@ -4166,6 +4181,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSEXIT(bxInstruction_c *i)
     SSP = BX_CPU_THIS_PTR msr.ia32_pl_ssp[3];
 #endif
 
+  poly_sysexit_return_to_user();
+
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSEXIT,
                       FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
                       BX_CPU_THIS_PTR sregs[BX_SEG_REG_CS].selector.value, RIP);
@@ -4370,6 +4387,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::SYSRET(bxInstruction_c *i)
   if (ShadowStackEnabled(CPL))
     SSP = BX_CPU_THIS_PTR msr.ia32_pl_ssp[3];
 #endif
+
+  poly_sysret_return_to_user();
 
   BX_INSTR_FAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_SYSRET,
                       FAR_BRANCH_PREV_CS, FAR_BRANCH_PREV_RIP,
