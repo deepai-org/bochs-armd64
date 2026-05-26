@@ -5983,7 +5983,8 @@ static const bx_poly_scalar_syscall_entry bx_poly_scalar_syscalls[] = {
   { 176, 1000, "getgid", "gid", false },
   { 177, 1000, "getegid", "egid", false },
   { 178, 4243, "gettid", "tid", false },
-  { 233, 0, "madvise", "result", false }
+  { 233, 0, "madvise", "result", false },
+  { 293, 0, "rseq", "result", false }
 };
 
 static bool bx_poly_lookup_scalar_syscall(Bit32u number, Bit64u arg0, const bx_poly_scalar_syscall_entry **entry)
