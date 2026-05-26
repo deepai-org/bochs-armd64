@@ -1502,6 +1502,10 @@ public: // for now...
   BX_SMF bool write_poly_aarch64_fp64_reg(Bit32u, Bit64u);
   BX_SMF bool read_poly_riscv_fp64_reg(Bit32u, Bit64u *);
   BX_SMF bool write_poly_riscv_fp64_reg(Bit32u, Bit64u);
+  BX_SMF bool read_poly_aarch64_fp32_reg(Bit32u, Bit32u *);
+  BX_SMF bool write_poly_aarch64_fp32_reg(Bit32u, Bit32u);
+  BX_SMF bool read_poly_riscv_fp32_reg(Bit32u, Bit32u *);
+  BX_SMF bool write_poly_riscv_fp32_reg(Bit32u, Bit32u);
   BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address);
   BX_SMF bool return_poly_abi_call(Bit32u, bx_address);
   BX_SMF bool enter_poly_cross_call(Bit32u, Bit32u, bx_address, bx_address);
