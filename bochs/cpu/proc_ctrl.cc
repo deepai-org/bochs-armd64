@@ -387,7 +387,8 @@ static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
 
 static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
 {
-  return import_id == BX_POLY_IMPORT_FUNC_X86_SLOT5;
+  return import_id == BX_POLY_IMPORT_FUNC_X86_SLOT5 ||
+    import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16;
 }
 
 static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
@@ -467,6 +468,9 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_FIXUNSSFTI:
     case BX_POLY_IMPORT_FUNC_FLOATTISF:
     case BX_POLY_IMPORT_FUNC_FLOATUNTISF:
+    case BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16:
+    case BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16:
+    case BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16:
     case BX_POLY_IMPORT_FUNC_CLZDI2:
     case BX_POLY_IMPORT_FUNC_CTZDI2:
     case BX_POLY_IMPORT_FUNC_PARITYDI2:
@@ -475,6 +479,12 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     default:
       return false;
   }
+}
+
+static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
+{
+  return bx_poly_import_requires_software_descriptor(import_id) ||
+    bx_poly_import_is_x86_descriptor(import_id);
 }
 
 static inline bool bx_poly_import_x86_returns_i128(Bit64u import_id)
@@ -486,7 +496,8 @@ static inline bool bx_poly_import_x86_returns_i128(Bit64u import_id)
     import_id == BX_POLY_IMPORT_FUNC_FIXDFTI ||
     import_id == BX_POLY_IMPORT_FUNC_FIXUNSDFTI ||
     import_id == BX_POLY_IMPORT_FUNC_FIXSFTI ||
-    import_id == BX_POLY_IMPORT_FUNC_FIXUNSSFTI;
+    import_id == BX_POLY_IMPORT_FUNC_FIXUNSSFTI ||
+    import_id == BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16;
 }
 
 enum {
@@ -2866,11 +2877,21 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       descriptor + 8);
     if (target != 0 && trampoline != 0) {
       RDI = arg0;
-      RSI = arg1;
-      RDX = arg2;
-      RCX = arg3;
-      R8 = arg4;
-      R9 = arg5;
+      if (import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 &&
+          mode == BX_POLY_MODE_RAW_AARCH64) {
+        RSI = arg2;
+        RDX = arg3;
+        RCX = arg4;
+        R8 = arg5;
+        R9 = arg6;
+      }
+      else {
+        RSI = arg1;
+        RDX = arg2;
+        RCX = arg3;
+        R8 = arg4;
+        R9 = arg5;
+      }
       bx_address foreign_rsp = RSP;
       bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
@@ -3207,174 +3228,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     return true;
   }
 
-  if (mode == BX_POLY_MODE_RAW_RISCV &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
-    Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
-    if (!read_poly_riscv_reg(10, &ptr) ||
-        !read_poly_riscv_reg(11, &expected_ptr) ||
-        !read_poly_riscv_reg(12, &desired_lo) ||
-        !read_poly_riscv_reg(13, &desired_hi))
-      return false;
-
-    Bit64u actual_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
-    Bit64u actual_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (ptr + 8));
-    Bit64u expected_lo = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) expected_ptr);
-    Bit64u expected_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (expected_ptr + 8));
-    bool success = actual_lo == expected_lo && actual_hi == expected_hi;
-
-    if (success) {
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, desired_lo);
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), desired_hi);
-    }
-    else {
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) expected_ptr,
-        actual_lo);
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (expected_ptr + 8),
-        actual_hi);
-    }
-
-    if (!write_poly_riscv_reg(10, success ? 1 : 0))
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import riscv __atomic_compare_exchange_16 target=%llx success=%u return=%llx",
-      (unsigned long long) target_rip, success ? 1 : 0,
-      (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_RISCV &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16) {
-    Bit64u ptr = 0;
-    if (!read_poly_riscv_reg(10, &ptr))
-      return false;
-
-    Bit64u result_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
-    Bit64u result_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (ptr + 8));
-    if (!write_poly_riscv_reg(10, result_lo) ||
-        !write_poly_riscv_reg(11, result_hi))
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import riscv __atomic_load_16 target=%llx return=%llx",
-      (unsigned long long) target_rip, (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_RISCV &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16) {
-    Bit64u ptr = 0, value_lo = 0, value_hi = 0;
-    if (!read_poly_riscv_reg(10, &ptr) ||
-        !read_poly_riscv_reg(11, &value_lo) ||
-        !read_poly_riscv_reg(12, &value_hi))
-      return false;
-
-    write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, value_lo);
-    write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), value_hi);
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import riscv __atomic_store_16 target=%llx return=%llx",
-      (unsigned long long) target_rip, (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_COMPARE_EXCHANGE_16) {
-    Bit64u ptr = 0, expected_ptr = 0, desired_lo = 0, desired_hi = 0;
-    if (!read_poly_aarch64_reg(0, &ptr) ||
-        !read_poly_aarch64_reg(1, &expected_ptr) ||
-        !read_poly_aarch64_reg(2, &desired_lo) ||
-        !read_poly_aarch64_reg(3, &desired_hi))
-      return false;
-
-    Bit64u actual_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
-    Bit64u actual_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (ptr + 8));
-    Bit64u expected_lo = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) expected_ptr);
-    Bit64u expected_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (expected_ptr + 8));
-    bool success = actual_lo == expected_lo && actual_hi == expected_hi;
-
-    if (success) {
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, desired_lo);
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), desired_hi);
-    }
-    else {
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) expected_ptr,
-        actual_lo);
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (expected_ptr + 8),
-        actual_hi);
-    }
-
-    if (!write_poly_aarch64_reg(0, success ? 1 : 0))
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import aarch64 __atomic_compare_exchange_16 target=%llx success=%u return=%llx",
-      (unsigned long long) target_rip, success ? 1 : 0,
-      (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_LOAD_16) {
-    Bit64u ptr = 0;
-    if (!read_poly_aarch64_reg(0, &ptr))
-      return false;
-
-    Bit64u result_lo = read_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr);
-    Bit64u result_hi = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (ptr + 8));
-    if (!write_poly_aarch64_reg(0, result_lo) ||
-        !write_poly_aarch64_reg(1, result_hi))
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import aarch64 __atomic_load_16 target=%llx return=%llx",
-      (unsigned long long) target_rip, (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16) {
-    Bit64u ptr = 0, value_lo = 0, value_hi = 0;
-    if (!read_poly_aarch64_reg(0, &ptr) ||
-        !read_poly_aarch64_reg(2, &value_lo) ||
-        !read_poly_aarch64_reg(3, &value_hi))
-      return false;
-
-    write_virtual_qword(BX_SEG_REG_DS, (bx_address) ptr, value_lo);
-    write_virtual_qword(BX_SEG_REG_DS, (bx_address) (ptr + 8), value_hi);
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import aarch64 __atomic_store_16 target=%llx return=%llx",
-      (unsigned long long) target_rip, (unsigned long long) return_rip));
-    return true;
-  }
-
   if (mode == BX_POLY_MODE_RAW_AARCH64 &&
       bx_poly_aarch64_outline_atomic_descriptor(import_id, &aarch64_atomic_op,
         &aarch64_atomic_size, &aarch64_atomic_name)) {
@@ -3498,7 +3351,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
          import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
          import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-         bx_poly_import_is_x86_descriptor(import_id) ||
+         bx_poly_import_uses_descriptor_args(import_id) ||
          import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
@@ -3509,9 +3362,9 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
       mapped = read_poly_aarch64_reg(2, &arg2);
     if (mapped && (import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-        bx_poly_import_is_x86_descriptor(import_id)))
+        bx_poly_import_uses_descriptor_args(import_id)))
       mapped = read_poly_aarch64_reg(3, &arg3);
-    if (mapped && bx_poly_import_is_x86_descriptor(import_id))
+    if (mapped && bx_poly_import_uses_descriptor_args(import_id))
       mapped = read_poly_aarch64_reg(4, &arg4) &&
         read_poly_aarch64_reg(5, &arg5);
     if (mapped && bx_poly_import_uses_x86_stack_args(import_id))
@@ -3549,7 +3402,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
          import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
          import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-         bx_poly_import_is_x86_descriptor(import_id) ||
+         bx_poly_import_uses_descriptor_args(import_id) ||
          import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
@@ -3560,9 +3413,9 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
       mapped = read_poly_riscv_reg(12, &arg2);
     if (mapped && (import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-        bx_poly_import_is_x86_descriptor(import_id)))
+        bx_poly_import_uses_descriptor_args(import_id)))
       mapped = read_poly_riscv_reg(13, &arg3);
-    if (mapped && bx_poly_import_is_x86_descriptor(import_id))
+    if (mapped && bx_poly_import_uses_descriptor_args(import_id))
       mapped = read_poly_riscv_reg(14, &arg4) &&
         read_poly_riscv_reg(15, &arg5);
     if (mapped && bx_poly_import_uses_x86_stack_args(import_id))
@@ -3592,11 +3445,21 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       descriptor + 8);
     if (target != 0 && trampoline != 0) {
       RDI = arg0;
-      RSI = arg1;
-      RDX = arg2;
-      RCX = arg3;
-      R8 = arg4;
-      R9 = arg5;
+      if (import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 &&
+          mode == BX_POLY_MODE_RAW_AARCH64) {
+        RSI = arg2;
+        RDX = arg3;
+        RCX = arg4;
+        R8 = arg5;
+        R9 = arg6;
+      }
+      else {
+        RSI = arg1;
+        RDX = arg2;
+        RCX = arg3;
+        R8 = arg4;
+        R9 = arg5;
+      }
       bx_address foreign_rsp = RSP;
       bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
