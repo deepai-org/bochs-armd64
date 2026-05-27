@@ -9199,6 +9199,50 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 107) {
+    RAX = arg2 ? 0 : (Bit64u) -14;
+    if (RAX == 0)
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg2, 23);
+    BX_INFO(("poly_ud: emulated %s timer_create clockid=%llu sevp=%llx timerid=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 108) {
+    RAX = arg0 == 23 && arg1 ? 0 : (Bit64u) -22;
+    if (RAX == 0) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 16), 44);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 24), 0);
+    }
+    BX_INFO(("poly_ud: emulated %s timer_gettime timerid=%llu curr=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 109) {
+    RAX = arg0 == 23 ? 0 : (Bit64u) -22;
+    BX_INFO(("poly_ud: emulated %s timer_getoverrun timerid=%llu result=%lld", arch_name, (unsigned long long) arg0, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 110) {
+    RAX = arg0 == 23 && arg2 ? 0 : (Bit64u) -22;
+    if (RAX == 0 && arg3) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg3, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 16), 55);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg3 + 24), 0);
+    }
+    BX_INFO(("poly_ud: emulated %s timer_settime timerid=%llu flags=%llu new=%llx old=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 111) {
+    RAX = arg0 == 23 ? 0 : (Bit64u) -22;
+    BX_INFO(("poly_ud: emulated %s timer_delete timerid=%llu result=%lld", arch_name, (unsigned long long) arg0, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 63 && (arg0 == 0 || arg0 == 3)) {
     const Bit8u stdin_input[] = {'R', 'X', '!', '!'};
     const Bit8u file_input[] = {'F', 'D', '!', '!'};
