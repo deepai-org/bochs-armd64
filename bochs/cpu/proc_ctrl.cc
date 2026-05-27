@@ -9516,6 +9516,48 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 228 || syscall_number == 229 ||
+      syscall_number == 230 || syscall_number == 231 ||
+      syscall_number == 284) {
+    const char *name = syscall_number == 228 ? "mlock" :
+      syscall_number == 229 ? "munlock" :
+      syscall_number == 230 ? "mlockall" :
+      syscall_number == 231 ? "munlockall" : "mlock2";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 237 || syscall_number == 238 || syscall_number == 239 ||
+      syscall_number == 277 || syscall_number == 280 || syscall_number == 282 ||
+      (syscall_number >= 288 && syscall_number <= 290) ||
+      syscall_number == 424 ||
+      (syscall_number >= 434 && syscall_number <= 438) ||
+      syscall_number == 440 ||
+      (syscall_number >= 448 && syscall_number <= 450)) {
+    const char *name = syscall_number == 237 ? "set_mempolicy" :
+      syscall_number == 238 ? "migrate_pages" :
+      syscall_number == 239 ? "move_pages" :
+      syscall_number == 277 ? "seccomp" :
+      syscall_number == 280 ? "bpf" :
+      syscall_number == 282 ? "userfaultfd" :
+      syscall_number == 288 ? "pkey_mprotect" :
+      syscall_number == 289 ? "pkey_alloc" :
+      syscall_number == 290 ? "pkey_free" :
+      syscall_number == 424 ? "pidfd_send_signal" :
+      syscall_number == 434 ? "pidfd_open" :
+      syscall_number == 435 ? "clone3" :
+      syscall_number == 436 ? "close_range" :
+      syscall_number == 437 ? "openat2" :
+      syscall_number == 438 ? "pidfd_getfd" :
+      syscall_number == 440 ? "process_madvise" :
+      syscall_number == 448 ? "process_mrelease" :
+      syscall_number == 449 ? "futex_waitv" : "set_mempolicy_home_node";
+    RAX = (Bit64u) -38;
+    BX_INFO(("poly_ud: emulated %s %s unavailable arg0=%llx arg1=%llx arg2=%llx arg3=%llx result=%lld", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 283) {
     RAX = arg0 == 0 ? 1 : 0;
     BX_INFO(("poly_ud: emulated %s membarrier cmd=%llu flags=%llu cpu_id=%llu result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
