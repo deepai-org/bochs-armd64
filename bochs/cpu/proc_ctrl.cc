@@ -376,6 +376,41 @@ static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
   return import_id == BX_POLY_IMPORT_FUNC_X86_SLOT5;
 }
 
+static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
+{
+  switch (import_id) {
+    case BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL:
+    case BX_POLY_IMPORT_FUNC_ERRNO_LOCATION:
+    case BX_POLY_IMPORT_FUNC_GETAUXVAL:
+    case BX_POLY_IMPORT_FUNC_GETPAGESIZE:
+    case BX_POLY_IMPORT_FUNC_SYSCONF:
+    case BX_POLY_IMPORT_FUNC_GETENV:
+    case BX_POLY_IMPORT_FUNC_SECURE_GETENV:
+    case BX_POLY_IMPORT_FUNC_MALLOC:
+    case BX_POLY_IMPORT_FUNC_CALLOC:
+    case BX_POLY_IMPORT_FUNC_REALLOC:
+    case BX_POLY_IMPORT_FUNC_FREE:
+    case BX_POLY_IMPORT_FUNC_STRDUP:
+    case BX_POLY_IMPORT_FUNC_STRNDUP:
+    case BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN:
+    case BX_POLY_IMPORT_FUNC_ALIGNED_ALLOC:
+    case BX_POLY_IMPORT_FUNC_MEMALIGN:
+    case BX_POLY_IMPORT_FUNC_ATEXIT:
+    case BX_POLY_IMPORT_FUNC_CXA_ATEXIT:
+    case BX_POLY_IMPORT_FUNC_CXA_FINALIZE:
+    case BX_POLY_IMPORT_FUNC_GETPID:
+    case BX_POLY_IMPORT_FUNC_GETPPID:
+    case BX_POLY_IMPORT_FUNC_GETUID:
+    case BX_POLY_IMPORT_FUNC_GETEUID:
+    case BX_POLY_IMPORT_FUNC_GETGID:
+    case BX_POLY_IMPORT_FUNC_GETEGID:
+    case BX_POLY_IMPORT_FUNC_GETTID:
+      return true;
+    default:
+      return false;
+  }
+}
+
 #define BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(request_size_, alignment_, result_) do { \
   (result_) = 0; \
   Bit64u bx_poly_heap_request = (request_size_); \
@@ -3786,6 +3821,12 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         bx_poly_current_state_key(RSP));
       return true;
     }
+  }
+
+  if (bx_poly_import_requires_software_descriptor(import_id)) {
+    BX_INFO(("poly_raw: import descriptor %u requires software descriptor target",
+      (unsigned) import_id));
+    return false;
   }
 
   const char *op_name = 0;
