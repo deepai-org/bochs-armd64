@@ -607,6 +607,8 @@ static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
 static bx_address bx_poly_foreign_tls_base = 0;
+static bx_address bx_poly_trap_vector = 0;
+static Bit32u bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
 static Bit64u bx_poly_aarch64_x[32];
 static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_aarch64_fp[32];
@@ -647,6 +649,8 @@ struct bx_poly_reg_state_t {
   Bit32u interrupted_raw_mode;
   bx_address interrupted_raw_rip;
   bx_address foreign_tls_base;
+  bx_address trap_vector;
+  Bit32u trap_vector_mode;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1456,6 +1460,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
   bx_poly_reg_states[victim].foreign_tls_base = 0;
+  bx_poly_reg_states[victim].trap_vector = 0;
+  bx_poly_reg_states[victim].trap_vector_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   bx_poly_reg_states[victim].aarch64_reservation_valid = false;
   bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
@@ -1504,6 +1510,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
   bx_poly_reg_states[slot].foreign_tls_base = bx_poly_foreign_tls_base;
+  bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
+  bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
   bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
@@ -1549,6 +1557,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   if (bx_poly_interrupted_raw_valid)
     bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_foreign_tls_base = bx_poly_reg_states[slot].foreign_tls_base;
+  bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
+  bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
   bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
@@ -9029,8 +9039,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   const char *trap_name, bx_address fallback_pc)
 {
   Bit32u trap_mode = bx_poly_last_trap.mode;
-  bx_address trap_vector = BX_CPU_THIS_PTR poly_trap_vector;
-  Bit32u trap_vector_mode = BX_CPU_THIS_PTR poly_trap_vector_mode;
+  bx_address trap_vector = bx_poly_trap_vector;
+  Bit32u trap_vector_mode = bx_poly_trap_vector_mode;
 
   bx_poly_trap_saved_regs.valid =
     trap_mode == BX_POLY_MODE_RAW_AARCH64 || trap_mode == BX_POLY_MODE_RAW_RISCV;
@@ -10529,14 +10539,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
-        BX_CPU_THIS_PTR poly_trap_vector = (bx_address) RAX;
+        bx_poly_trap_vector = (bx_address) RAX;
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_stack_key(RSP));
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector set to %llx",
-          (unsigned long long) BX_CPU_THIS_PTR poly_trap_vector));
+          (unsigned long long) bx_poly_trap_vector));
         return true;
       }
       if (op == 0x61) {
-        RAX = BX_CPU_THIS_PTR poly_trap_vector;
+        RAX = bx_poly_trap_vector;
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector get value=%llx",
           (unsigned long long) RAX));
@@ -10551,14 +10563,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           exception(BX_UD_EXCEPTION, 0);
           return true;
         }
-        BX_CPU_THIS_PTR poly_trap_vector_mode = (Bit32u) RAX;
+        bx_poly_trap_vector_mode = (Bit32u) RAX;
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_stack_key(RSP));
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector mode set to %u",
-          BX_CPU_THIS_PTR poly_trap_vector_mode));
+          bx_poly_trap_vector_mode));
         return true;
       }
       if (op == 0x64) {
-        RAX = BX_CPU_THIS_PTR poly_trap_vector_mode;
+        RAX = bx_poly_trap_vector_mode;
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector mode get value=%llu",
           (unsigned long long) RAX));
