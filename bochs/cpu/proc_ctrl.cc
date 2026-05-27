@@ -48,7 +48,8 @@ enum {
   BX_POLY_TRAP_NONE = 0,
   BX_POLY_TRAP_SYSCALL = 1,
   BX_POLY_TRAP_BREAK = 2,
-  BX_POLY_TRAP_IMPORT = 3
+  BX_POLY_TRAP_IMPORT = 3,
+  BX_POLY_TRAP_ILLEGAL = 4
 };
 
 struct bx_poly_trap_packet {
@@ -998,6 +999,13 @@ static void bx_poly_record_import_trap(Bit32u mode, Bit32u import_id,
 {
   bx_poly_record_architectural_trap(BX_POLY_TRAP_IMPORT, mode, import_id, 0,
     pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
+}
+
+static void bx_poly_record_illegal_trap(Bit32u mode, Bit32u insn,
+  Bit32u insn_bytes, bx_address pc, bx_address next_pc)
+{
+  bx_poly_record_architectural_trap(BX_POLY_TRAP_ILLEGAL, mode, insn,
+    insn_bytes, pc, next_pc, 0, 0, 0, 0, 0, 0, 0, 0);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -7380,32 +7388,53 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
 void BX_CPU_C::execute_poly_raw_step(void)
 {
   bx_address pc = RIP;
+  bx_address next_pc = pc;
   Bit32u insn = 0;
+  Bit32u insn_bytes = 0;
   bool handled = false;
+  const char *arch_name = "foreign";
 
   if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
+    arch_name = "aarch64";
+    next_pc = pc + 4;
+    insn_bytes = 4;
     insn = read_virtual_dword(BX_SEG_REG_CS, pc);
     bx_poly_foreign_insn_count++;
     handled = execute_poly_raw_aarch64(insn, pc);
   }
   else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
+    arch_name = "riscv";
     Bit16u half = read_virtual_word(BX_SEG_REG_CS, pc);
     bx_poly_foreign_insn_count++;
     if ((half & 0x3) != 0x3) {
       insn = half;
+      next_pc = pc + 2;
+      insn_bytes = 2;
       handled = execute_poly_raw_riscv_compressed(half, pc);
     }
     else {
       insn = read_virtual_dword(BX_SEG_REG_CS, pc);
+      next_pc = pc + 4;
+      insn_bytes = 4;
       handled = execute_poly_raw_riscv(insn, pc);
     }
   }
 
   if (!handled) {
-    BX_INFO(("poly_raw: unhandled mode=%u rip=%llx insn=%08x", bx_poly_current_mode, (unsigned long long) pc, insn));
+    BX_INFO(("poly_raw: illegal mode=%u rip=%llx insn=%08x",
+      bx_poly_current_mode, (unsigned long long) pc, insn));
+    if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 ||
+        bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
+      bx_poly_record_illegal_trap(bx_poly_current_mode, insn, insn_bytes,
+        pc, next_pc);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      deliver_poly_architectural_trap(arch_name, "illegal", pc);
+      return;
+    }
     bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_clear_cross_return_stack();
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
     exception(BX_UD_EXCEPTION, 0);
   }
 }
