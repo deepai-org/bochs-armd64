@@ -79,12 +79,14 @@ static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 = 0x7ffc;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_F32_U32 = 0x7ffb;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_FP64_STACK = 0x7ffa;
+static const Bit32u BX_POLY_AARCH64_BRK_TRAP_RETURN = 0x7ff9;
 static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
 static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 = 0x0000107b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32 = 0x0000207b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_FP64_STACK = 0x0000307b;
+static const Bit32u BX_POLY_RISCV_TRAP_RETURN = 0x0000407b;
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000003;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -1082,6 +1084,13 @@ static Bit64u bx_poly_riscv_indirect_target(Bit64u target, bx_address pc)
   // The raw stream may start on an odd x86 byte lane. RISC-V C has IALIGN=2,
   // so JALR clears architectural bit 0 while preserving target bit 1.
   return (target & ~BX_CONST64(1)) | (pc & 0x1);
+}
+
+static bool bx_poly_valid_frontend_mode(Bit32u mode)
+{
+  return mode == BX_POLY_MODE_X86 ||
+    mode == BX_POLY_MODE_RAW_AARCH64 ||
+    mode == BX_POLY_MODE_RAW_RISCV;
 }
 
 static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u number,
@@ -6215,6 +6224,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_TRAP_RETURN << 5))) {
+    BX_INFO(("poly_raw: aarch64 brk #0x%x trap return", BX_POLY_AARCH64_BRK_TRAP_RETURN));
+    return return_poly_architectural_trap();
+  }
+
   if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_SWITCH << 5))) {
     bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
@@ -7098,6 +7112,11 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_INFO(("poly_raw: riscv custom-0 escape to x86"));
     return true;
+  }
+
+  if (insn == BX_POLY_RISCV_TRAP_RETURN) {
+    BX_INFO(("poly_raw: riscv custom trap return"));
+    return return_poly_architectural_trap();
   }
 
   if (insn == BX_POLY_RISCV_AARCH64_SWITCH) {
@@ -9006,6 +9025,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
 {
   Bit32u trap_mode = bx_poly_last_trap.mode;
   bx_address trap_vector = BX_CPU_THIS_PTR poly_trap_vector;
+  Bit32u trap_vector_mode = BX_CPU_THIS_PTR poly_trap_vector_mode;
 
   bx_poly_trap_saved_regs.valid =
     trap_mode == BX_POLY_MODE_RAW_AARCH64 || trap_mode == BX_POLY_MODE_RAW_RISCV;
@@ -9019,26 +9039,53 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   bx_poly_trap_saved_regs.r9 = R9;
   bx_poly_trap_saved_regs.rsp = RSP;
 
-  bx_poly_current_mode = BX_POLY_MODE_X86;
+  if (!bx_poly_valid_frontend_mode(trap_vector_mode)) {
+    BX_INFO(("poly_ud: architectural %s %s trap has invalid vector mode=%u",
+      arch_name, trap_name, trap_vector_mode));
+    trap_vector = 0;
+  }
+
+  bx_poly_current_mode = trap_vector_mode;
   bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_stack_key(RSP));
 
   if (trap_vector != 0) {
-    RAX = bx_poly_last_trap.reason;
-    RBX = bx_poly_last_trap.mode;
-    RCX = bx_poly_last_trap.number;
-    RDX = bx_poly_last_trap.pc;
-    RSI = bx_poly_last_trap.selector;
-    RDI = bx_poly_last_trap.args[0];
+    if (trap_vector_mode == BX_POLY_MODE_X86) {
+      RAX = bx_poly_last_trap.reason;
+      RBX = bx_poly_last_trap.mode;
+      RCX = bx_poly_last_trap.number;
+      RDX = bx_poly_last_trap.pc;
+      RSI = bx_poly_last_trap.selector;
+      RDI = bx_poly_last_trap.args[0];
+    }
+    else if (trap_vector_mode == BX_POLY_MODE_RAW_AARCH64) {
+      write_poly_aarch64_reg(0, bx_poly_last_trap.reason);
+      write_poly_aarch64_reg(1, bx_poly_last_trap.mode);
+      write_poly_aarch64_reg(2, bx_poly_last_trap.number);
+      write_poly_aarch64_reg(3, bx_poly_last_trap.pc);
+      write_poly_aarch64_reg(4, bx_poly_last_trap.selector);
+      write_poly_aarch64_reg(5, bx_poly_last_trap.args[0]);
+    }
+    else {
+      write_poly_riscv_reg(10, bx_poly_last_trap.reason);
+      write_poly_riscv_reg(11, bx_poly_last_trap.mode);
+      write_poly_riscv_reg(12, bx_poly_last_trap.number);
+      write_poly_riscv_reg(13, bx_poly_last_trap.pc);
+      write_poly_riscv_reg(14, bx_poly_last_trap.selector);
+      write_poly_riscv_reg(15, bx_poly_last_trap.args[0]);
+    }
     RIP = trap_vector;
-    BX_INFO(("poly_ud: architectural %s %s trap vector=%llx mode=%u pc=%llx next=%llx",
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_INFO(("poly_ud: architectural %s %s trap vector=%llx source_mode=%u target_mode=%u pc=%llx next=%llx",
       arch_name, trap_name, (unsigned long long) trap_vector, trap_mode,
+      trap_vector_mode,
       (unsigned long long) bx_poly_last_trap.pc,
       (unsigned long long) bx_poly_last_trap.next_pc));
     return true;
   }
 
+  bx_poly_current_mode = BX_POLY_MODE_X86;
   BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx",
     arch_name, trap_name, trap_mode, (unsigned long long) fallback_pc));
   RIP = fallback_pc;
@@ -10413,6 +10460,26 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       }
       if (op == 0x62)
         return return_poly_architectural_trap();
+      if (op == 0x63) {
+        if (!bx_poly_valid_frontend_mode((Bit32u) RAX)) {
+          BX_INFO(("poly_ud: reject trap vector mode=%llu",
+            (unsigned long long) RAX));
+          exception(BX_UD_EXCEPTION, 0);
+          return true;
+        }
+        BX_CPU_THIS_PTR poly_trap_vector_mode = (Bit32u) RAX;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: trap vector mode set to %u",
+          BX_CPU_THIS_PTR poly_trap_vector_mode));
+        return true;
+      }
+      if (op == 0x64) {
+        RAX = BX_CPU_THIS_PTR poly_trap_vector_mode;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: trap vector mode get value=%llu",
+          (unsigned long long) RAX));
+        return true;
+      }
       if (op >= 0x30 && op <= 0x32) {
         Bit8u status_id = op - 0x30;
         if (status_id == 1)
@@ -10618,6 +10685,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_RISCV_AARCH64_CALL_FP64_STACK;
       RCX = 0;
       RDX = 0;
+    }
+    else if (ECX == 4) {
+      RAX = BX_POLY_AARCH64_BRK_TRAP_RETURN;
+      RBX = BX_POLY_RISCV_TRAP_RETURN;
+      RCX = 0x63; // x86 POLY trap-vector mode set opcode
+      RDX = 0x64; // x86 POLY trap-vector mode get opcode
     }
     else {
       RAX = 0;

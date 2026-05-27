@@ -995,6 +995,7 @@ public: // for now...
   bool    poly_feature_enabled;
   bool    poly_compat_traps_enabled;
   bx_address poly_trap_vector;
+  Bit32u poly_trap_vector_mode;
 
   Bit64u icount;
   Bit64u icount_last_sync;
