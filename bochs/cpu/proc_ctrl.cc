@@ -651,6 +651,7 @@ struct bx_poly_reg_state_t {
   bx_address foreign_tls_base;
   bx_address trap_vector;
   Bit32u trap_vector_mode;
+  bx_poly_trap_packet last_trap;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1462,6 +1463,14 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].foreign_tls_base = 0;
   bx_poly_reg_states[victim].trap_vector = 0;
   bx_poly_reg_states[victim].trap_vector_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].last_trap.reason = BX_POLY_TRAP_NONE;
+  bx_poly_reg_states[victim].last_trap.mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].last_trap.number = 0;
+  bx_poly_reg_states[victim].last_trap.selector = 0;
+  bx_poly_reg_states[victim].last_trap.pc = 0;
+  bx_poly_reg_states[victim].last_trap.next_pc = 0;
+  for (unsigned n = 0; n < 6; n++)
+    bx_poly_reg_states[victim].last_trap.args[n] = 0;
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   bx_poly_reg_states[victim].aarch64_reservation_valid = false;
   bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
@@ -1512,6 +1521,7 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].foreign_tls_base = bx_poly_foreign_tls_base;
   bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
   bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
+  bx_poly_reg_states[slot].last_trap = bx_poly_last_trap;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
   bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
@@ -1559,6 +1569,7 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_foreign_tls_base = bx_poly_reg_states[slot].foreign_tls_base;
   bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
   bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
+  bx_poly_last_trap = bx_poly_reg_states[slot].last_trap;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
   bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
@@ -9204,6 +9215,8 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   // following compatibility service is Bochs test firmware, not CPU semantics.
   bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_stack_key(RSP));
   if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
   return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
@@ -9297,6 +9310,8 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_selector,
     trap_pc, next_rip, trap_arg0, trap_arg1, trap_arg2, trap_arg3,
     trap_arg4, trap_arg5);
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_stack_key(RSP));
   if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
   if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
