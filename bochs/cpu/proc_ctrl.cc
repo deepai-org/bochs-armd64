@@ -4371,6 +4371,65 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  Bit32u simd_add_base =
+    insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+  if (simd_add_base == 0x4e208400 || simd_add_base == 0x4e608400 ||
+      simd_add_base == 0x4ea08400 || simd_add_base == 0x4ee08400) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u element_bits = 8;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if (simd_add_base == 0x4e608400)
+      element_bits = 16;
+    else if (simd_add_base == 0x4ea08400)
+      element_bits = 32;
+    else if (simd_add_base == 0x4ee08400)
+      element_bits = 64;
+
+    if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+        !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+      return false;
+
+    if (element_bits == 8) {
+      for (unsigned n = 0; n < 8; n++) {
+        result_lo |= ((Bit64u) (Bit8u) ((left_lo >> (n * 8)) +
+          (right_lo >> (n * 8)))) << (n * 8);
+        result_hi |= ((Bit64u) (Bit8u) ((left_hi >> (n * 8)) +
+          (right_hi >> (n * 8)))) << (n * 8);
+      }
+    }
+    else if (element_bits == 16) {
+      for (unsigned n = 0; n < 4; n++) {
+        result_lo |= ((Bit64u) (Bit16u) ((left_lo >> (n * 16)) +
+          (right_lo >> (n * 16)))) << (n * 16);
+        result_hi |= ((Bit64u) (Bit16u) ((left_hi >> (n * 16)) +
+          (right_hi >> (n * 16)))) << (n * 16);
+      }
+    }
+    else if (element_bits == 32) {
+      result_lo = (Bit64u) (Bit32u) (left_lo + right_lo) |
+        ((Bit64u) (Bit32u) ((left_lo >> 32) + (right_lo >> 32)) << 32);
+      result_hi = (Bit64u) (Bit32u) (left_hi + right_hi) |
+        ((Bit64u) (Bit32u) ((left_hi >> 32) + (right_hi >> 32)) << 32);
+    }
+    else {
+      result_lo = left_lo + right_lo;
+      result_hi = left_hi + right_hi;
+    }
+
+    if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+      return false;
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 add v%u.%u-bit,v%u,v%u lo=%llu hi=%llu",
+      rd, element_bits, rn, rm, (unsigned long long) result_lo,
+      (unsigned long long) result_hi));
+    return true;
+  }
+
   if ((insn & 0xffe00c00) == 0x1e200c00 ||
       (insn & 0xffe00c00) == 0x1e600c00) {
     Bit32u rd = insn & 0x1f;
