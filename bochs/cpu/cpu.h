@@ -1493,9 +1493,9 @@ public: // for now...
   BX_SMF bool handle_poly_ud(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_compat_exit_syscall(const char *, Bit32u);
   BX_SMF void handle_poly_compat_unknown_syscall(const char *, const char *, const char *, Bit32u);
-  BX_SMF bool handle_poly_compat_foreign_syscall(const char *, const char *, const char *, Bit32u, Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
+  BX_SMF bool handle_poly_compat_syscall_trap_packet(const char *, const char *, const char *, Bit32u, Bit32u);
   BX_SMF bool handle_poly_foreign_syscall(const char *, const char *, const char *, Bit32u, Bit32u, Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
-  BX_SMF bool handle_poly_compat_break_trap(const char *, const char *, Bit32u, bx_address, Bit64u, Bit64u, Bit64u, Bit64u);
+  BX_SMF bool handle_poly_compat_break_trap_packet(const char *, const char *);
   BX_SMF bool handle_poly_libcall(const char *, const char *, Bit32u, Bit32u, bx_address, bx_address);
   BX_SMF bool deliver_poly_architectural_trap(const char *, const char *, bx_address);
   BX_SMF bool return_poly_architectural_trap(void);

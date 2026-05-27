@@ -9079,13 +9079,17 @@ void BX_CPU_C::handle_poly_compat_unknown_syscall(const char *arch_name, const c
   BX_INFO(("poly_ud: compat %s %s %s%u mode=%u", arch_name, trap_name, number_prefix, syscall_number, bx_poly_current_mode));
 }
 
-bool BX_CPU_C::handle_poly_compat_foreign_syscall(const char *arch_name, const char *trap_name,
-  const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
-  Bit32u unknown_number, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
-  Bit64u arg4, Bit64u arg5, bx_address next_rip)
+bool BX_CPU_C::handle_poly_compat_syscall_trap_packet(const char *arch_name,
+  const char *trap_name, const char *number_prefix, Bit32u dispatch_number,
+  Bit32u unknown_number)
 {
   const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
-  (void) status_number;
+  Bit64u arg0 = bx_poly_last_trap.args[0];
+  Bit64u arg1 = bx_poly_last_trap.args[1];
+  Bit64u arg2 = bx_poly_last_trap.args[2];
+  Bit64u arg3 = bx_poly_last_trap.args[3];
+  Bit64u arg4 = bx_poly_last_trap.args[4];
+  Bit64u arg5 = bx_poly_last_trap.args[5];
 
   if (handle_poly_file_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
   }
@@ -9104,7 +9108,7 @@ bool BX_CPU_C::handle_poly_compat_foreign_syscall(const char *arch_name, const c
     handle_poly_compat_unknown_syscall(arch_name, trap_name, number_prefix, unknown_number);
   }
 
-  RIP = next_rip;
+  RIP = bx_poly_last_trap.next_pc;
   return true;
 }
 
@@ -9326,17 +9330,17 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
     bx_poly_current_state_key(RSP));
   if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
-  return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
-    dispatch_number, status_number, unknown_number, arg0, arg1, arg2, arg3,
-    arg4, arg5, next_rip);
+  return handle_poly_compat_syscall_trap_packet(arch_name, trap_name,
+    number_prefix, dispatch_number, unknown_number);
 }
 
-bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *trap_name,
-  Bit32u libcall_id, bx_address trap_pc, Bit64u arg0, Bit64u arg1,
-  Bit64u arg2, Bit64u arg3)
+bool BX_CPU_C::handle_poly_compat_break_trap_packet(const char *arch_name,
+  const char *trap_name)
 {
-  (void) trap_pc;
-  (void) arg3;
+  Bit32u libcall_id = bx_poly_last_trap.number;
+  Bit64u arg0 = bx_poly_last_trap.args[0];
+  Bit64u arg1 = bx_poly_last_trap.args[1];
+  Bit64u arg2 = bx_poly_last_trap.args[2];
 
   if (libcall_id == 1) {
     RAX = 0;
@@ -9421,10 +9425,9 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
     bx_poly_current_state_key(RSP));
   if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
-  if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
-        trap_pc, trap_arg0, trap_arg1, trap_arg2, trap_arg3))
+  if (!handle_poly_compat_break_trap_packet(arch_name, trap_name))
     return false;
-  RIP = next_rip;
+  RIP = bx_poly_last_trap.next_pc;
   return true;
 }
 
