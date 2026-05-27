@@ -71,6 +71,8 @@ struct bx_poly_trap_saved_regs {
   Bit64u r8;
   Bit64u r9;
   Bit64u rsp;
+  Bit64u xmm_lo[8];
+  Bit64u xmm_hi[8];
   bool aarch64_extra_valid;
   Bit64u aarch64_x7;
   Bit64u aarch64_x8;
@@ -9041,6 +9043,10 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   bx_poly_trap_saved_regs.r8 = R8;
   bx_poly_trap_saved_regs.r9 = R9;
   bx_poly_trap_saved_regs.rsp = RSP;
+  for (unsigned n = 0; n < 8; n++) {
+    bx_poly_trap_saved_regs.xmm_lo[n] = BX_READ_XMM_REG_LO_QWORD(n);
+    bx_poly_trap_saved_regs.xmm_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
+  }
   bx_poly_trap_saved_regs.aarch64_extra_valid = false;
   bx_poly_trap_saved_regs.riscv_extra_valid = false;
 
@@ -9148,6 +9154,10 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     R9 = bx_poly_trap_saved_regs.r9;
     RSP = bx_poly_trap_saved_regs.rsp;
     RAX = result;
+    for (unsigned n = 0; n < 8; n++) {
+      BX_WRITE_XMM_REG_LO_QWORD(n, bx_poly_trap_saved_regs.xmm_lo[n]);
+      BX_WRITE_XMM_REG_HI_QWORD(n, bx_poly_trap_saved_regs.xmm_hi[n]);
+    }
     if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 &&
         bx_poly_trap_saved_regs.aarch64_extra_valid) {
       write_poly_aarch64_reg(7, bx_poly_trap_saved_regs.aarch64_x7);
