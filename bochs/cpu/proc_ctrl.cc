@@ -9560,7 +9560,8 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
-  if (syscall_number == 237 || syscall_number == 238 || syscall_number == 239 ||
+  if (syscall_number == 236 ||
+      syscall_number == 237 || syscall_number == 238 || syscall_number == 239 ||
       syscall_number == 277 || syscall_number == 280 || syscall_number == 282 ||
       (syscall_number >= 288 && syscall_number <= 290) ||
       syscall_number == 424 ||
@@ -9569,7 +9570,8 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
       syscall_number == 440 ||
       (syscall_number >= 444 && syscall_number <= 446) ||
       (syscall_number >= 448 && syscall_number <= 450)) {
-    const char *name = syscall_number == 237 ? "set_mempolicy" :
+    const char *name = syscall_number == 236 ? "get_mempolicy" :
+      syscall_number == 237 ? "set_mempolicy" :
       syscall_number == 238 ? "migrate_pages" :
       syscall_number == 239 ? "move_pages" :
       syscall_number == 277 ? "seccomp" :
