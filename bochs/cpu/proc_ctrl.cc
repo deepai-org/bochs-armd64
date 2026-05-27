@@ -9428,6 +9428,30 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 102) {
+    if (arg1) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 16), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 24), 0);
+    }
+    RAX = arg1 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s getitimer which=%llu curr=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 103) {
+    if (arg2) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg2, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg2 + 8), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg2 + 16), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg2 + 24), 0);
+    }
+    RAX = arg1 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s setitimer which=%llu new=%llx old=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 113 && arg0 == 0) {
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 123);
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 456789);
