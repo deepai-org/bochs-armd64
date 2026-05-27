@@ -9425,6 +9425,16 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 114) {
+    if (arg1) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 1);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s clock_getres clk=%llu addr=%llx sec=0 nsec=1", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
   if (syscall_number == 115) {
     if (arg3) {
       write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg3, 0);
