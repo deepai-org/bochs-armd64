@@ -6643,10 +6643,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(5, &arg5))
       return false;
     Bit32u syscall_reg = (Bit32u) syscall_value;
-    Bit32u status_number = syscall_reg ? syscall_reg : syscall_id;
-    return handle_poly_foreign_syscall("aarch64", "svc", "#", syscall_reg,
-      status_number, syscall_id, syscall_id, arg0, arg1, arg2, arg3, arg4,
-      arg5, next_rip);
+    return handle_poly_foreign_syscall("aarch64", "svc", syscall_reg,
+      syscall_id, arg0, arg1, arg2, arg3, arg4, arg5, next_rip);
   }
 
   if ((insn & 0xffe0001f) == 0xd4200000) {
@@ -7943,9 +7941,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(15, &arg5))
       return false;
     Bit32u syscall_number = (Bit32u) syscall_value;
-    return handle_poly_foreign_syscall("riscv", "ecall", "a7=", syscall_number,
-      syscall_number, syscall_number, 0, arg0, arg1, arg2, arg3, arg4, arg5,
-      next_rip);
+    return handle_poly_foreign_syscall("riscv", "ecall", syscall_number, 0,
+      arg0, arg1, arg2, arg3, arg4, arg5, next_rip);
   }
 
   if (insn == 0x00100073) {
@@ -8694,17 +8691,12 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
 }
 
 bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
-  const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
-  Bit32u unknown_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
+  Bit32u syscall_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
   Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, bx_address next_rip)
 {
-  (void) number_prefix;
-  (void) dispatch_number;
-  (void) unknown_number;
-
   // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
   // the architectural trap path. Linux syscall translation is guest policy.
-  bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector,
+  bx_poly_record_syscall_trap(bx_poly_current_mode, syscall_number, trap_selector,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
