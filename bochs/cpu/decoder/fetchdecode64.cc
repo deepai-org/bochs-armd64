@@ -429,7 +429,7 @@ static BxOpcodeDecodeDescriptor64 decode64_descriptor[] =
    /* 0F 21 */ { &decoder_creg64, BxOpcodeTable0F21_64 },
    /* 0F 22 */ { &decoder_creg64, BxOpcodeTable0F22_64 },
    /* 0F 23 */ { &decoder_creg64, BxOpcodeTable0F23_64 },
-   /* 0F 24 */ { &decoder_ud64, NULL },
+   /* 0F 24 */ { &decoder_creg64, BxOpcodeTable0F24 },
    /* 0F 25 */ { &decoder_ud64, NULL },
    /* 0F 26 */ { &decoder_ud64, NULL },
    /* 0F 27 */ { &decoder_ud64, NULL },

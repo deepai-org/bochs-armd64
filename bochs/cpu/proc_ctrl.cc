@@ -7646,11 +7646,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 {
   unsigned ia_opcode = i->getIaOpcode();
 
-  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i)) {
-    BX_DEBUG(("poly opcode emulated from #UD"));
-    return;
-  }
-
   if (ia_opcode == BX_IA_ERROR) {
     BX_DEBUG(("BxError: Encountered an unknown instruction (signalling #UD)"));
 
@@ -7670,15 +7665,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::BxError(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::UndefinedOpcode(bxInstruction_c *i)
 {
-  if (BX_CPU_THIS_PTR poly_feature_enabled) {
-    BX_INFO(("UndefinedOpcode(poly): CPL=%u prev_rip=%llx rip=%llx", CPL, (unsigned long long) BX_CPU_THIS_PTR prev_rip, (unsigned long long) RIP));
-  }
-
-  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i)) {
-    BX_DEBUG(("poly opcode emulated from #UD"));
-    return;
-  }
-
   BX_DEBUG(("UndefinedOpcode: generate #UD exception"));
   exception(BX_UD_EXCEPTION, 0);
 
@@ -7702,7 +7688,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYRET(bxInstruction_c *i)
 
 void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 {
-  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_ud(i))
+  if (BX_CPU_THIS_PTR poly_feature_enabled && handle_poly_opcode(i))
     return;
 
   BX_DEBUG(("POLYMODE: invalid or disabled poly opcode - signalling #UD"));
@@ -7970,7 +7956,7 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
   return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
 }
 
-bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
+bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
 {
   (void) i;
 

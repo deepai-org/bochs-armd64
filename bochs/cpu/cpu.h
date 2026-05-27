@@ -1489,7 +1489,7 @@ public: // for now...
   BX_SMF void POLYCALL(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYRET(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF bool handle_poly_ud(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
+  BX_SMF bool handle_poly_opcode(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_foreign_syscall(const char *, const char *, Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
   BX_SMF bool handle_poly_break_trap(const char *, const char *, Bit32u, Bit32u, bx_address, bx_address);
   BX_SMF bool deliver_poly_architectural_trap(const char *, const char *, bx_address);
