@@ -398,6 +398,10 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_MUL:
     case BX_POLY_IMPORT_FUNC_FP64_ADD:
     case BX_POLY_IMPORT_FUNC_FP32_ADD:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX:
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL:
     case BX_POLY_IMPORT_FUNC_STRLEN:
     case BX_POLY_IMPORT_FUNC_MEMCPY:
     case BX_POLY_IMPORT_FUNC_MEMSET:
@@ -430,6 +434,27 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_STRCASECMP:
     case BX_POLY_IMPORT_FUNC_STRNCASECMP:
     case BX_POLY_IMPORT_FUNC_STRCASESTR:
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR8_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR8_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET8_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD1_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_SWP1_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR1_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR1_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET1_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS2_ACQ_REL:
+    case BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL:
     case BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC:
     case BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR:
     case BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL:
@@ -562,145 +587,6 @@ static inline bool bx_poly_import_uses_fp128_unary_arg(Bit64u import_id)
     import_id == BX_POLY_IMPORT_FUNC_FIXTFSI ||
     import_id == BX_POLY_IMPORT_FUNC_TRUNCTFSF2 ||
     import_id == BX_POLY_IMPORT_FUNC_TRUNCTFDF2;
-}
-
-enum {
-  BX_POLY_AARCH64_ATOMIC_LDADD = 0,
-  BX_POLY_AARCH64_ATOMIC_SWP = 1,
-  BX_POLY_AARCH64_ATOMIC_LDCLR = 2,
-  BX_POLY_AARCH64_ATOMIC_LDEOR = 3,
-  BX_POLY_AARCH64_ATOMIC_LDSET = 4,
-  BX_POLY_AARCH64_ATOMIC_CAS = 5
-};
-
-static bool bx_poly_aarch64_outline_atomic_descriptor(Bit32u import_id,
-    Bit32u *op, Bit32u *size, const char **op_name)
-{
-  switch (import_id) {
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
-      *size = 8;
-      *op_name = "__aarch64_ldadd8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD4_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
-      *size = 4;
-      *op_name = "__aarch64_ldadd4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
-      *size = 2;
-      *op_name = "__aarch64_ldadd2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDADD1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDADD;
-      *size = 1;
-      *op_name = "__aarch64_ldadd1_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_SWP;
-      *size = 8;
-      *op_name = "__aarch64_swp8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_SWP4_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_SWP;
-      *size = 4;
-      *op_name = "__aarch64_swp4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_SWP2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_SWP;
-      *size = 2;
-      *op_name = "__aarch64_swp2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_SWP1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_SWP;
-      *size = 1;
-      *op_name = "__aarch64_swp1_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
-      *size = 8;
-      *op_name = "__aarch64_ldclr8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR4_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
-      *size = 4;
-      *op_name = "__aarch64_ldclr4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
-      *size = 2;
-      *op_name = "__aarch64_ldclr2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDCLR1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDCLR;
-      *size = 1;
-      *op_name = "__aarch64_ldclr1_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
-      *size = 8;
-      *op_name = "__aarch64_ldeor8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR4_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
-      *size = 4;
-      *op_name = "__aarch64_ldeor4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
-      *size = 2;
-      *op_name = "__aarch64_ldeor2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDEOR1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDEOR;
-      *size = 1;
-      *op_name = "__aarch64_ldeor1_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
-      *size = 8;
-      *op_name = "__aarch64_ldset8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_ACQ_REL:
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET4_RELAX:
-      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
-      *size = 4;
-      *op_name = "__aarch64_ldset4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
-      *size = 2;
-      *op_name = "__aarch64_ldset2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_LDSET1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_LDSET;
-      *size = 1;
-      *op_name = "__aarch64_ldset1_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_CAS8_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_CAS;
-      *size = 8;
-      *op_name = "__aarch64_cas8_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_CAS4_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_CAS;
-      *size = 4;
-      *op_name = "__aarch64_cas4_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_CAS2_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_CAS;
-      *size = 2;
-      *op_name = "__aarch64_cas2_acq_rel";
-      return true;
-    case BX_POLY_IMPORT_FUNC_AARCH64_CAS1_ACQ_REL:
-      *op = BX_POLY_AARCH64_ATOMIC_CAS;
-      *size = 1;
-      *op_name = "__aarch64_cas1_acq_rel";
-      return true;
-    default:
-      return false;
-  }
 }
 
 static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
@@ -2944,98 +2830,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         bx_poly_current_state_key(RSP));
       return true;
     }
-  }
-
-  Bit32u aarch64_atomic_op = 0;
-  Bit32u aarch64_atomic_size = 0;
-  const char *aarch64_atomic_name = 0;
-  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      bx_poly_aarch64_outline_atomic_descriptor(import_id, &aarch64_atomic_op,
-        &aarch64_atomic_size, &aarch64_atomic_name)) {
-    Bit64u arg0 = 0, arg1 = 0, arg2 = 0;
-    Bit64u result = 0;
-    if (!read_poly_aarch64_reg(0, &arg0) ||
-        !read_poly_aarch64_reg(1, &arg1) ||
-        !read_poly_aarch64_reg(2, &arg2))
-      return false;
-
-    bx_address addr = (bx_address)
-      (aarch64_atomic_op == BX_POLY_AARCH64_ATOMIC_CAS ? arg2 : arg1);
-    switch (aarch64_atomic_size) {
-      case 1:
-        result = read_virtual_byte(BX_SEG_REG_DS, addr);
-        break;
-      case 2:
-        result = read_virtual_word(BX_SEG_REG_DS, addr);
-        break;
-      case 4:
-        result = read_virtual_dword(BX_SEG_REG_DS, addr);
-        break;
-      case 8:
-        result = read_virtual_qword(BX_SEG_REG_DS, addr);
-        break;
-      default:
-        return false;
-    }
-
-    Bit64u mask = bx_poly_aarch64_size_mask(aarch64_atomic_size);
-    Bit64u new_value = result;
-    Bit64u source = arg0 & mask;
-    switch (aarch64_atomic_op) {
-      case BX_POLY_AARCH64_ATOMIC_LDADD:
-        new_value = (result + source) & mask;
-        break;
-      case BX_POLY_AARCH64_ATOMIC_SWP:
-        new_value = source;
-        break;
-      case BX_POLY_AARCH64_ATOMIC_LDCLR:
-        new_value = result & ~source & mask;
-        break;
-      case BX_POLY_AARCH64_ATOMIC_LDEOR:
-        new_value = (result ^ source) & mask;
-        break;
-      case BX_POLY_AARCH64_ATOMIC_LDSET:
-        new_value = (result | source) & mask;
-        break;
-      case BX_POLY_AARCH64_ATOMIC_CAS:
-        if (result != source)
-          break;
-        new_value = arg1 & mask;
-        break;
-      default:
-        return false;
-    }
-
-    if (aarch64_atomic_op != BX_POLY_AARCH64_ATOMIC_CAS ||
-        result == source) {
-      switch (aarch64_atomic_size) {
-        case 1:
-          write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) new_value);
-          break;
-        case 2:
-          write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) new_value);
-          break;
-        case 4:
-          write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) new_value);
-          break;
-        case 8:
-          write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
-          break;
-      }
-    }
-
-    if (!write_poly_aarch64_reg(0, result))
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import aarch64 outline atomic %s target=%llx result=%llu return=%llx",
-      aarch64_atomic_name, (unsigned long long) target_rip,
-      (unsigned long long) result,
-      (unsigned long long) return_rip));
-    return true;
   }
 
   Bit64u arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0;
