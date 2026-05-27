@@ -212,7 +212,6 @@ static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
-static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 140;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
@@ -251,7 +250,7 @@ enum {
 enum {
   BX_POLY_IMPORT_FUNC_ADD = 0,
   BX_POLY_IMPORT_FUNC_MUL = 1,
-  BX_POLY_IMPORT_FUNC_X86_ADD = 2,
+  BX_POLY_IMPORT_FUNC_RESERVED_LEGACY_X86_ADD = 2,
   BX_POLY_IMPORT_FUNC_FP64_ADD = 3,
   BX_POLY_IMPORT_FUNC_AARCH64_LDADD8_ACQ_REL = 4,
   BX_POLY_IMPORT_FUNC_AARCH64_SWP8_ACQ_REL = 5,
@@ -545,6 +544,8 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
 
 static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
 {
+  if (import_id == BX_POLY_IMPORT_FUNC_RESERVED_LEGACY_X86_ADD)
+    return true;
   return bx_poly_import_requires_software_descriptor(import_id) ||
     bx_poly_import_is_x86_descriptor(import_id);
 }
@@ -3179,7 +3180,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     }
   }
 
-  if (bx_poly_import_requires_software_descriptor(import_id)) {
+  if (bx_poly_import_uses_descriptor_args(import_id)) {
     // Hardware/FPGA contract: unresolved descriptor-backed imports are
     // architectural exits. The CPU records the import id and native ABI
     // arguments; software decides whether this is dynamic binding, libc policy,
@@ -3191,68 +3192,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     BX_INFO(("poly_raw: import descriptor %u unresolved; delivering import trap",
       (unsigned) import_id));
     return deliver_poly_architectural_trap("foreign", "import", target_rip);
-  }
-
-  if (import_id == BX_POLY_IMPORT_FUNC_X86_ADD ||
-      bx_poly_import_is_x86_descriptor(import_id)) {
-    if (R12 == 0 || !bx_poly_return_cookie_valid ||
-        bx_poly_return_cookie_rsp < 32)
-      return false;
-    bx_address target = (bx_address) R12;
-    bx_address trampoline = (bx_address) (R12 + BX_POLY_IMPORT_X86_ADD_HELPER_SIZE);
-    if (bx_poly_import_is_x86_descriptor(import_id)) {
-      Bit64u slot = import_id - BX_POLY_IMPORT_FUNC_X86_SLOT0;
-      bx_address descriptor = (bx_address) (R12 +
-        slot * BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE);
-      target = (bx_address) read_virtual_qword(BX_SEG_REG_DS, descriptor);
-      trampoline = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-        descriptor + 8);
-      if (target == 0 || trampoline == 0)
-        return false;
-    }
-    bx_address foreign_rsp = RSP;
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-      bx_poly_current_state_key(foreign_rsp));
-    bx_poly_import_x86_saved_alias[0] = RDI;
-    bx_poly_import_x86_saved_alias[1] = RSI;
-    bx_poly_import_x86_saved_alias[2] = RDX;
-    bx_poly_import_x86_saved_alias[3] = RCX;
-    bx_poly_import_x86_saved_alias[4] = R8;
-    bx_poly_import_x86_saved_alias[5] = R9;
-    bx_poly_import_x86_saved_alias_valid = true;
-    RDI = arg0;
-    RSI = arg1;
-    RDX = arg2;
-    RCX = arg3;
-    R8 = arg4;
-    R9 = arg5;
-    bx_address x86_rsp = bx_poly_return_cookie_rsp - 32;
-    write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
-    if (bx_poly_import_uses_x86_stack_args(import_id)) {
-      write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 8, arg6);
-      write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 16, arg7);
-    }
-    BX_INFO(("poly_raw: import x86 call mode=%u descriptor=%u target=%llx trampoline=%llx stack=%llx arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu arg6=%llu arg7=%llu return=%llx",
-      mode, (unsigned) import_id, (unsigned long long) target,
-      (unsigned long long) trampoline, (unsigned long long) x86_rsp,
-      (unsigned long long) arg0,
-      (unsigned long long) arg1, (unsigned long long) arg2,
-      (unsigned long long) arg3, (unsigned long long) arg4,
-      (unsigned long long) arg5, (unsigned long long) arg6,
-      (unsigned long long) arg7, (unsigned long long) return_rip));
-    bx_poly_import_x86_return_valid = true;
-    bx_poly_import_x86_return_mode = mode;
-    bx_poly_import_x86_return_rip = return_rip;
-    bx_poly_import_x86_return_rsp = foreign_rsp;
-    bx_poly_import_x86_return_import_id = import_id;
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    RIP = target;
-    RSP = x86_rsp;
-    bx_poly_mode_switch_count++;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    return true;
   }
   return false;
 }
