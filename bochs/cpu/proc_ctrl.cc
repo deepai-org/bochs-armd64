@@ -3033,103 +3033,23 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   Bit64u arg6 = 0, arg7 = 0;
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
-    mapped = read_poly_aarch64_reg(0, &arg0);
-    if (mapped &&
-        import_id != BX_POLY_IMPORT_FUNC_STRLEN &&
-        import_id != BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL &&
-        import_id != BX_POLY_IMPORT_FUNC_ERRNO_LOCATION &&
-        import_id != BX_POLY_IMPORT_FUNC_GETENV &&
-        import_id != BX_POLY_IMPORT_FUNC_SECURE_GETENV &&
-        import_id != BX_POLY_IMPORT_FUNC_MALLOC &&
-        import_id != BX_POLY_IMPORT_FUNC_FREE &&
-        import_id != BX_POLY_IMPORT_FUNC_STRDUP &&
-        import_id != BX_POLY_IMPORT_FUNC_ATEXIT &&
-        import_id != BX_POLY_IMPORT_FUNC_CXA_FINALIZE &&
-        import_id != BX_POLY_IMPORT_FUNC_GETPID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETPPID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETUID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETEUID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETGID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETEGID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETTID)
-      mapped = read_poly_aarch64_reg(1, &arg1);
-    if (mapped &&
-        (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMSET ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMMOVE ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMPCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_BCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-         bx_poly_import_uses_descriptor_args(import_id) ||
-         import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
-         import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
-         import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
-      mapped = read_poly_aarch64_reg(2, &arg2);
-    if (mapped && (import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-        bx_poly_import_uses_descriptor_args(import_id)))
-      mapped = read_poly_aarch64_reg(3, &arg3);
-    if (mapped && bx_poly_import_uses_descriptor_args(import_id))
-      mapped = read_poly_aarch64_reg(4, &arg4) &&
-        read_poly_aarch64_reg(5, &arg5);
+    mapped = read_poly_aarch64_reg(0, &arg0) &&
+      read_poly_aarch64_reg(1, &arg1) &&
+      read_poly_aarch64_reg(2, &arg2) &&
+      read_poly_aarch64_reg(3, &arg3) &&
+      read_poly_aarch64_reg(4, &arg4) &&
+      read_poly_aarch64_reg(5, &arg5);
     if (mapped && bx_poly_import_uses_x86_stack_args(import_id))
       mapped = read_poly_aarch64_reg(6, &arg6) &&
         read_poly_aarch64_reg(7, &arg7);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
-    mapped = read_poly_riscv_reg(10, &arg0);
-    if (mapped &&
-        import_id != BX_POLY_IMPORT_FUNC_STRLEN &&
-        import_id != BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL &&
-        import_id != BX_POLY_IMPORT_FUNC_ERRNO_LOCATION &&
-        import_id != BX_POLY_IMPORT_FUNC_GETENV &&
-        import_id != BX_POLY_IMPORT_FUNC_SECURE_GETENV &&
-        import_id != BX_POLY_IMPORT_FUNC_MALLOC &&
-        import_id != BX_POLY_IMPORT_FUNC_FREE &&
-        import_id != BX_POLY_IMPORT_FUNC_STRDUP &&
-        import_id != BX_POLY_IMPORT_FUNC_ATEXIT &&
-        import_id != BX_POLY_IMPORT_FUNC_CXA_FINALIZE &&
-        import_id != BX_POLY_IMPORT_FUNC_GETPID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETPPID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETUID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETEUID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETGID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETEGID &&
-        import_id != BX_POLY_IMPORT_FUNC_GETTID)
-      mapped = read_poly_riscv_reg(11, &arg1);
-    if (mapped &&
-        (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMSET ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMMOVE ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMPCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_BCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_BCOPY ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-         bx_poly_import_uses_descriptor_args(import_id) ||
-         import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
-         import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
-         import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
-         import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
-         import_id == BX_POLY_IMPORT_FUNC_STPNCPY))
-      mapped = read_poly_riscv_reg(12, &arg2);
-    if (mapped && (import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
-        bx_poly_import_uses_descriptor_args(import_id)))
-      mapped = read_poly_riscv_reg(13, &arg3);
-    if (mapped && bx_poly_import_uses_descriptor_args(import_id))
-      mapped = read_poly_riscv_reg(14, &arg4) &&
-        read_poly_riscv_reg(15, &arg5);
+    mapped = read_poly_riscv_reg(10, &arg0) &&
+      read_poly_riscv_reg(11, &arg1) &&
+      read_poly_riscv_reg(12, &arg2) &&
+      read_poly_riscv_reg(13, &arg3) &&
+      read_poly_riscv_reg(14, &arg4) &&
+      read_poly_riscv_reg(15, &arg5);
     if (mapped && bx_poly_import_uses_x86_stack_args(import_id))
       mapped = read_poly_riscv_reg(16, &arg6) &&
         read_poly_riscv_reg(17, &arg7);
