@@ -85,6 +85,34 @@ struct bx_poly_trap_saved_regs {
   Bit64u riscv_x17;
 };
 
+static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
+{
+  regs->valid = false;
+  regs->mode = BX_POLY_MODE_X86;
+  regs->rax = 0;
+  regs->rdi = 0;
+  regs->rsi = 0;
+  regs->rdx = 0;
+  regs->rcx = 0;
+  regs->r8 = 0;
+  regs->r9 = 0;
+  regs->rsp = 0;
+  for (unsigned n = 0; n < 8; n++) {
+    regs->xmm_lo[n] = 0;
+    regs->xmm_hi[n] = 0;
+  }
+  regs->aarch64_extra_valid = false;
+  regs->aarch64_x7 = 0;
+  regs->aarch64_x8 = 0;
+  regs->aarch64_x9 = 0;
+  regs->aarch64_x10 = 0;
+  regs->riscv_extra_valid = false;
+  regs->riscv_x5 = 0;
+  regs->riscv_x6 = 0;
+  regs->riscv_x7 = 0;
+  regs->riscv_x17 = 0;
+}
+
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
@@ -652,6 +680,7 @@ struct bx_poly_reg_state_t {
   bx_address trap_vector;
   Bit32u trap_vector_mode;
   bx_poly_trap_packet last_trap;
+  struct bx_poly_trap_saved_regs trap_saved_regs;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1471,6 +1500,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].last_trap.next_pc = 0;
   for (unsigned n = 0; n < 6; n++)
     bx_poly_reg_states[victim].last_trap.args[n] = 0;
+  bx_poly_clear_trap_saved_regs(&bx_poly_reg_states[victim].trap_saved_regs);
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   bx_poly_reg_states[victim].aarch64_reservation_valid = false;
   bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
@@ -1522,6 +1552,7 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
   bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
   bx_poly_reg_states[slot].last_trap = bx_poly_last_trap;
+  bx_poly_reg_states[slot].trap_saved_regs = bx_poly_trap_saved_regs;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
   bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
   bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
@@ -1570,6 +1601,7 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
   bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
   bx_poly_last_trap = bx_poly_reg_states[slot].last_trap;
+  bx_poly_trap_saved_regs = bx_poly_reg_states[slot].trap_saved_regs;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
   bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
   bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
@@ -9133,6 +9165,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       write_poly_riscv_reg(7, bx_poly_last_trap.args[5]);
     }
     RIP = trap_vector;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_stack_key(RSP));
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_INFO(("poly_ud: architectural %s %s trap vector=%llx source_mode=%u target_mode=%u pc=%llx next=%llx",
       arch_name, trap_name, (unsigned long long) trap_vector, trap_mode,
@@ -9193,9 +9227,7 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
       write_poly_riscv_reg(7, bx_poly_trap_saved_regs.riscv_x7);
       write_poly_riscv_reg(17, bx_poly_trap_saved_regs.riscv_x17);
     }
-    bx_poly_trap_saved_regs.valid = false;
-    bx_poly_trap_saved_regs.aarch64_extra_valid = false;
-    bx_poly_trap_saved_regs.riscv_extra_valid = false;
+    bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   }
   RIP = bx_poly_last_trap.next_pc;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
