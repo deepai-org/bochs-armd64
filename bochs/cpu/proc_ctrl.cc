@@ -9293,7 +9293,7 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_stack_key(RSP));
-  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
+  if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
   return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
     dispatch_number, status_number, unknown_number, arg0, arg1, arg2, arg3,
@@ -9388,7 +9388,7 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
     trap_arg4, trap_arg5);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_stack_key(RSP));
-  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
+  if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
   if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
         trap_pc, trap_arg0, trap_arg1, trap_arg2, trap_arg3))
