@@ -8715,6 +8715,16 @@ bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall
     return true;
   }
 
+  if (syscall_number == 100) {
+    if (arg1)
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+    if (arg2)
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg2, 24);
+    RAX = (arg1 && arg2) ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s get_robust_list pid=%llu head=%llx len=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 92) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s personality persona=%llx result=0", arch_name, (unsigned long long) arg0));
