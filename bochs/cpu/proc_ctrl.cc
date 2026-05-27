@@ -60,6 +60,19 @@ struct bx_poly_trap_packet {
   Bit64u args[6];
 };
 
+struct bx_poly_trap_saved_regs {
+  bool valid;
+  Bit32u mode;
+  Bit64u rax;
+  Bit64u rdi;
+  Bit64u rsi;
+  Bit64u rdx;
+  Bit64u rcx;
+  Bit64u r8;
+  Bit64u r9;
+  Bit64u rsp;
+};
+
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
@@ -550,6 +563,18 @@ static bx_poly_trap_packet bx_poly_last_trap = {
   0,
   0,
   { 0, 0, 0, 0, 0, 0 }
+};
+static bx_poly_trap_saved_regs bx_poly_trap_saved_regs = {
+  false,
+  BX_POLY_MODE_X86,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0,
+  0
 };
 static bool bx_poly_return_cookie_valid = false;
 static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
@@ -8982,6 +9007,18 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   Bit32u trap_mode = bx_poly_last_trap.mode;
   bx_address trap_vector = BX_CPU_THIS_PTR poly_trap_vector;
 
+  bx_poly_trap_saved_regs.valid =
+    trap_mode == BX_POLY_MODE_RAW_AARCH64 || trap_mode == BX_POLY_MODE_RAW_RISCV;
+  bx_poly_trap_saved_regs.mode = trap_mode;
+  bx_poly_trap_saved_regs.rax = RAX;
+  bx_poly_trap_saved_regs.rdi = RDI;
+  bx_poly_trap_saved_regs.rsi = RSI;
+  bx_poly_trap_saved_regs.rdx = RDX;
+  bx_poly_trap_saved_regs.rcx = RCX;
+  bx_poly_trap_saved_regs.r8 = R8;
+  bx_poly_trap_saved_regs.r9 = R9;
+  bx_poly_trap_saved_regs.rsp = RSP;
+
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -9023,6 +9060,19 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   bx_poly_current_mode = bx_poly_last_trap.mode;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_stack_key(RSP));
+  if (bx_poly_trap_saved_regs.valid &&
+      bx_poly_trap_saved_regs.mode == bx_poly_current_mode) {
+    Bit64u result = RAX;
+    RDI = bx_poly_trap_saved_regs.rdi;
+    RSI = bx_poly_trap_saved_regs.rsi;
+    RDX = bx_poly_trap_saved_regs.rdx;
+    RCX = bx_poly_trap_saved_regs.rcx;
+    R8 = bx_poly_trap_saved_regs.r8;
+    R9 = bx_poly_trap_saved_regs.r9;
+    RSP = bx_poly_trap_saved_regs.rsp;
+    RAX = result;
+    bx_poly_trap_saved_regs.valid = false;
+  }
   RIP = bx_poly_last_trap.next_pc;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_stack_key(RSP));
