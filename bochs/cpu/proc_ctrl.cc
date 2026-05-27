@@ -8823,6 +8823,40 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if (syscall_number == 43 || syscall_number == 44) {
+    const char *name = syscall_number == 43 ? "statfs" : "fstatfs";
+    if (arg1 == 0) {
+      RAX = (Bit64u) -14;
+    }
+    else {
+      for (unsigned n = 0; n < sizeof(stat_magic); n++)
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), stat_magic[n]);
+      RAX = 0;
+    }
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx buf=%llx result=%lld", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 45 || syscall_number == 46 || syscall_number == 47) {
+    const char *name = syscall_number == 45 ? "truncate" :
+      syscall_number == 46 ? "ftruncate" : "fallocate";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx arg3=%llx result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
+    return true;
+  }
+
+  if (syscall_number == 49 || syscall_number == 50 || syscall_number == 52 ||
+      syscall_number == 53 || syscall_number == 54 || syscall_number == 55) {
+    const char *name = syscall_number == 49 ? "chdir" :
+      syscall_number == 50 ? "fchdir" :
+      syscall_number == 52 ? "fchmod" :
+      syscall_number == 53 ? "fchmodat" :
+      syscall_number == 54 ? "fchownat" : "fchown";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx arg3=%llx result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
+    return true;
+  }
+
   if (syscall_number == 19) {
     RAX = 7;
     BX_INFO(("poly_ud: emulated %s eventfd2 initval=%llu flags=%llu result=7", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
