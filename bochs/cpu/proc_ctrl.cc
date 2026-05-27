@@ -8696,7 +8696,6 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
 bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
-  (void) arg3;
   (void) arg4;
   (void) arg5;
 
@@ -8719,6 +8718,12 @@ bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall
   if (syscall_number == 92) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s personality persona=%llx result=0", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 95) {
+    RAX = (Bit64u) -10;
+    BX_INFO(("poly_ud: emulated %s waitid idtype=%llu id=%llu infop=%llx options=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
     return true;
   }
 
