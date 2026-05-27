@@ -7090,11 +7090,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0xffe0001f) == 0xd4200000) {
     Bit32u libcall_id = (insn >> 5) & 0xffff;
-    Bit64u arg1 = 0, arg2 = 0;
-    if (!read_poly_aarch64_reg(2, &arg1) || !read_poly_aarch64_reg(3, &arg2))
-      return false;
     return handle_poly_libcall("aarch64", "brk", libcall_id, libcall_id, pc,
-      next_rip, arg1, arg2);
+      next_rip);
   }
 
   return false;
@@ -8391,13 +8388,11 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   }
 
   if (insn == 0x00100073) {
-    Bit64u libcall_id = 0, arg1 = 0, arg2 = 0;
-    if (!read_poly_riscv_reg(17, &libcall_id) ||
-        !read_poly_riscv_reg(12, &arg1) ||
-        !read_poly_riscv_reg(13, &arg2))
+    Bit64u libcall_id = 0;
+    if (!read_poly_riscv_reg(17, &libcall_id))
       return false;
     return handle_poly_libcall("riscv", "ebreak", (Bit32u) libcall_id, 0, pc,
-      next_rip, arg1, arg2);
+      next_rip);
   }
 
   return false;
@@ -8752,13 +8747,11 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         return true;
       }
       if (high && rs2 == 0 && rd == 0) {
-        Bit64u libcall_id = 0, arg1 = 0, arg2 = 0;
-        if (!read_poly_riscv_reg(17, &libcall_id) ||
-            !read_poly_riscv_reg(12, &arg1) ||
-            !read_poly_riscv_reg(13, &arg2))
+        Bit64u libcall_id = 0;
+        if (!read_poly_riscv_reg(17, &libcall_id))
           return false;
         return handle_poly_libcall("riscv", "c.ebreak", (Bit32u) libcall_id,
-          0, pc, next_rip, arg1, arg2);
+          0, pc, next_rip);
       }
       if (high && rs2 == 0) {
         Bit64u target = 0;
@@ -9251,12 +9244,11 @@ bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *
 }
 
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
-  Bit32u libcall_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip,
-  Bit64u arg1, Bit64u arg2)
+  Bit32u libcall_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip)
 {
   Bit64u trap_arg0 = RAX;
-  Bit64u trap_arg1 = arg1;
-  Bit64u trap_arg2 = arg2;
+  Bit64u trap_arg1 = 0;
+  Bit64u trap_arg2 = 0;
   Bit64u trap_arg3 = 0;
   Bit64u trap_arg4 = 0;
   Bit64u trap_arg5 = 0;
