@@ -9459,6 +9459,18 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 153) {
+    if (arg0 != 0) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg0, 11);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg0 + 8), 22);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg0 + 16), 33);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg0 + 24), 44);
+    }
+    RAX = 987;
+    BX_INFO(("poly_ud: emulated %s times addr=%llx ticks=987 utime=11", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
   if (syscall_number == 163) {
     if (arg1 != 0) {
       write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 8388608);
