@@ -104,7 +104,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 114;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 115;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -252,7 +252,8 @@ enum {
   BX_POLY_IMPORT_FUNC_X86_SLOT4 = 110,
   BX_POLY_IMPORT_FUNC_X86_SLOT5 = 111,
   BX_POLY_IMPORT_FUNC_X86_SLOT6 = 112,
-  BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113
+  BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113,
+  BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL = 114
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
@@ -3370,7 +3371,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     mapped = read_poly_aarch64_reg(0, &arg0);
     if (mapped &&
-        import_id != BX_POLY_IMPORT_FUNC_STRLEN)
+        import_id != BX_POLY_IMPORT_FUNC_STRLEN &&
+        import_id != BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL)
       mapped = read_poly_aarch64_reg(1, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -3403,7 +3405,8 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = read_poly_riscv_reg(10, &arg0);
     if (mapped &&
-        import_id != BX_POLY_IMPORT_FUNC_STRLEN)
+        import_id != BX_POLY_IMPORT_FUNC_STRLEN &&
+        import_id != BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL)
       mapped = read_poly_riscv_reg(11, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -3445,6 +3448,10 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   else if (import_id == BX_POLY_IMPORT_FUNC_MUL) {
     result = arg0 * arg1 + 100;
     op_name = "poly_import_mul";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL) {
+    result = (Bit64u) -5;
+    op_name = "__stack_chk_fail";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRLEN) {
     result = 0;
