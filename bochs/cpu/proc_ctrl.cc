@@ -8863,6 +8863,34 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
     return true;
   }
 
+  if ((syscall_number >= 34 && syscall_number <= 41) ||
+      syscall_number == 51 || syscall_number == 276 ||
+      (syscall_number >= 428 && syscall_number <= 433) ||
+      syscall_number == 442) {
+    const char *name = syscall_number == 34 ? "mkdirat" :
+      syscall_number == 35 ? "unlinkat" :
+      syscall_number == 36 ? "symlinkat" :
+      syscall_number == 37 ? "linkat" :
+      syscall_number == 38 ? "renameat" :
+      syscall_number == 39 ? "umount2" :
+      syscall_number == 40 ? "mount" :
+      syscall_number == 41 ? "pivot_root" :
+      syscall_number == 51 ? "chroot" :
+      syscall_number == 276 ? "renameat2" :
+      syscall_number == 428 ? "open_tree" :
+      syscall_number == 429 ? "move_mount" :
+      syscall_number == 430 ? "fsopen" :
+      syscall_number == 431 ? "fsconfig" :
+      syscall_number == 432 ? "fsmount" :
+      syscall_number == 433 ? "fspick" : "mount_setattr";
+    RAX = syscall_number == 428 ? 15 :
+      syscall_number == 430 ? 16 :
+      syscall_number == 432 ? 17 :
+      syscall_number == 433 ? 18 : 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx arg3=%llx arg4=%llx result=%lld", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 20) {
     RAX = 4;
     BX_INFO(("poly_ud: emulated %s epoll_create1 flags=%llu result=4", arch_name, (unsigned long long) arg0));
