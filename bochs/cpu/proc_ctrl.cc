@@ -50,6 +50,14 @@ enum {
   BX_POLY_TRAP_BREAK = 2
 };
 
+struct bx_poly_trap_packet {
+  Bit32u reason;
+  Bit32u mode;
+  Bit32u number;
+  bx_address pc;
+  Bit64u args[6];
+};
+
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
 static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
@@ -531,11 +539,13 @@ static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_libcall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_libcall_number = 0;
-static Bit32u bx_poly_last_trap_reason = BX_POLY_TRAP_NONE;
-static Bit32u bx_poly_last_trap_mode = BX_POLY_MODE_X86;
-static Bit32u bx_poly_last_trap_number = 0;
-static bx_address bx_poly_last_trap_pc = 0;
-static Bit64u bx_poly_last_trap_args[6];
+static bx_poly_trap_packet bx_poly_last_trap = {
+  BX_POLY_TRAP_NONE,
+  BX_POLY_MODE_X86,
+  0,
+  0,
+  { 0, 0, 0, 0, 0, 0 }
+};
 static bool bx_poly_return_cookie_valid = false;
 static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_return_cookie_rip = 0;
@@ -1048,16 +1058,16 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u
   bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
   Bit64u arg4, Bit64u arg5)
 {
-  bx_poly_last_trap_reason = reason;
-  bx_poly_last_trap_mode = mode;
-  bx_poly_last_trap_number = number;
-  bx_poly_last_trap_pc = pc;
-  bx_poly_last_trap_args[0] = arg0;
-  bx_poly_last_trap_args[1] = arg1;
-  bx_poly_last_trap_args[2] = arg2;
-  bx_poly_last_trap_args[3] = arg3;
-  bx_poly_last_trap_args[4] = arg4;
-  bx_poly_last_trap_args[5] = arg5;
+  bx_poly_last_trap.reason = reason;
+  bx_poly_last_trap.mode = mode;
+  bx_poly_last_trap.number = number;
+  bx_poly_last_trap.pc = pc;
+  bx_poly_last_trap.args[0] = arg0;
+  bx_poly_last_trap.args[1] = arg1;
+  bx_poly_last_trap.args[2] = arg2;
+  bx_poly_last_trap.args[3] = arg3;
+  bx_poly_last_trap.args[4] = arg4;
+  bx_poly_last_trap.args[5] = arg5;
 }
 
 static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number,
@@ -10318,19 +10328,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
       if (op >= 0x50 && op <= 0x59) {
         Bit8u status_id = op - 0x50;
         if (status_id == 0)
-          RAX = bx_poly_last_trap_reason;
+          RAX = bx_poly_last_trap.reason;
         else if (status_id == 1)
-          RAX = bx_poly_last_trap_mode;
+          RAX = bx_poly_last_trap.mode;
         else if (status_id == 2)
-          RAX = bx_poly_last_trap_number;
+          RAX = bx_poly_last_trap.number;
         else if (status_id >= 3 && status_id <= 8)
-          RAX = bx_poly_last_trap_args[status_id - 3];
+          RAX = bx_poly_last_trap.args[status_id - 3];
         else
-          RAX = bx_poly_last_trap_pc;
+          RAX = bx_poly_last_trap.pc;
         RIP = next_rip;
         BX_INFO(("poly_ud: trap status op=0x%02x id=%u reason=%u mode=%u number=%u pc=%llx",
-          op, status_id, bx_poly_last_trap_reason, bx_poly_last_trap_mode,
-          bx_poly_last_trap_number, (unsigned long long) bx_poly_last_trap_pc));
+          op, status_id, bx_poly_last_trap.reason, bx_poly_last_trap.mode,
+          bx_poly_last_trap.number, (unsigned long long) bx_poly_last_trap.pc));
         return true;
       }
     }
