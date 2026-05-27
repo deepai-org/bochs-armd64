@@ -63,7 +63,7 @@ static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 = 0x0000107b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32 = 0x0000207b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_FP64_STACK = 0x0000307b;
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
-static const Bit32u BX_POLY_CPUID_MAX = 0x40000002;
+static const Bit32u BX_POLY_CPUID_MAX = 0x40000003;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_RISCV = (1U << 1);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH = (1U << 2);
@@ -89,6 +89,15 @@ static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT = (1U << 21);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS = (1U << 22);
 static const Bit32u BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS = (1U << 23);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK = (1U << 24);
+static const Bit32u BX_POLY_CPUID_STATE_OVERLAP_GPRS = (1U << 0);
+static const Bit32u BX_POLY_CPUID_STATE_SYNTHETIC_BANKS = (1U << 1);
+static const Bit32u BX_POLY_CPUID_STATE_KEY_CR3 = (1U << 2);
+static const Bit32u BX_POLY_CPUID_STATE_KEY_FSBASE = (1U << 3);
+static const Bit32u BX_POLY_CPUID_STATE_KEY_STACK_REGION = (1U << 4);
+static const Bit32u BX_POLY_CPUID_STATE_USER_RETURN_RESTORE = (1U << 5);
+static const Bit32u BX_POLY_CPUID_STATE_X86_TSO = (1U << 6);
+static const Bit32u BX_POLY_CPUID_STATE_XSAVE_VISIBLE = (1U << 7);
+static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -9907,6 +9916,20 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = 0;
       RDX = 0;
     }
+    BX_NEXT_INSTR(i);
+    return;
+  }
+  if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 3) {
+    RAX = BX_POLY_CPUID_STATE_OVERLAP_GPRS |
+          BX_POLY_CPUID_STATE_SYNTHETIC_BANKS |
+          BX_POLY_CPUID_STATE_KEY_CR3 |
+          BX_POLY_CPUID_STATE_KEY_FSBASE |
+          BX_POLY_CPUID_STATE_KEY_STACK_REGION |
+          BX_POLY_CPUID_STATE_USER_RETURN_RESTORE |
+          BX_POLY_CPUID_STATE_X86_TSO;
+    RBX = BX_POLY_STATE_STACK_KEY_SHIFT;
+    RCX = 0; // no XCR0 component is assigned in this Bochs prototype
+    RDX = 0; // no XSAVE byte area is exposed in this Bochs prototype
     BX_NEXT_INSTR(i);
     return;
   }
