@@ -176,6 +176,7 @@ static const Bit32u BX_POLY_CPUID_STATE_USER_RETURN_RESTORE = (1U << 5);
 static const Bit32u BX_POLY_CPUID_STATE_X86_TSO = (1U << 6);
 static const Bit32u BX_POLY_CPUID_STATE_XSAVE_VISIBLE = (1U << 7);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_EXPLICIT = (1U << 8);
+static const Bit32u BX_POLY_CPUID_STATE_TRANSITION_FRAME_32 = (1U << 9);
 static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
@@ -657,13 +658,19 @@ static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
 
 static const unsigned BX_POLY_REG_STATE_SLOTS = 64;
 static const unsigned BX_POLY_CROSS_RETURN_DEPTH = 8;
+static const unsigned BX_POLY_TRANSITION_FRAME_BYTES = 32;
 
 struct bx_poly_cross_return_frame_t {
+  bx_address return_rip;
+  bx_address return_rsp;
   Bit32u caller_mode;
   Bit32u callee_mode;
   Bit32u bridge_kind;
-  bx_address return_rip;
+  Bit32u flags;
 };
+
+typedef char bx_poly_cross_return_frame_must_be_32_bytes[
+  sizeof(bx_poly_cross_return_frame_t) == BX_POLY_TRANSITION_FRAME_BYTES ? 1 : -1];
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_raw_owner_cr3 = 0;
@@ -1601,6 +1608,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
     bx_poly_reg_states[victim].cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
     bx_poly_reg_states[victim].cross_return_stack[n].bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     bx_poly_reg_states[victim].cross_return_stack[n].return_rip = 0;
+    bx_poly_reg_states[victim].cross_return_stack[n].return_rsp = 0;
+    bx_poly_reg_states[victim].cross_return_stack[n].flags = 0;
   }
   for (unsigned n = 0; n < 32; n++) {
     bx_poly_reg_states[victim].aarch64_x[n] = 0;
@@ -2522,6 +2531,8 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
   frame->callee_mode = callee_mode;
   frame->bridge_kind = bridge_kind;
   frame->return_rip = return_rip;
+  frame->return_rsp = RSP;
+  frame->flags = 0;
   bx_poly_current_mode = callee_mode;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
   bx_poly_mode_switch_count++;
@@ -9825,7 +9836,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_STATE_KEY_STACK_REGION |
           BX_POLY_CPUID_STATE_USER_RETURN_RESTORE |
           BX_POLY_CPUID_STATE_X86_TSO |
-          BX_POLY_CPUID_STATE_KEY_EXPLICIT;
+          BX_POLY_CPUID_STATE_KEY_EXPLICIT |
+          BX_POLY_CPUID_STATE_TRANSITION_FRAME_32;
     RBX = BX_POLY_STATE_STACK_KEY_SHIFT;
     RCX = 0; // no XCR0 component is assigned in this Bochs prototype
     RDX = 0; // no XSAVE byte area is exposed in this Bochs prototype
