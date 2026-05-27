@@ -430,6 +430,8 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_STRCASECMP:
     case BX_POLY_IMPORT_FUNC_STRNCASECMP:
     case BX_POLY_IMPORT_FUNC_STRCASESTR:
+    case BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC:
+    case BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR:
     case BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL:
     case BX_POLY_IMPORT_FUNC_ERRNO_LOCATION:
     case BX_POLY_IMPORT_FUNC_GETAUXVAL:
@@ -762,6 +764,8 @@ static Bit32u bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_import_x86_return_rip = 0;
 static bx_address bx_poly_import_x86_return_rsp = 0;
 static Bit64u bx_poly_import_x86_return_import_id = 0;
+static bool bx_poly_import_x86_saved_alias_valid = false;
+static Bit64u bx_poly_import_x86_saved_alias[6];
 static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
@@ -2696,47 +2700,62 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   Bit64u import_id = bx_poly_import_x86_return_import_id;
   const bool returns_i128 = bx_poly_import_x86_returns_i128(import_id);
   const bool returns_fp128 = bx_poly_import_x86_returns_fp128(import_id);
+  const Bit64u result_rax = RAX;
+  const Bit64u result_rdx = RDX;
+  const Bit64u result_xmm0_lo = BX_READ_XMM_REG_LO_QWORD(0);
+  const Bit64u result_xmm0_hi = BX_READ_XMM_REG_HI_QWORD(0);
+
+  bx_poly_current_mode = return_mode;
+  RIP = return_rip;
+  RSP = return_rsp;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
+  if (bx_poly_import_x86_saved_alias_valid) {
+    RDI = bx_poly_import_x86_saved_alias[0];
+    RSI = bx_poly_import_x86_saved_alias[1];
+    RDX = bx_poly_import_x86_saved_alias[2];
+    RCX = bx_poly_import_x86_saved_alias[3];
+    R8 = bx_poly_import_x86_saved_alias[4];
+    R9 = bx_poly_import_x86_saved_alias[5];
+  }
+
   bool mapped = false;
   if (return_mode == BX_POLY_MODE_RAW_AARCH64 && returns_fp128) {
-    mapped = true;
+    mapped = write_poly_aarch64_fp128_reg(0, result_xmm0_lo, result_xmm0_hi);
   }
   else if (return_mode == BX_POLY_MODE_RAW_AARCH64) {
-    mapped = write_poly_aarch64_reg(0, RAX);
+    mapped = write_poly_aarch64_reg(0, result_rax);
     if (mapped && returns_i128)
-      mapped = write_poly_aarch64_reg(1, RDX);
+      mapped = write_poly_aarch64_reg(1, result_rdx);
   }
   else if (return_mode == BX_POLY_MODE_RAW_RISCV && returns_fp128) {
-    Bit64u lo = BX_READ_XMM_REG_LO_QWORD(0);
-    Bit64u hi = BX_READ_XMM_REG_HI_QWORD(0);
-    mapped = write_poly_riscv_reg(10, lo) &&
-      write_poly_riscv_reg(11, hi);
+    mapped = write_poly_riscv_reg(10, result_xmm0_lo) &&
+      write_poly_riscv_reg(11, result_xmm0_hi);
   }
   else if (return_mode == BX_POLY_MODE_RAW_RISCV) {
-    mapped = write_poly_riscv_reg(10, RAX);
+    mapped = write_poly_riscv_reg(10, result_rax);
     if (mapped && returns_i128)
-      mapped = write_poly_riscv_reg(11, RDX);
+      mapped = write_poly_riscv_reg(11, result_rdx);
   }
 
   if (!mapped)
     return false;
 
-  bx_poly_current_mode = return_mode;
-  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  RIP = return_rip;
-  RSP = return_rsp;
   bx_poly_import_x86_return_valid = false;
   bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
   bx_poly_import_x86_return_rip = 0;
   bx_poly_import_x86_return_rsp = 0;
   bx_poly_import_x86_return_import_id = 0;
+  bx_poly_import_x86_saved_alias_valid = false;
   if (return_poly_abi_call(return_mode, return_rip))
     return true;
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
   BX_INFO(("poly_ud: import x86 return mode=%u descriptor=%u result=%llu high=%llu rip=%llx",
-    bx_poly_current_mode, (unsigned) import_id, (unsigned long long) RAX,
-    (unsigned long long) RDX, (unsigned long long) RIP));
+    bx_poly_current_mode, (unsigned) import_id,
+    (unsigned long long) result_rax,
+    (unsigned long long) result_rdx, (unsigned long long) RIP));
   return true;
 }
 
@@ -2814,47 +2833,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   if (import_id >= BX_POLY_IMPORT_CALL_COUNT)
     return false;
 
-  if (mode == BX_POLY_MODE_RAW_AARCH64 &&
-      import_id == BX_POLY_IMPORT_FUNC_AARCH64_TLSDESC) {
-    Bit64u descriptor_addr = 0;
-    if (!read_poly_aarch64_reg(0, &descriptor_addr))
-      return false;
-
-    Bit64u tls_offset = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (descriptor_addr + 8));
-    if (!write_poly_aarch64_reg(0, tls_offset))
-      return false;
-
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import aarch64 tlsdesc descriptor=%llx offset=%llu tls_base=%llx return=%llx",
-      (unsigned long long) descriptor_addr, (unsigned long long) tls_offset,
-      (unsigned long long) bx_poly_foreign_tls_base,
-      (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (mode == BX_POLY_MODE_RAW_RISCV &&
-      import_id == BX_POLY_IMPORT_FUNC_RISCV_TLS_GET_ADDR) {
-    Bit64u descriptor_addr = 0;
-    if (!read_poly_riscv_reg(10, &descriptor_addr))
-      return false;
-
-    Bit64u tls_offset = read_virtual_qword(BX_SEG_REG_DS,
-      (bx_address) (descriptor_addr + 8));
-    Bit64u result = bx_poly_foreign_tls_base + tls_offset;
-    if (!write_poly_riscv_reg(10, result))
-      return false;
-
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import riscv __tls_get_addr descriptor=%llx offset=%llu tls_base=%llx result=%llx return=%llx",
-      (unsigned long long) descriptor_addr, (unsigned long long) tls_offset,
-      (unsigned long long) bx_poly_foreign_tls_base,
-      (unsigned long long) result, (unsigned long long) return_rip));
-    return true;
-  }
-
   // Software-supplied import descriptors override fixed helpers only for
   // imports whose ABI contract is descriptor-backed.
   // This keeps symbol policy in the guest runtime: the CPU only provides the
@@ -2900,6 +2878,16 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     bx_address trampoline = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
       descriptor + 8);
     if (target != 0 && trampoline != 0) {
+      bx_address foreign_rsp = RSP;
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(foreign_rsp));
+      bx_poly_import_x86_saved_alias[0] = RDI;
+      bx_poly_import_x86_saved_alias[1] = RSI;
+      bx_poly_import_x86_saved_alias[2] = RDX;
+      bx_poly_import_x86_saved_alias[3] = RCX;
+      bx_poly_import_x86_saved_alias[4] = R8;
+      bx_poly_import_x86_saved_alias[5] = R9;
+      bx_poly_import_x86_saved_alias_valid = true;
       if (mode == BX_POLY_MODE_RAW_RISCV &&
           bx_poly_import_uses_fp128_binary_args(import_id)) {
         BX_WRITE_XMM_REG_LO_QWORD(0, arg0);
@@ -2928,7 +2916,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         R8 = arg4;
         R9 = arg5;
       }
-      bx_address foreign_rsp = RSP;
       bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 8, arg6);
@@ -3178,6 +3165,16 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     bx_address trampoline = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
       descriptor + 8);
     if (target != 0 && trampoline != 0) {
+      bx_address foreign_rsp = RSP;
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(foreign_rsp));
+      bx_poly_import_x86_saved_alias[0] = RDI;
+      bx_poly_import_x86_saved_alias[1] = RSI;
+      bx_poly_import_x86_saved_alias[2] = RDX;
+      bx_poly_import_x86_saved_alias[3] = RCX;
+      bx_poly_import_x86_saved_alias[4] = R8;
+      bx_poly_import_x86_saved_alias[5] = R9;
+      bx_poly_import_x86_saved_alias_valid = true;
       if (mode == BX_POLY_MODE_RAW_RISCV &&
           bx_poly_import_uses_fp128_binary_args(import_id)) {
         BX_WRITE_XMM_REG_LO_QWORD(0, arg0);
@@ -3206,7 +3203,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         R8 = arg4;
         R9 = arg5;
       }
-      bx_address foreign_rsp = RSP;
       bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
       if (bx_poly_import_uses_x86_stack_args(import_id)) {
@@ -3270,13 +3266,22 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       if (target == 0 || trampoline == 0)
         return false;
     }
+    bx_address foreign_rsp = RSP;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(foreign_rsp));
+    bx_poly_import_x86_saved_alias[0] = RDI;
+    bx_poly_import_x86_saved_alias[1] = RSI;
+    bx_poly_import_x86_saved_alias[2] = RDX;
+    bx_poly_import_x86_saved_alias[3] = RCX;
+    bx_poly_import_x86_saved_alias[4] = R8;
+    bx_poly_import_x86_saved_alias[5] = R9;
+    bx_poly_import_x86_saved_alias_valid = true;
     RDI = arg0;
     RSI = arg1;
     RDX = arg2;
     RCX = arg3;
     R8 = arg4;
     R9 = arg5;
-    bx_address foreign_rsp = RSP;
     bx_address x86_rsp = bx_poly_return_cookie_rsp - 32;
     write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
     if (bx_poly_import_uses_x86_stack_args(import_id)) {
