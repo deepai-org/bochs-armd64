@@ -104,7 +104,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 130;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 133;
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_BASE_OFFSET = BX_CONST64(16);
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_SIZE_OFFSET = BX_CONST64(24);
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_CURSOR_OFFSET = BX_CONST64(32);
@@ -273,7 +273,10 @@ enum {
   BX_POLY_IMPORT_FUNC_STRNDUP = 126,
   BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN = 127,
   BX_POLY_IMPORT_FUNC_ALIGNED_ALLOC = 128,
-  BX_POLY_IMPORT_FUNC_MEMALIGN = 129
+  BX_POLY_IMPORT_FUNC_MEMALIGN = 129,
+  BX_POLY_IMPORT_FUNC_ATEXIT = 130,
+  BX_POLY_IMPORT_FUNC_CXA_ATEXIT = 131,
+  BX_POLY_IMPORT_FUNC_CXA_FINALIZE = 132
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
@@ -3465,7 +3468,9 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         import_id != BX_POLY_IMPORT_FUNC_SECURE_GETENV &&
         import_id != BX_POLY_IMPORT_FUNC_MALLOC &&
         import_id != BX_POLY_IMPORT_FUNC_FREE &&
-        import_id != BX_POLY_IMPORT_FUNC_STRDUP)
+        import_id != BX_POLY_IMPORT_FUNC_STRDUP &&
+        import_id != BX_POLY_IMPORT_FUNC_ATEXIT &&
+        import_id != BX_POLY_IMPORT_FUNC_CXA_FINALIZE)
       mapped = read_poly_aarch64_reg(1, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -3478,6 +3483,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
          import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
          bx_poly_import_is_x86_descriptor(import_id) ||
+         import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
          import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
@@ -3506,7 +3512,9 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         import_id != BX_POLY_IMPORT_FUNC_SECURE_GETENV &&
         import_id != BX_POLY_IMPORT_FUNC_MALLOC &&
         import_id != BX_POLY_IMPORT_FUNC_FREE &&
-        import_id != BX_POLY_IMPORT_FUNC_STRDUP)
+        import_id != BX_POLY_IMPORT_FUNC_STRDUP &&
+        import_id != BX_POLY_IMPORT_FUNC_ATEXIT &&
+        import_id != BX_POLY_IMPORT_FUNC_CXA_FINALIZE)
       mapped = read_poly_riscv_reg(11, &arg1);
     if (mapped &&
         (import_id == BX_POLY_IMPORT_FUNC_MEMCPY ||
@@ -3519,6 +3527,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          import_id == BX_POLY_IMPORT_FUNC_MEMRCHR ||
          import_id == BX_POLY_IMPORT_FUNC_MEMMEM ||
          bx_poly_import_is_x86_descriptor(import_id) ||
+         import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
          import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
@@ -3678,6 +3687,18 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     else
       BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(arg1, arg0, result);
     op_name = "memalign";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_ATEXIT) {
+    result = 0;
+    op_name = "atexit";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_CXA_ATEXIT) {
+    result = 0;
+    op_name = "__cxa_atexit";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_CXA_FINALIZE) {
+    result = 0;
+    op_name = "__cxa_finalize";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRLEN) {
     result = 0;
