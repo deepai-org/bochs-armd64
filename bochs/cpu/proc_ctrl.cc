@@ -9459,6 +9459,25 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 163) {
+    if (arg1 != 0) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 8388608);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), (Bit64u) -1);
+      RAX = 0;
+    }
+    else {
+      RAX = (Bit64u) -14;
+    }
+    BX_INFO(("poly_ud: emulated %s getrlimit resource=%llu addr=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 164) {
+    RAX = arg1 != 0 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s setrlimit resource=%llu addr=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 165 && arg0 == 0) {
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 321);
     write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 654321);
