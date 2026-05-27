@@ -152,7 +152,6 @@ static const Bit32u BX_POLY_CPUID_FEATURE_TRAP_RECORDS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE = (1U << 8);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_TSO = (1U << 9);
 static const Bit32u BX_POLY_CPUID_FEATURE_THREAD_BANKS = (1U << 10);
-static const Bit32u BX_POLY_CPUID_FEATURE_COMPAT_TRAPS = (1U << 11);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES = (1U << 12);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_RET = (1U << 13);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_ARG = (1U << 14);
@@ -9083,6 +9082,8 @@ bool BX_CPU_C::handle_poly_compat_syscall_trap_packet(const char *arch_name,
   const char *trap_name, const char *number_prefix, Bit32u dispatch_number,
   Bit32u unknown_number)
 {
+  // Test-only fallback: this consumes the same architectural trap packet as
+  // guest software. It is deliberately not advertised as a CPU feature.
   const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
   Bit64u arg0 = bx_poly_last_trap.args[0];
   Bit64u arg1 = bx_poly_last_trap.args[1];
@@ -9242,10 +9243,12 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   }
 
   bx_poly_current_mode = BX_POLY_MODE_X86;
-  BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx",
-    arch_name, trap_name, trap_mode, (unsigned long long) fallback_pc));
+  unsigned vector = bx_poly_last_trap.reason == BX_POLY_TRAP_BREAK ?
+    BX_BP_EXCEPTION : BX_UD_EXCEPTION;
+  BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx vector=%u",
+    arch_name, trap_name, trap_mode, (unsigned long long) fallback_pc, vector));
   RIP = fallback_pc;
-  exception(BX_UD_EXCEPTION, 0);
+  exception(vector, 0);
   return true;
 }
 
@@ -10892,8 +10895,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK |
           BX_POLY_CPUID_FEATURE_TRAP_VECTOR |
           BX_POLY_CPUID_FEATURE_STATE_KEY;
-    if (BX_CPU_THIS_PTR poly_compat_traps_enabled)
-      feature_mask |= BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
     RAX = 1; // poly CPUID ABI version
     RBX = (1U << BX_POLY_MODE_X86) |
           (1U << BX_POLY_MODE_RAW_AARCH64) |

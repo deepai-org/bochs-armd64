@@ -710,7 +710,7 @@ void bx_init_options()
       0);
   new bx_param_bool_c(cpu_param,
       "poly_compat_traps", "Enable Bochs poly trap compatibility runtime",
-      "Enable the test-only syscall/libcall compatibility service after recording architectural poly trap packets",
+      "Enable a legacy test-only syscall/libcall compatibility service after recording architectural poly trap packets; not part of the advertised CPU contract",
       0);
 #if BX_CONFIGURE_MSRS
   new bx_param_filename_c(cpu_param,
