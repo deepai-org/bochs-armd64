@@ -434,6 +434,10 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_GETGID:
     case BX_POLY_IMPORT_FUNC_GETEGID:
     case BX_POLY_IMPORT_FUNC_GETTID:
+    case BX_POLY_IMPORT_FUNC_CLZDI2:
+    case BX_POLY_IMPORT_FUNC_CTZDI2:
+    case BX_POLY_IMPORT_FUNC_PARITYDI2:
+    case BX_POLY_IMPORT_FUNC_POPCOUNTDI2:
       return true;
     default:
       return false;
@@ -873,30 +877,6 @@ static Bit64u bx_poly_fp64_to_int32_rtz(double value)
   if (value <= -2147483648.0)
     return (Bit64u) (Bit64s) (Bit32s) 0x80000000;
   return (Bit64u) (Bit64s) (Bit32s) value;
-}
-
-static Bit32u bx_poly_count_leading_zeros64(Bit64u value)
-{
-  if (value == 0)
-    return 64;
-  Bit32u count = 0;
-  while ((value & BX_CONST64(0x8000000000000000)) == 0) {
-    count++;
-    value <<= 1;
-  }
-  return count;
-}
-
-static Bit32u bx_poly_count_trailing_zeros64(Bit64u value)
-{
-  if (value == 0)
-    return 64;
-  Bit32u count = 0;
-  while ((value & 1) == 0) {
-    count++;
-    value >>= 1;
-  }
-  return count;
 }
 
 static Bit32u bx_poly_count_ones64(Bit64u value)
@@ -3047,52 +3027,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_INFO(("poly_raw: import int128-to-float helper id=%u target=%llx return=%llx",
       (unsigned) import_id, (unsigned long long) target_rip,
-      (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (import_id == BX_POLY_IMPORT_FUNC_CLZDI2 ||
-      import_id == BX_POLY_IMPORT_FUNC_CTZDI2 ||
-      import_id == BX_POLY_IMPORT_FUNC_PARITYDI2 ||
-      import_id == BX_POLY_IMPORT_FUNC_POPCOUNTDI2) {
-    Bit64u source = 0;
-    Bit64u result = 0;
-    bool mapped = false;
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = read_poly_aarch64_reg(0, &source);
-    }
-    else if (mode == BX_POLY_MODE_RAW_RISCV) {
-      mapped = read_poly_riscv_reg(10, &source);
-    }
-    if (!mapped)
-      return false;
-
-    Bit32u ones = bx_poly_count_ones64(source);
-    if (import_id == BX_POLY_IMPORT_FUNC_CLZDI2)
-      result = bx_poly_count_leading_zeros64(source);
-    else if (import_id == BX_POLY_IMPORT_FUNC_CTZDI2)
-      result = bx_poly_count_trailing_zeros64(source);
-    else if (import_id == BX_POLY_IMPORT_FUNC_PARITYDI2)
-      result = ones & 1;
-    else
-      result = ones;
-
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = write_poly_aarch64_reg(0, result);
-    }
-    else {
-      mapped = write_poly_riscv_reg(10, result);
-    }
-    if (!mapped)
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import bit helper id=%u source=%llx result=%llu target=%llx return=%llx",
-      (unsigned) import_id, (unsigned long long) source,
-      (unsigned long long) result, (unsigned long long) target_rip,
       (unsigned long long) return_rip));
     return true;
   }
