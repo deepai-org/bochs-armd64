@@ -104,7 +104,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 116;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 117;
 static const Bit64u BX_POLY_ERRNO_TLS_OFFSET = BX_CONST64(4096);
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
@@ -255,7 +255,8 @@ enum {
   BX_POLY_IMPORT_FUNC_X86_SLOT6 = 112,
   BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113,
   BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL = 114,
-  BX_POLY_IMPORT_FUNC_ERRNO_LOCATION = 115
+  BX_POLY_IMPORT_FUNC_ERRNO_LOCATION = 115,
+  BX_POLY_IMPORT_FUNC_GETAUXVAL = 116
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
@@ -3462,6 +3463,10 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       return false;
     result = bx_poly_foreign_tls_base + BX_POLY_ERRNO_TLS_OFFSET;
     op_name = "__errno_location";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_GETAUXVAL) {
+    result = 0;
+    op_name = "getauxval";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRLEN) {
     result = 0;
