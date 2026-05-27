@@ -2948,21 +2948,11 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
         BX_WRITE_XMM_REG_HI_QWORD(0, arg1);
       }
       RDI = arg0;
-      if (import_id == BX_POLY_IMPORT_FUNC_ATOMIC_STORE_16 &&
-          mode == BX_POLY_MODE_RAW_AARCH64) {
-        RSI = arg2;
-        RDX = arg3;
-        RCX = arg4;
-        R8 = arg5;
-        R9 = arg6;
-      }
-      else {
-        RSI = arg1;
-        RDX = arg2;
-        RCX = arg3;
-        R8 = arg4;
-        R9 = arg5;
-      }
+      RSI = arg1;
+      RDX = arg2;
+      RCX = arg3;
+      R8 = arg4;
+      R9 = arg5;
       bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
       if (bx_poly_import_uses_x86_stack_args(import_id)) {
