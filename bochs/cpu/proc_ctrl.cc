@@ -8727,6 +8727,26 @@ bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall
     return true;
   }
 
+  if (syscall_number == 129 || syscall_number == 130 || syscall_number == 131) {
+    const char *name = syscall_number == 129 ? "kill" :
+      syscall_number == 130 ? "tkill" : "tgkill";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%lld arg1=%lld arg2=%lld result=0", arch_name, name, (long long) arg0, (long long) arg1, (long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 132) {
+    if (arg1) {
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (arg1 + 8), 2);
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (arg1 + 12), 0);
+      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (arg1 + 16), 0);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s sigaltstack new=%llx old=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
   if (syscall_number == 260) {
     RAX = (Bit64u) -10;
     BX_INFO(("poly_ud: emulated %s wait4 pid=%lld status=%llx options=%llx rusage=%llx result=%lld", arch_name, (long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
