@@ -395,6 +395,8 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
   switch (import_id) {
     case BX_POLY_IMPORT_FUNC_ADD:
     case BX_POLY_IMPORT_FUNC_MUL:
+    case BX_POLY_IMPORT_FUNC_FP64_ADD:
+    case BX_POLY_IMPORT_FUNC_FP32_ADD:
     case BX_POLY_IMPORT_FUNC_STRLEN:
     case BX_POLY_IMPORT_FUNC_MEMCPY:
     case BX_POLY_IMPORT_FUNC_MEMSET:
@@ -3611,74 +3613,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       aarch64_atomic_name, (unsigned long long) target_rip,
       (unsigned long long) result,
       (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (import_id == BX_POLY_IMPORT_FUNC_FP64_ADD) {
-    Bit64u left_bits = 0, right_bits = 0;
-    bool mapped = false;
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = read_poly_aarch64_fp64_reg(0, &left_bits) &&
-        read_poly_aarch64_fp64_reg(1, &right_bits);
-    }
-    else if (mode == BX_POLY_MODE_RAW_RISCV) {
-      mapped = read_poly_riscv_fp64_reg(10, &left_bits) &&
-        read_poly_riscv_fp64_reg(11, &right_bits);
-    }
-    if (!mapped)
-      return false;
-
-    Bit64u result_bits = bx_poly_fp64_to_bits(
-      bx_poly_fp64_from_bits(left_bits) + bx_poly_fp64_from_bits(right_bits) + 10.0);
-    if (mode == BX_POLY_MODE_RAW_AARCH64)
-      mapped = write_poly_aarch64_fp64_reg(0, result_bits);
-    else if (mode == BX_POLY_MODE_RAW_RISCV)
-      mapped = write_poly_riscv_fp64_reg(10, result_bits);
-    if (!mapped)
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import fp64 call mode=%u descriptor=%u target=%llx arg0=%llx arg1=%llx result=%llx return=%llx",
-      mode, (unsigned) import_id, (unsigned long long) target_rip,
-      (unsigned long long) left_bits, (unsigned long long) right_bits,
-      (unsigned long long) result_bits, (unsigned long long) return_rip));
-    return true;
-  }
-
-  if (import_id == BX_POLY_IMPORT_FUNC_FP32_ADD) {
-    Bit32u left_bits = 0, right_bits = 0;
-    bool mapped = false;
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = read_poly_aarch64_fp32_reg(0, &left_bits) &&
-        read_poly_aarch64_fp32_reg(1, &right_bits);
-    }
-    else if (mode == BX_POLY_MODE_RAW_RISCV) {
-      mapped = read_poly_riscv_fp32_reg(10, &left_bits) &&
-        read_poly_riscv_fp32_reg(11, &right_bits);
-    }
-    if (!mapped)
-      return false;
-
-    Bit32u result_bits = bx_poly_fp32_to_bits(
-      bx_poly_fp32_from_bits(left_bits) + bx_poly_fp32_from_bits(right_bits) + 10.0f);
-    if (mode == BX_POLY_MODE_RAW_AARCH64)
-      mapped = write_poly_aarch64_fp32_reg(0, result_bits);
-    else if (mode == BX_POLY_MODE_RAW_RISCV)
-      mapped = write_poly_riscv_fp32_reg(10, result_bits);
-    if (!mapped)
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import fp32 call mode=%u descriptor=%u target=%llx arg0=%x arg1=%x result=%x return=%llx",
-      mode, (unsigned) import_id, (unsigned long long) target_rip,
-      (unsigned) left_bits, (unsigned) right_bits,
-      (unsigned) result_bits, (unsigned long long) return_rip));
     return true;
   }
 
