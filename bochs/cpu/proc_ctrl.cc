@@ -379,6 +379,38 @@ static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
 static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
 {
   switch (import_id) {
+    case BX_POLY_IMPORT_FUNC_STRLEN:
+    case BX_POLY_IMPORT_FUNC_MEMCPY:
+    case BX_POLY_IMPORT_FUNC_MEMSET:
+    case BX_POLY_IMPORT_FUNC_MEMCMP:
+    case BX_POLY_IMPORT_FUNC_MEMMOVE:
+    case BX_POLY_IMPORT_FUNC_STRCMP:
+    case BX_POLY_IMPORT_FUNC_STRNCMP:
+    case BX_POLY_IMPORT_FUNC_MEMCHR:
+    case BX_POLY_IMPORT_FUNC_STRCHR:
+    case BX_POLY_IMPORT_FUNC_STRRCHR:
+    case BX_POLY_IMPORT_FUNC_STRSTR:
+    case BX_POLY_IMPORT_FUNC_STRCPY:
+    case BX_POLY_IMPORT_FUNC_STRNCPY:
+    case BX_POLY_IMPORT_FUNC_STRNLEN:
+    case BX_POLY_IMPORT_FUNC_STRCAT:
+    case BX_POLY_IMPORT_FUNC_STRNCAT:
+    case BX_POLY_IMPORT_FUNC_STRSPN:
+    case BX_POLY_IMPORT_FUNC_STRCSPN:
+    case BX_POLY_IMPORT_FUNC_STRPBRK:
+    case BX_POLY_IMPORT_FUNC_STPCPY:
+    case BX_POLY_IMPORT_FUNC_STPNCPY:
+    case BX_POLY_IMPORT_FUNC_MEMPCPY:
+    case BX_POLY_IMPORT_FUNC_RAWMEMCHR:
+    case BX_POLY_IMPORT_FUNC_STRCHRNUL:
+    case BX_POLY_IMPORT_FUNC_BCMP:
+    case BX_POLY_IMPORT_FUNC_BCOPY:
+    case BX_POLY_IMPORT_FUNC_BZERO:
+    case BX_POLY_IMPORT_FUNC_MEMRCHR:
+    case BX_POLY_IMPORT_FUNC_MEMMEM:
+    case BX_POLY_IMPORT_FUNC_STRCASECMP:
+    case BX_POLY_IMPORT_FUNC_STRNCASECMP:
+    case BX_POLY_IMPORT_FUNC_STRCASESTR:
     case BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL:
     case BX_POLY_IMPORT_FUNC_ERRNO_LOCATION:
     case BX_POLY_IMPORT_FUNC_GETAUXVAL:
@@ -3776,8 +3808,15 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   // Prefer software-provided import descriptors.  This keeps libc/libgcc
   // symbol policy in guest/runtime software: the CPU only performs a generic
   // cross-frontend call gate to the x86 target named by the descriptor.
-  if (R12 != 0 && bx_poly_return_cookie_valid &&
-      bx_poly_return_cookie_rsp >= 32) {
+  if (R12 != 0 &&
+      (bx_poly_return_cookie_valid ||
+       bx_poly_import_requires_software_descriptor(import_id) ||
+       bx_poly_import_is_x86_descriptor(import_id))) {
+    bx_address x86_stack_base = bx_poly_return_cookie_valid ?
+      bx_poly_return_cookie_rsp : RSP;
+    if (x86_stack_base < 32)
+      return false;
+
     bx_address descriptor = (bx_address) (R12 +
       (Bit64u) import_id * BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE);
     bx_address target = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
@@ -3792,7 +3831,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       R8 = arg4;
       R9 = arg5;
       bx_address foreign_rsp = RSP;
-      bx_address x86_rsp = bx_poly_return_cookie_rsp - 32;
+      bx_address x86_rsp = x86_stack_base - 32;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
       if (bx_poly_import_uses_x86_stack_args(import_id)) {
         write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 8, arg6);
