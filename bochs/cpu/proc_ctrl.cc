@@ -9534,6 +9534,7 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
       syscall_number == 424 ||
       (syscall_number >= 434 && syscall_number <= 438) ||
       syscall_number == 440 ||
+      (syscall_number >= 444 && syscall_number <= 446) ||
       (syscall_number >= 448 && syscall_number <= 450)) {
     const char *name = syscall_number == 237 ? "set_mempolicy" :
       syscall_number == 238 ? "migrate_pages" :
@@ -9551,6 +9552,9 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
       syscall_number == 437 ? "openat2" :
       syscall_number == 438 ? "pidfd_getfd" :
       syscall_number == 440 ? "process_madvise" :
+      syscall_number == 444 ? "landlock_create_ruleset" :
+      syscall_number == 445 ? "landlock_add_rule" :
+      syscall_number == 446 ? "landlock_restrict_self" :
       syscall_number == 448 ? "process_mrelease" :
       syscall_number == 449 ? "futex_waitv" : "set_mempolicy_home_node";
     RAX = (Bit64u) -38;
