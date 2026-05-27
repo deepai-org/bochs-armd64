@@ -71,6 +71,16 @@ struct bx_poly_trap_saved_regs {
   Bit64u r8;
   Bit64u r9;
   Bit64u rsp;
+  bool aarch64_extra_valid;
+  Bit64u aarch64_x7;
+  Bit64u aarch64_x8;
+  Bit64u aarch64_x9;
+  Bit64u aarch64_x10;
+  bool riscv_extra_valid;
+  Bit64u riscv_x5;
+  Bit64u riscv_x6;
+  Bit64u riscv_x7;
+  Bit64u riscv_x17;
 };
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
@@ -9038,6 +9048,23 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   bx_poly_trap_saved_regs.r8 = R8;
   bx_poly_trap_saved_regs.r9 = R9;
   bx_poly_trap_saved_regs.rsp = RSP;
+  bx_poly_trap_saved_regs.aarch64_extra_valid = false;
+  bx_poly_trap_saved_regs.riscv_extra_valid = false;
+
+  if (trap_mode == BX_POLY_MODE_RAW_AARCH64) {
+    bx_poly_trap_saved_regs.aarch64_extra_valid =
+      read_poly_aarch64_reg(7, &bx_poly_trap_saved_regs.aarch64_x7) &&
+      read_poly_aarch64_reg(8, &bx_poly_trap_saved_regs.aarch64_x8) &&
+      read_poly_aarch64_reg(9, &bx_poly_trap_saved_regs.aarch64_x9) &&
+      read_poly_aarch64_reg(10, &bx_poly_trap_saved_regs.aarch64_x10);
+  }
+  else if (trap_mode == BX_POLY_MODE_RAW_RISCV) {
+    bx_poly_trap_saved_regs.riscv_extra_valid =
+      read_poly_riscv_reg(5, &bx_poly_trap_saved_regs.riscv_x5) &&
+      read_poly_riscv_reg(6, &bx_poly_trap_saved_regs.riscv_x6) &&
+      read_poly_riscv_reg(7, &bx_poly_trap_saved_regs.riscv_x7) &&
+      read_poly_riscv_reg(17, &bx_poly_trap_saved_regs.riscv_x17);
+  }
 
   if (!bx_poly_valid_frontend_mode(trap_vector_mode)) {
     BX_INFO(("poly_ud: architectural %s %s trap has invalid vector mode=%u",
@@ -9066,6 +9093,11 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       write_poly_aarch64_reg(3, bx_poly_last_trap.pc);
       write_poly_aarch64_reg(4, bx_poly_last_trap.selector);
       write_poly_aarch64_reg(5, bx_poly_last_trap.args[0]);
+      write_poly_aarch64_reg(6, bx_poly_last_trap.args[1]);
+      write_poly_aarch64_reg(7, bx_poly_last_trap.args[2]);
+      write_poly_aarch64_reg(8, bx_poly_last_trap.args[3]);
+      write_poly_aarch64_reg(9, bx_poly_last_trap.args[4]);
+      write_poly_aarch64_reg(10, bx_poly_last_trap.args[5]);
     }
     else {
       write_poly_riscv_reg(10, bx_poly_last_trap.reason);
@@ -9074,6 +9106,11 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       write_poly_riscv_reg(13, bx_poly_last_trap.pc);
       write_poly_riscv_reg(14, bx_poly_last_trap.selector);
       write_poly_riscv_reg(15, bx_poly_last_trap.args[0]);
+      write_poly_riscv_reg(16, bx_poly_last_trap.args[1]);
+      write_poly_riscv_reg(17, bx_poly_last_trap.args[2]);
+      write_poly_riscv_reg(5, bx_poly_last_trap.args[3]);
+      write_poly_riscv_reg(6, bx_poly_last_trap.args[4]);
+      write_poly_riscv_reg(7, bx_poly_last_trap.args[5]);
     }
     RIP = trap_vector;
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
@@ -9118,7 +9155,23 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     R9 = bx_poly_trap_saved_regs.r9;
     RSP = bx_poly_trap_saved_regs.rsp;
     RAX = result;
+    if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 &&
+        bx_poly_trap_saved_regs.aarch64_extra_valid) {
+      write_poly_aarch64_reg(7, bx_poly_trap_saved_regs.aarch64_x7);
+      write_poly_aarch64_reg(8, bx_poly_trap_saved_regs.aarch64_x8);
+      write_poly_aarch64_reg(9, bx_poly_trap_saved_regs.aarch64_x9);
+      write_poly_aarch64_reg(10, bx_poly_trap_saved_regs.aarch64_x10);
+    }
+    else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
+             bx_poly_trap_saved_regs.riscv_extra_valid) {
+      write_poly_riscv_reg(5, bx_poly_trap_saved_regs.riscv_x5);
+      write_poly_riscv_reg(6, bx_poly_trap_saved_regs.riscv_x6);
+      write_poly_riscv_reg(7, bx_poly_trap_saved_regs.riscv_x7);
+      write_poly_riscv_reg(17, bx_poly_trap_saved_regs.riscv_x17);
+    }
     bx_poly_trap_saved_regs.valid = false;
+    bx_poly_trap_saved_regs.aarch64_extra_valid = false;
+    bx_poly_trap_saved_regs.riscv_extra_valid = false;
   }
   RIP = bx_poly_last_trap.next_pc;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
