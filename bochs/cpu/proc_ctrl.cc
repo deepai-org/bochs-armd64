@@ -237,6 +237,7 @@ static const Bit32u BX_POLY_TRANSITION_FLAG_FIXED_RAW_WIDTH = (1U << 5);
 static const Bit32u BX_POLY_TRANSITION_FLAG_NEUTRAL_FOREIGN = (1U << 6);
 static const Bit32u BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE = (1U << 7);
 static const Bit32u BX_POLY_TRANSITION_FLAG_TRAP_RETURN = (1U << 8);
+static const Bit32u BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW = (1U << 9);
 static const Bit32u BX_POLY_TRANSITION_AARCH64_ALIGN = 4;
 static const Bit32u BX_POLY_TRANSITION_RISCV_ALIGN = 2;
 static const Bit32u BX_POLY_ABI_BRIDGE_ABI_VERSION = 1;
@@ -1970,7 +1971,17 @@ bool BX_CPU_C::export_poly_xsave_state(bx_address base)
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8,
       bx_poly_last_trap.args[n]);
 
-  if (bx_poly_cross_return_top != 0) {
+  if (bx_poly_interrupted_raw_valid) {
+    write_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET,
+      bx_poly_interrupted_raw_rip);
+    write_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8,
+      (Bit64u) BX_POLY_MODE_X86 | ((Bit64u) bx_poly_interrupted_raw_mode << 32));
+    write_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16,
+      ((Bit64u) (Bit16u) BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW << 16));
+    write_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24,
+      0);
+  }
+  else if (bx_poly_cross_return_top != 0) {
     const bx_poly_cross_return_frame_t *frame =
       &bx_poly_cross_return_stack[bx_poly_cross_return_top - 1];
     write_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET,
@@ -2083,6 +2094,9 @@ bool BX_CPU_C::import_poly_xsave_state(bx_address base)
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
 
   bx_poly_cross_return_top = 0;
+  bx_poly_interrupted_raw_valid = false;
+  bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
+  bx_poly_interrupted_raw_rip = 0;
   Bit64u return_pc =
     read_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET);
   if (return_pc != 0) {
@@ -2090,17 +2104,29 @@ bool BX_CPU_C::import_poly_xsave_state(bx_address base)
       base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8);
     Bit64u abi_flags = read_virtual_qword(BX_SEG_REG_DS,
       base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16);
-    bx_poly_cross_return_frame_t *frame = &bx_poly_cross_return_stack[0];
-    frame->return_rip = return_pc;
-    frame->return_rsp = read_virtual_qword(BX_SEG_REG_DS,
-      base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
-    frame->caller_mode = (Bit32u) modes;
-    frame->callee_mode = (Bit32u) (modes >> 32);
-    frame->bridge_kind = (Bit32u) (Bit16u) abi_flags;
-    frame->flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
-    if (bx_poly_valid_frontend_mode(frame->caller_mode) &&
-        bx_poly_valid_frontend_mode(frame->callee_mode))
-      bx_poly_cross_return_top = 1;
+    Bit32u flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
+    Bit32u caller_mode = (Bit32u) modes;
+    Bit32u target_mode = (Bit32u) (modes >> 32);
+    if ((flags & BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW) != 0) {
+      if (caller_mode == BX_POLY_MODE_X86 && bx_poly_is_raw_mode(target_mode)) {
+        bx_poly_interrupted_raw_valid = true;
+        bx_poly_interrupted_raw_mode = target_mode;
+        bx_poly_interrupted_raw_rip = return_pc;
+      }
+    }
+    else {
+      bx_poly_cross_return_frame_t *frame = &bx_poly_cross_return_stack[0];
+      frame->return_rip = return_pc;
+      frame->return_rsp = read_virtual_qword(BX_SEG_REG_DS,
+        base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
+      frame->caller_mode = caller_mode;
+      frame->callee_mode = target_mode;
+      frame->bridge_kind = (Bit32u) (Bit16u) abi_flags;
+      frame->flags = flags;
+      if (bx_poly_valid_frontend_mode(frame->caller_mode) &&
+          bx_poly_valid_frontend_mode(frame->callee_mode))
+        bx_poly_cross_return_top = 1;
+    }
   }
 
   for (unsigned n = 0; n < 32; n++) {
@@ -8285,7 +8311,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_TRANSITION_FLAG_FIXED_RAW_WIDTH |
           BX_POLY_TRANSITION_FLAG_NEUTRAL_FOREIGN |
           BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE |
-          BX_POLY_TRANSITION_FLAG_TRAP_RETURN;
+          BX_POLY_TRANSITION_FLAG_TRAP_RETURN |
+          BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW;
     RCX = BX_POLY_TRANSITION_AARCH64_ALIGN |
           (BX_POLY_TRANSITION_RISCV_ALIGN << 16);
     RDX = (1U << BX_POLY_MODE_X86) |
