@@ -1089,13 +1089,14 @@ static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selec
 }
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
-  bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2)
+  bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
+  Bit64u arg3)
 {
   bx_poly_last_libcall_mode = mode;
   bx_poly_last_libcall_number = number;
   bx_poly_foreign_libcall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, 0, 0, 0);
+    pc, next_pc, arg0, arg1, arg2, arg3, 0, 0);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -9104,7 +9105,7 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   // Hardware/FPGA contract: BRK/EBREAK is an OS-neutral breakpoint trap exit.
   // The named libcall behavior below is only the Bochs compatibility service.
   bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_selector,
-    trap_pc, next_rip, RDI, arg1, arg2);
+    trap_pc, next_rip, RDI, arg1, arg2, RAX);
   if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
   if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
