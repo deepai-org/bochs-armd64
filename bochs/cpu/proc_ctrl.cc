@@ -8606,6 +8606,8 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   }
   else if (handle_poly_memory_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
   }
+  else if (handle_poly_process_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
+  }
   else if (bx_poly_lookup_scalar_syscall(dispatch_number, arg0, &scalar_syscall)) {
     RAX = scalar_syscall->result;
     BX_INFO(("poly_ud: emulated %s %s %s=%llu", arch_name, scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
@@ -8673,6 +8675,68 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   }
 
   return true;
+}
+
+bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
+  Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
+{
+  (void) arg3;
+  (void) arg4;
+  (void) arg5;
+
+  if (syscall_number == 143 || syscall_number == 144 || syscall_number == 145 ||
+      syscall_number == 146 || syscall_number == 147 || syscall_number == 149 ||
+      syscall_number == 159) {
+    const char *name = syscall_number == 143 ? "setregid" :
+      syscall_number == 144 ? "setgid" :
+      syscall_number == 145 ? "setreuid" :
+      syscall_number == 146 ? "setuid" :
+      syscall_number == 147 ? "setresuid" :
+      syscall_number == 149 ? "setresgid" : "setgroups";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llu arg1=%llu arg2=%llu result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 148 || syscall_number == 150) {
+    const char *name = syscall_number == 148 ? "getresuid" : "getresgid";
+    if (arg0 == 0 || arg1 == 0 || arg2 == 0) {
+      RAX = (Bit64u) -14;
+      BX_INFO(("poly_ud: emulated %s %s invalid addrs=%llx,%llx,%llx result=%lld", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+      return true;
+    }
+    write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg0, 1000);
+    write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg1, 1000);
+    write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg2, 1000);
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s addrs=%llx,%llx,%llx value=1000 result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 151 || syscall_number == 152) {
+    RAX = 1000;
+    BX_INFO(("poly_ud: emulated %s %s id=%llu previous=1000", arch_name, syscall_number == 151 ? "setfsuid" : "setfsgid", (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 158) {
+    if (arg0 == 0) {
+      RAX = 1;
+      BX_INFO(("poly_ud: emulated %s getgroups size=0 result=1", arch_name));
+      return true;
+    }
+    if (arg1 == 0) {
+      RAX = (Bit64u) -14;
+      BX_INFO(("poly_ud: emulated %s getgroups size=%llu list=0 result=%lld", arch_name, (unsigned long long) arg0, (long long) RAX));
+      return true;
+    }
+    write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg1, 1000);
+    RAX = 1;
+    BX_INFO(("poly_ud: emulated %s getgroups size=%llu list=%llx gid=1000 result=1", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  return false;
 }
 
 bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_number,
