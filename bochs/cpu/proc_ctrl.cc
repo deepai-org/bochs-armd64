@@ -7807,10 +7807,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
         }
         bx_poly_mode_switch_count++;
-        if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
-          bx_poly_reset_aarch64_regs();
-        if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
-          bx_poly_reset_riscv_regs();
+        // A frontend switch changes the decoder, not the architectural thread
+        // state. New per-thread banks are zero-initialized when allocated; an
+        // explicit ENTER must preserve any existing foreign registers so
+        // exported/imported state can resume correctly.
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
           bx_poly_current_state_key(RSP));
         bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
