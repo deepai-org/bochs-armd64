@@ -8807,6 +8807,43 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
 {
   const Bit8u stat_magic[] = {'P', 'S', 'T', 'A', 'T', '!', '!', '\0'};
 
+  if (syscall_number >= 5 && syscall_number <= 16) {
+    const char *name = syscall_number == 5 ? "setxattr" :
+      syscall_number == 6 ? "lsetxattr" :
+      syscall_number == 7 ? "fsetxattr" :
+      syscall_number == 8 ? "getxattr" :
+      syscall_number == 9 ? "lgetxattr" :
+      syscall_number == 10 ? "fgetxattr" :
+      syscall_number == 11 ? "listxattr" :
+      syscall_number == 12 ? "llistxattr" :
+      syscall_number == 13 ? "flistxattr" :
+      syscall_number == 14 ? "removexattr" :
+      syscall_number == 15 ? "lremovexattr" : "fremovexattr";
+    if (syscall_number >= 8 && syscall_number <= 10) {
+      const Bit8u value[] = {'P', 'X', 'A', '!'};
+      Bit64u count = arg3 < sizeof(value) ? arg3 : sizeof(value);
+      if (arg2 != 0) {
+        for (Bit64u n = 0; n < count; n++)
+          write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg2 + n), value[n]);
+      }
+      RAX = arg2 == 0 ? sizeof(value) : count;
+    }
+    else if (syscall_number >= 11 && syscall_number <= 13) {
+      const Bit8u list_name[] = {'u', 's', 'e', 'r', '.', 'p', 'o', 'l', 'y', '\0'};
+      Bit64u count = arg2 < sizeof(list_name) ? arg2 : sizeof(list_name);
+      if (arg1 != 0) {
+        for (Bit64u n = 0; n < count; n++)
+          write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), list_name[n]);
+      }
+      RAX = arg1 == 0 ? sizeof(list_name) : count;
+    }
+    else {
+      RAX = 0;
+    }
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx arg3=%llx arg4=%llx result=%lld", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (unsigned long long) arg4, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 17) {
     const char cwd[] = "/poly";
     Bit64u needed = sizeof(cwd);
@@ -8860,6 +8897,15 @@ bool BX_CPU_C::handle_poly_file_syscall(const char *arch_name, Bit32u syscall_nu
   if (syscall_number == 19) {
     RAX = 7;
     BX_INFO(("poly_ud: emulated %s eventfd2 initval=%llu flags=%llu result=7", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number >= 30 && syscall_number <= 33) {
+    const char *name = syscall_number == 30 ? "ioprio_set" :
+      syscall_number == 31 ? "ioprio_get" :
+      syscall_number == 32 ? "flock" : "mknodat";
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s arg0=%llx arg1=%llx arg2=%llx arg3=%llx result=0", arch_name, name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3));
     return true;
   }
 
