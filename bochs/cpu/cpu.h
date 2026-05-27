@@ -993,7 +993,6 @@ public: // for now...
 #endif
   bool    speculative_rsp;
   bool    poly_feature_enabled;
-  bool    poly_compat_traps_enabled;
   bx_address poly_trap_vector;
   Bit32u poly_trap_vector_mode;
 

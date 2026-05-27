@@ -709,8 +709,8 @@ void bx_init_options()
       "Enable the dormant poly instruction scaffold for controlled probe runs",
       0);
   new bx_param_bool_c(cpu_param,
-      "poly_compat_traps", "Deprecated Bochs poly trap compatibility runtime",
-      "Deprecated no-op: foreign syscall/break traps always use the OS-neutral architectural trap path",
+      "poly_compat_traps", "Deprecated accepted no-op for old configs",
+      "Deprecated accepted no-op: foreign syscall/break traps always use the OS-neutral architectural trap path",
       0);
 #if BX_CONFIGURE_MSRS
   new bx_param_filename_c(cpu_param,
