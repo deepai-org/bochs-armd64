@@ -47,7 +47,8 @@ enum {
 enum {
   BX_POLY_TRAP_NONE = 0,
   BX_POLY_TRAP_SYSCALL = 1,
-  BX_POLY_TRAP_BREAK = 2
+  BX_POLY_TRAP_BREAK = 2,
+  BX_POLY_TRAP_IMPORT = 3
 };
 
 struct bx_poly_trap_packet {
@@ -1188,6 +1189,14 @@ static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selecto
   bx_poly_last_break_number = number;
   bx_poly_foreign_break_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
+}
+
+static void bx_poly_record_import_trap(Bit32u mode, Bit32u import_id,
+  bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
+  Bit64u arg3, Bit64u arg4, Bit64u arg5)
+{
+  bx_poly_record_architectural_trap(BX_POLY_TRAP_IMPORT, mode, import_id, 0,
     pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
@@ -3882,9 +3891,17 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   }
 
   if (bx_poly_import_requires_software_descriptor(import_id)) {
-    BX_INFO(("poly_raw: import descriptor %u requires software descriptor target",
+    // Hardware/FPGA contract: unresolved descriptor-backed imports are
+    // architectural exits. The CPU records the import id and native ABI
+    // arguments; software decides whether this is dynamic binding, libc policy,
+    // or an application fault.
+    bx_poly_record_import_trap(mode, import_id, target_rip, return_rip,
+      arg0, arg1, arg2, arg3, arg4, arg5);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    BX_INFO(("poly_raw: import descriptor %u unresolved; delivering import trap",
       (unsigned) import_id));
-    return false;
+    return deliver_poly_architectural_trap("foreign", "import", target_rip);
   }
 
   const char *op_name = 0;
