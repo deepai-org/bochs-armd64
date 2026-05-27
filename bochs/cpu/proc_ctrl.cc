@@ -9456,6 +9456,38 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 118) {
+    RAX = arg1 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s sched_setparam pid=%llu param=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 119) {
+    RAX = arg2 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s sched_setscheduler pid=%llu policy=%llu param=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 120) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s sched_getscheduler pid=%llu policy=0", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 121) {
+    if (arg1)
+      write_virtual_dword(BX_SEG_REG_DS, (bx_address) arg1, 0);
+    RAX = arg1 ? 0 : (Bit64u) -14;
+    BX_INFO(("poly_ud: emulated %s sched_getparam pid=%llu param=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 122) {
+    RAX = arg2 && arg1 >= 8 ? 0 : (Bit64u) -22;
+    BX_INFO(("poly_ud: emulated %s sched_setaffinity pid=%llu len=%llu mask=%llx result=%lld", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 123) {
     RAX = arg2 && arg1 >= 8 ? 8 : (Bit64u) -22;
     if (RAX == 8)
@@ -9467,6 +9499,12 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
   if (syscall_number == 124) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s sched_yield result=0", arch_name));
+    return true;
+  }
+
+  if (syscall_number == 125 || syscall_number == 126) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s %s policy=%llu result=0", arch_name, syscall_number == 125 ? "sched_get_priority_max" : "sched_get_priority_min", (unsigned long long) arg0));
     return true;
   }
 
