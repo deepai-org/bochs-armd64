@@ -56,6 +56,7 @@ struct bx_poly_trap_packet {
   Bit32u number;
   Bit32u selector;
   bx_address pc;
+  bx_address next_pc;
   Bit64u args[6];
 };
 
@@ -98,6 +99,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT = (1U << 21);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS = (1U << 22);
 static const Bit32u BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS = (1U << 23);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK = (1U << 24);
+static const Bit32u BX_POLY_CPUID_FEATURE_TRAP_VECTOR = (1U << 25);
 static const Bit32u BX_POLY_CPUID_STATE_OVERLAP_GPRS = (1U << 0);
 static const Bit32u BX_POLY_CPUID_STATE_SYNTHETIC_BANKS = (1U << 1);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_CR3 = (1U << 2);
@@ -543,6 +545,7 @@ static Bit32u bx_poly_last_libcall_number = 0;
 static bx_poly_trap_packet bx_poly_last_trap = {
   BX_POLY_TRAP_NONE,
   BX_POLY_MODE_X86,
+  0,
   0,
   0,
   0,
@@ -1057,14 +1060,15 @@ static Bit64u bx_poly_riscv_indirect_target(Bit64u target, bx_address pc)
 }
 
 static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u number,
-  Bit32u selector, bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
-  Bit64u arg3, Bit64u arg4, Bit64u arg5)
+  Bit32u selector, bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1,
+  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
   bx_poly_last_trap.reason = reason;
   bx_poly_last_trap.mode = mode;
   bx_poly_last_trap.number = number;
   bx_poly_last_trap.selector = selector;
   bx_poly_last_trap.pc = pc;
+  bx_poly_last_trap.next_pc = next_pc;
   bx_poly_last_trap.args[0] = arg0;
   bx_poly_last_trap.args[1] = arg1;
   bx_poly_last_trap.args[2] = arg2;
@@ -1074,24 +1078,24 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u
 }
 
 static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selector,
-  bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
-  Bit64u arg4, Bit64u arg5)
+  bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
+  Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
   bx_poly_last_syscall_mode = mode;
   bx_poly_last_syscall_number = number;
   bx_poly_foreign_syscall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_SYSCALL, mode, number, selector,
-    pc, arg0, arg1, arg2, arg3, arg4, arg5);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
-  bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2)
+  bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2)
 {
   bx_poly_last_libcall_mode = mode;
   bx_poly_last_libcall_number = number;
   bx_poly_foreign_libcall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
-    pc, arg0, arg1, arg2, 0, 0, 0);
+    pc, next_pc, arg0, arg1, arg2, 0, 0, 0);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -7039,10 +7043,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u arg1 = 0, arg2 = 0;
     if (!read_poly_aarch64_reg(2, &arg1) || !read_poly_aarch64_reg(3, &arg2))
       return false;
-    handle_poly_libcall("aarch64", "brk", libcall_id, libcall_id, pc, arg1,
-      arg2);
-    RIP = next_rip;
-    return true;
+    return handle_poly_libcall("aarch64", "brk", libcall_id, libcall_id, pc,
+      next_rip, arg1, arg2);
   }
 
   return false;
@@ -8339,10 +8341,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(12, &arg1) ||
         !read_poly_riscv_reg(13, &arg2))
       return false;
-    handle_poly_libcall("riscv", "ebreak", (Bit32u) libcall_id, 0, pc, arg1,
-      arg2);
-    RIP = next_rip;
-    return true;
+    return handle_poly_libcall("riscv", "ebreak", (Bit32u) libcall_id, 0, pc,
+      next_rip, arg1, arg2);
   }
 
   return false;
@@ -8702,10 +8702,8 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
             !read_poly_riscv_reg(12, &arg1) ||
             !read_poly_riscv_reg(13, &arg2))
           return false;
-        handle_poly_libcall("riscv", "c.ebreak", (Bit32u) libcall_id, 0, pc,
-          arg1, arg2);
-        RIP = next_rip;
-        return true;
+        return handle_poly_libcall("riscv", "c.ebreak", (Bit32u) libcall_id,
+          0, pc, next_rip, arg1, arg2);
       }
       if (high && rs2 == 0) {
         Bit64u target = 0;
@@ -8977,6 +8975,62 @@ bool BX_CPU_C::handle_poly_compat_foreign_syscall(const char *arch_name, const c
   return true;
 }
 
+bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
+  const char *trap_name, bx_address fallback_pc)
+{
+  Bit32u trap_mode = bx_poly_last_trap.mode;
+  bx_address trap_vector = BX_CPU_THIS_PTR poly_trap_vector;
+
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_clear_cross_return_stack();
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_stack_key(RSP));
+
+  if (trap_vector != 0) {
+    RAX = bx_poly_last_trap.reason;
+    RBX = bx_poly_last_trap.mode;
+    RCX = bx_poly_last_trap.number;
+    RDX = bx_poly_last_trap.pc;
+    RSI = bx_poly_last_trap.selector;
+    RDI = bx_poly_last_trap.args[0];
+    RIP = trap_vector;
+    BX_INFO(("poly_ud: architectural %s %s trap vector=%llx mode=%u pc=%llx next=%llx",
+      arch_name, trap_name, (unsigned long long) trap_vector, trap_mode,
+      (unsigned long long) bx_poly_last_trap.pc,
+      (unsigned long long) bx_poly_last_trap.next_pc));
+    return true;
+  }
+
+  BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx",
+    arch_name, trap_name, trap_mode, (unsigned long long) fallback_pc));
+  RIP = fallback_pc;
+  exception(BX_UD_EXCEPTION, 0);
+  return true;
+}
+
+bool BX_CPU_C::return_poly_architectural_trap(void)
+{
+  if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE ||
+      bx_poly_last_trap.mode == BX_POLY_MODE_X86 ||
+      bx_poly_last_trap.next_pc == 0) {
+    BX_INFO(("poly_ud: reject trap return reason=%u mode=%u next=%llx",
+      bx_poly_last_trap.reason, bx_poly_last_trap.mode,
+      (unsigned long long) bx_poly_last_trap.next_pc));
+    return false;
+  }
+
+  bx_poly_current_mode = bx_poly_last_trap.mode;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_stack_key(RSP));
+  RIP = bx_poly_last_trap.next_pc;
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_stack_key(RSP));
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  BX_INFO(("poly_ud: trap return mode=%u next=%llx result=%llx",
+    bx_poly_current_mode, (unsigned long long) RIP, (unsigned long long) RAX));
+  return true;
+}
+
 bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
   const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
   Bit32u unknown_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
@@ -8984,20 +9038,10 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
 {
   // Hardware/FPGA contract: capture an OS-neutral trap packet first. The
   // following compatibility service is Bochs test firmware, not CPU semantics.
-  bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector, RIP,
-    arg0, arg1, arg2, arg3, arg4, arg5);
-  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled) {
-    bx_address trap_pc = RIP;
-    BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx",
-      arch_name, trap_name, bx_poly_current_mode, (unsigned long long) trap_pc));
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_clear_cross_return_stack();
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-      bx_poly_stack_key(RSP));
-    RIP = trap_pc;
-    exception(BX_UD_EXCEPTION, 0);
-    return true;
-  }
+  bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector,
+    RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
+  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
+    return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
   return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
     dispatch_number, status_number, unknown_number, arg0, arg1, arg2, arg3,
     arg4, arg5, next_rip);
@@ -9054,26 +9098,20 @@ bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *
 }
 
 bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
-  Bit32u libcall_id, Bit32u trap_selector, bx_address trap_pc, Bit64u arg1,
-  Bit64u arg2)
+  Bit32u libcall_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip,
+  Bit64u arg1, Bit64u arg2)
 {
   // Hardware/FPGA contract: BRK/EBREAK is an OS-neutral breakpoint trap exit.
   // The named libcall behavior below is only the Bochs compatibility service.
   bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_selector,
-    trap_pc, RDI, arg1, arg2);
-  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled) {
-    BX_INFO(("poly_ud: architectural %s %s break trap exit without compat dispatch mode=%u pc=%llx",
-      arch_name, trap_name, bx_poly_current_mode, (unsigned long long) trap_pc));
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_clear_cross_return_stack();
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-      bx_poly_stack_key(RSP));
-    RIP = trap_pc;
-    exception(BX_UD_EXCEPTION, 0);
-    return true;
-  }
-  return handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
-    trap_pc, arg1, arg2);
+    trap_pc, next_rip, RDI, arg1, arg2);
+  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
+    return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
+  if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
+        trap_pc, arg1, arg2))
+    return false;
+  RIP = next_rip;
+  return true;
 }
 
 bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
@@ -10308,6 +10346,22 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FP64_STACK);
       if (op == 0x20)
         return return_poly_import_x86_call();
+      if (op == 0x60) {
+        BX_CPU_THIS_PTR poly_trap_vector = (bx_address) RAX;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: trap vector set to %llx",
+          (unsigned long long) BX_CPU_THIS_PTR poly_trap_vector));
+        return true;
+      }
+      if (op == 0x61) {
+        RAX = BX_CPU_THIS_PTR poly_trap_vector;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: trap vector get value=%llx",
+          (unsigned long long) RAX));
+        return true;
+      }
+      if (op == 0x62)
+        return return_poly_architectural_trap();
       if (op >= 0x30 && op <= 0x32) {
         Bit8u status_id = op - 0x30;
         if (status_id == 1)
@@ -10357,7 +10411,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           (unsigned long long) bx_poly_foreign_libcall_count));
         return true;
       }
-      if (op >= 0x50 && op <= 0x5a) {
+      if (op >= 0x50 && op <= 0x5b) {
         Bit8u status_id = op - 0x50;
         if (status_id == 0)
           RAX = bx_poly_last_trap.reason;
@@ -10369,13 +10423,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
           RAX = bx_poly_last_trap.args[status_id - 3];
         else if (status_id == 9)
           RAX = bx_poly_last_trap.pc;
-        else
+        else if (status_id == 10)
           RAX = bx_poly_last_trap.selector;
+        else
+          RAX = bx_poly_last_trap.next_pc;
         RIP = next_rip;
-        BX_INFO(("poly_ud: trap status op=0x%02x id=%u reason=%u mode=%u number=%u selector=%u pc=%llx",
+        BX_INFO(("poly_ud: trap status op=0x%02x id=%u reason=%u mode=%u number=%u selector=%u pc=%llx next=%llx",
           op, status_id, bx_poly_last_trap.reason, bx_poly_last_trap.mode,
           bx_poly_last_trap.number, bx_poly_last_trap.selector,
-          (unsigned long long) bx_poly_last_trap.pc));
+          (unsigned long long) bx_poly_last_trap.pc,
+          (unsigned long long) bx_poly_last_trap.next_pc));
         return true;
       }
     }
@@ -10472,7 +10529,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_NEUTRAL_COMPACT |
           BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS |
           BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS |
-          BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK;
+          BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK |
+          BX_POLY_CPUID_FEATURE_TRAP_VECTOR;
     if (BX_CPU_THIS_PTR poly_compat_traps_enabled)
       feature_mask |= BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
     RAX = 1; // poly CPUID ABI version

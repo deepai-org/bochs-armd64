@@ -244,6 +244,7 @@ void BX_CPU_C::initialize(void)
 
   BX_CPU_THIS_PTR poly_feature_enabled = SIM->get_param_bool(BXPN_POLY_ENABLED)->get();
   BX_CPU_THIS_PTR poly_compat_traps_enabled = SIM->get_param_bool(BXPN_POLY_COMPAT_TRAPS)->get();
+  BX_CPU_THIS_PTR poly_trap_vector = 0;
 
   init_SMRAM();
 
@@ -322,6 +323,7 @@ void BX_CPU_C::register_state(void)
   BXRS_HEX_PARAM_SIMPLE(cpu, debug_trap);
   BXRS_PARAM_BOOL(cpu, poly_feature_enabled, BX_CPU_THIS_PTR poly_feature_enabled);
   BXRS_PARAM_BOOL(cpu, poly_compat_traps_enabled, BX_CPU_THIS_PTR poly_compat_traps_enabled);
+  BXRS_HEX_PARAM_SIMPLE(cpu, poly_trap_vector);
   BXRS_DEC_PARAM_SIMPLE(cpu, icount);
   BXRS_DEC_PARAM_SIMPLE(cpu, icount_last_sync);
 
