@@ -9324,16 +9324,17 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   Bit32u unknown_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
   Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, bx_address next_rip)
 {
-  // Hardware/FPGA contract: capture an OS-neutral trap packet first. The
-  // following compatibility service is Bochs test firmware, not CPU semantics.
+  (void) number_prefix;
+  (void) dispatch_number;
+  (void) unknown_number;
+
+  // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
+  // the architectural trap path. Linux syscall translation is guest policy.
   bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
-  if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
-    return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
-  return handle_poly_compat_syscall_trap_packet(arch_name, trap_name,
-    number_prefix, dispatch_number, unknown_number);
+  return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
 }
 
 bool BX_CPU_C::handle_poly_compat_break_trap_packet(const char *arch_name,
@@ -9419,18 +9420,13 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
   }
 
   // Hardware/FPGA contract: BRK/EBREAK is an OS-neutral breakpoint trap exit.
-  // The named helper behavior below is only the Bochs compatibility service.
+  // Runtime helper ids are guest policy, not CPU semantics.
   bx_poly_record_break_trap(bx_poly_current_mode, break_id, trap_selector,
     trap_pc, next_rip, trap_arg0, trap_arg1, trap_arg2, trap_arg3,
     trap_arg4, trap_arg5);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
-  if (bx_poly_trap_vector != 0 || !BX_CPU_THIS_PTR poly_compat_traps_enabled)
-    return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
-  if (!handle_poly_compat_break_trap_packet(arch_name, trap_name))
-    return false;
-  RIP = bx_poly_last_trap.next_pc;
-  return true;
+  return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
 }
 
 bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
