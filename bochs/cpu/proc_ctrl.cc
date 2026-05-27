@@ -9052,6 +9052,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
   BX_NEXT_TRACE(i); // keep compiler happy
 }
 
+#if 0
+// Legacy Bochs-side Linux/libc compatibility dispatcher.
+//
+// This block is intentionally excluded from the build. Raw foreign SVC/ECALL
+// and BRK/EBREAK now only record OS-neutral architectural trap packets and
+// enter a guest-selected trap vector, or raise an x86 architectural exception
+// if no vector is installed. Any Linux syscall translation or libc helper
+// behavior must live in guest/runtime software, not inside the CPU model.
 bool BX_CPU_C::handle_poly_compat_exit_syscall(const char *arch_name, Bit32u syscall_number)
 {
   if (syscall_number != 93 && syscall_number != 94)
@@ -9112,6 +9120,7 @@ bool BX_CPU_C::handle_poly_compat_syscall_trap_packet(const char *arch_name,
   RIP = bx_poly_last_trap.next_pc;
   return true;
 }
+#endif
 
 bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   const char *trap_name, bx_address fallback_pc)
@@ -9337,6 +9346,9 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
 }
 
+#if 0
+// Legacy Bochs-side breakpoint/libcall dispatcher; see the disabled syscall
+// block above. Breakpoint payloads are guest/runtime policy now.
 bool BX_CPU_C::handle_poly_compat_break_trap_packet(const char *arch_name,
   const char *trap_name)
 {
@@ -9389,6 +9401,7 @@ bool BX_CPU_C::handle_poly_compat_break_trap_packet(const char *arch_name,
 
   return true;
 }
+#endif
 
 bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_name,
   Bit32u break_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip)
@@ -9429,6 +9442,9 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
   return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
 }
 
+#if 0
+// Legacy Bochs-side synthetic Linux syscall families. These are excluded so
+// the CPU model cannot silently consume OS-specific foreign syscall numbers.
 bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
   Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
@@ -10526,6 +10542,8 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
 
   return false;
 }
+
+#endif
 
 bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_ud(bxInstruction_c *i)
 {
