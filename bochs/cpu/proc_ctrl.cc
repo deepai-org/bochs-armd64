@@ -58,7 +58,7 @@ struct bx_poly_trap_packet {
   Bit32u selector;
   bx_address pc;
   bx_address next_pc;
-  Bit64u args[6];
+  Bit64u args[8];
 };
 
 struct bx_poly_trap_saved_regs {
@@ -185,7 +185,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
 static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
-static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 1;
+static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_XCR0_USER = (1U << 0);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED = (1U << 1);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME = (1U << 2);
@@ -194,16 +194,16 @@ static const Bit32u BX_POLY_STATE_XSAVE_FLAG_NO_HIDDEN_BANKS = (1U << 4);
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_OFFSET = 0x000;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET = 0x040;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET = 0x080;
-static const Bit32u BX_POLY_STATE_XSAVE_TRANSITION_OFFSET = 0x0b0;
+static const Bit32u BX_POLY_STATE_XSAVE_TRANSITION_OFFSET = 0x0c0;
 static const Bit32u BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET = 0x100;
 static const Bit32u BX_POLY_STATE_XSAVE_AARCH64_FP_OFFSET = 0x200;
 static const Bit32u BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET = 0x400;
 static const Bit32u BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET = 0x480;
 static const Bit32u BX_POLY_STATE_XSAVE_RISCV_FP_OFFSET = 0x580;
 static const Bit32u BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET = 0x780;
-static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 1;
+static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
-static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 6;
+static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY = (1U << 0);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS = (1U << 1);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE = (1U << 2);
@@ -952,7 +952,7 @@ static bool bx_poly_valid_frontend_mode(Bit32u mode)
 
 static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u number,
   Bit32u selector, bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1,
-  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5)
+  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
   bx_poly_last_trap.reason = reason;
   bx_poly_last_trap.mode = mode;
@@ -966,6 +966,8 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u
   bx_poly_last_trap.args[3] = arg3;
   bx_poly_last_trap.args[4] = arg4;
   bx_poly_last_trap.args[5] = arg5;
+  bx_poly_last_trap.args[6] = arg6;
+  bx_poly_last_trap.args[7] = arg7;
 }
 
 static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selector,
@@ -976,7 +978,7 @@ static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selec
   bx_poly_last_syscall_number = number;
   bx_poly_foreign_syscall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_SYSCALL, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, 0, 0);
 }
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
@@ -987,15 +989,15 @@ static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selecto
   bx_poly_last_break_number = number;
   bx_poly_foreign_break_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, 0, 0);
 }
 
 static void bx_poly_record_import_trap(Bit32u mode, Bit32u import_id,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
-  Bit64u arg3, Bit64u arg4, Bit64u arg5)
+  Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
   bx_poly_record_architectural_trap(BX_POLY_TRAP_IMPORT, mode, import_id, 0,
-    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -1358,7 +1360,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].last_trap.selector = 0;
   bx_poly_reg_states[victim].last_trap.pc = 0;
   bx_poly_reg_states[victim].last_trap.next_pc = 0;
-  for (unsigned n = 0; n < 6; n++)
+  for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
     bx_poly_reg_states[victim].last_trap.args[n] = 0;
   bx_poly_clear_trap_saved_regs(&bx_poly_reg_states[victim].trap_saved_regs);
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
@@ -1955,7 +1957,7 @@ bool BX_CPU_C::export_poly_xsave_state(bx_address base)
     bx_poly_last_trap.reason == BX_POLY_TRAP_NONE ? 0 :
     BX_POLY_TRAP_PACKET_FLAG_STATUS_OPS);
 
-  for (unsigned n = 0; n < 6; n++)
+  for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
     write_virtual_qword(BX_SEG_REG_DS,
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8,
       bx_poly_last_trap.args[n]);
@@ -2068,7 +2070,7 @@ bool BX_CPU_C::import_poly_xsave_state(bx_address base)
     read_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 24);
   bx_poly_last_trap.next_pc =
     read_virtual_qword(BX_SEG_REG_DS, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32);
-  for (unsigned n = 0; n < 6; n++)
+  for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
     bx_poly_last_trap.args[n] = read_virtual_qword(BX_SEG_REG_DS,
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
 
@@ -2943,8 +2945,18 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     // architectural exits. The CPU records the import id and native ABI
     // arguments; software decides whether this is dynamic binding, libc policy,
     // or an application fault.
+    if (mode == BX_POLY_MODE_RAW_AARCH64) {
+      mapped = read_poly_aarch64_reg(6, &arg6) &&
+        read_poly_aarch64_reg(7, &arg7);
+    }
+    else if (mode == BX_POLY_MODE_RAW_RISCV) {
+      mapped = read_poly_riscv_reg(16, &arg6) &&
+        read_poly_riscv_reg(17, &arg7);
+    }
+    if (!mapped)
+      return false;
     bx_poly_record_import_trap(mode, import_id, target_rip, return_rip,
-      arg0, arg1, arg2, arg3, arg4, arg5);
+      arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     BX_INFO(("poly_raw: import descriptor %u unresolved; delivering import trap",
@@ -7544,6 +7556,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       R10 = bx_poly_last_trap.args[3];
       R11 = bx_poly_last_trap.args[4];
       R12 = bx_poly_last_trap.args[5];
+      R13 = bx_poly_last_trap.args[6];
+      R14 = bx_poly_last_trap.args[7];
     }
     else if (trap_vector_mode == BX_POLY_MODE_RAW_AARCH64) {
       write_poly_aarch64_reg(0, bx_poly_last_trap.reason);
@@ -7557,6 +7571,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       write_poly_aarch64_reg(8, bx_poly_last_trap.args[3]);
       write_poly_aarch64_reg(9, bx_poly_last_trap.args[4]);
       write_poly_aarch64_reg(10, bx_poly_last_trap.args[5]);
+      write_poly_aarch64_reg(11, bx_poly_last_trap.args[6]);
+      write_poly_aarch64_reg(12, bx_poly_last_trap.args[7]);
     }
     else {
       write_poly_riscv_reg(10, bx_poly_last_trap.reason);
@@ -7570,6 +7586,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       write_poly_riscv_reg(5, bx_poly_last_trap.args[3]);
       write_poly_riscv_reg(6, bx_poly_last_trap.args[4]);
       write_poly_riscv_reg(7, bx_poly_last_trap.args[5]);
+      write_poly_riscv_reg(28, bx_poly_last_trap.args[6]);
+      write_poly_riscv_reg(29, bx_poly_last_trap.args[7]);
     }
     RIP = trap_vector;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -7987,7 +8005,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_foreign_break_count));
         return true;
       }
-      if (op >= 0x50 && op <= 0x5b) {
+      if (op >= 0x50 && op <= 0x5d) {
         Bit8u status_id = op - 0x50;
         if (status_id == 0)
           RAX = bx_poly_last_trap.reason;
@@ -8001,6 +8019,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           RAX = bx_poly_last_trap.pc;
         else if (status_id == 10)
           RAX = bx_poly_last_trap.selector;
+        else if (status_id == 12 || status_id == 13)
+          RAX = bx_poly_last_trap.args[status_id - 6];
         else
           RAX = bx_poly_last_trap.next_pc;
         RIP = next_rip;
