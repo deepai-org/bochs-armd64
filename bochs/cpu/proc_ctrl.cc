@@ -73,16 +73,17 @@ struct bx_poly_trap_saved_regs {
   Bit64u rsp;
   Bit64u xmm_lo[8];
   Bit64u xmm_hi[8];
-  bool aarch64_extra_valid;
-  Bit64u aarch64_x7;
-  Bit64u aarch64_x8;
-  Bit64u aarch64_x9;
-  Bit64u aarch64_x10;
-  bool riscv_extra_valid;
-  Bit64u riscv_x5;
-  Bit64u riscv_x6;
-  Bit64u riscv_x7;
-  Bit64u riscv_x17;
+  bool aarch64_state_valid;
+  Bit64u aarch64_x[32];
+  bool aarch64_x_valid[32];
+  Bit64u aarch64_fp[32];
+  Bit64u aarch64_fp_hi[32];
+  Bit32u aarch64_nzcv;
+  bool riscv_state_valid;
+  Bit64u riscv_x[32];
+  bool riscv_x_valid[32];
+  Bit64u riscv_fp[32];
+  Bit64u riscv_fp_hi[32];
 };
 
 static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
@@ -101,16 +102,19 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
     regs->xmm_lo[n] = 0;
     regs->xmm_hi[n] = 0;
   }
-  regs->aarch64_extra_valid = false;
-  regs->aarch64_x7 = 0;
-  regs->aarch64_x8 = 0;
-  regs->aarch64_x9 = 0;
-  regs->aarch64_x10 = 0;
-  regs->riscv_extra_valid = false;
-  regs->riscv_x5 = 0;
-  regs->riscv_x6 = 0;
-  regs->riscv_x7 = 0;
-  regs->riscv_x17 = 0;
+  regs->aarch64_state_valid = false;
+  regs->riscv_state_valid = false;
+  regs->aarch64_nzcv = 0;
+  for (unsigned n = 0; n < 32; n++) {
+    regs->aarch64_x[n] = 0;
+    regs->aarch64_x_valid[n] = false;
+    regs->aarch64_fp[n] = 0;
+    regs->aarch64_fp_hi[n] = 0;
+    regs->riscv_x[n] = 0;
+    regs->riscv_x_valid[n] = false;
+    regs->riscv_fp[n] = 0;
+    regs->riscv_fp_hi[n] = 0;
+  }
 }
 
 static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
@@ -608,15 +612,7 @@ static bx_poly_trap_packet bx_poly_last_trap = {
 };
 static bx_poly_trap_saved_regs bx_poly_trap_saved_regs = {
   false,
-  BX_POLY_MODE_X86,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0,
-  0
+  BX_POLY_MODE_X86
 };
 static bool bx_poly_return_cookie_valid = false;
 static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
@@ -9116,22 +9112,45 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
     bx_poly_trap_saved_regs.xmm_lo[n] = BX_READ_XMM_REG_LO_QWORD(n);
     bx_poly_trap_saved_regs.xmm_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
   }
-  bx_poly_trap_saved_regs.aarch64_extra_valid = false;
-  bx_poly_trap_saved_regs.riscv_extra_valid = false;
+  bx_poly_trap_saved_regs.aarch64_state_valid = false;
+  bx_poly_trap_saved_regs.riscv_state_valid = false;
 
   if (trap_mode == BX_POLY_MODE_RAW_AARCH64) {
-    bx_poly_trap_saved_regs.aarch64_extra_valid =
-      read_poly_aarch64_reg(7, &bx_poly_trap_saved_regs.aarch64_x7) &&
-      read_poly_aarch64_reg(8, &bx_poly_trap_saved_regs.aarch64_x8) &&
-      read_poly_aarch64_reg(9, &bx_poly_trap_saved_regs.aarch64_x9) &&
-      read_poly_aarch64_reg(10, &bx_poly_trap_saved_regs.aarch64_x10);
+    bx_poly_trap_saved_regs.aarch64_state_valid = true;
+    bx_poly_trap_saved_regs.aarch64_nzcv = bx_poly_aarch64_nzcv;
+    for (unsigned n = 0; n < 31; n++) {
+      bx_poly_trap_saved_regs.aarch64_x_valid[n] =
+        read_poly_aarch64_reg(n, &bx_poly_trap_saved_regs.aarch64_x[n]);
+      bx_poly_trap_saved_regs.aarch64_state_valid =
+        bx_poly_trap_saved_regs.aarch64_state_valid &&
+        bx_poly_trap_saved_regs.aarch64_x_valid[n];
+    }
+    for (unsigned n = 0; n < 32; n++) {
+      Bit64u lo = 0, hi = 0;
+      bx_poly_trap_saved_regs.aarch64_state_valid =
+        bx_poly_trap_saved_regs.aarch64_state_valid &&
+        read_poly_aarch64_fp128_reg(n, &lo, &hi);
+      bx_poly_trap_saved_regs.aarch64_fp[n] = lo;
+      bx_poly_trap_saved_regs.aarch64_fp_hi[n] = hi;
+    }
   }
   else if (trap_mode == BX_POLY_MODE_RAW_RISCV) {
-    bx_poly_trap_saved_regs.riscv_extra_valid =
-      read_poly_riscv_reg(5, &bx_poly_trap_saved_regs.riscv_x5) &&
-      read_poly_riscv_reg(6, &bx_poly_trap_saved_regs.riscv_x6) &&
-      read_poly_riscv_reg(7, &bx_poly_trap_saved_regs.riscv_x7) &&
-      read_poly_riscv_reg(17, &bx_poly_trap_saved_regs.riscv_x17);
+    bx_poly_trap_saved_regs.riscv_state_valid = true;
+    for (unsigned n = 0; n < 32; n++) {
+      bx_poly_trap_saved_regs.riscv_x_valid[n] =
+        read_poly_riscv_reg(n, &bx_poly_trap_saved_regs.riscv_x[n]);
+      bx_poly_trap_saved_regs.riscv_state_valid =
+        bx_poly_trap_saved_regs.riscv_state_valid &&
+        bx_poly_trap_saved_regs.riscv_x_valid[n];
+    }
+    for (unsigned n = 0; n < 32; n++) {
+      Bit64u lo = 0, hi = 0;
+      bx_poly_trap_saved_regs.riscv_state_valid =
+        bx_poly_trap_saved_regs.riscv_state_valid &&
+        read_poly_riscv_fp128_reg(n, &lo, &hi);
+      bx_poly_trap_saved_regs.riscv_fp[n] = lo;
+      bx_poly_trap_saved_regs.riscv_fp_hi[n] = hi;
+    }
   }
 
   if (!bx_poly_valid_frontend_mode(trap_vector_mode)) {
@@ -9230,18 +9249,27 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
       BX_WRITE_XMM_REG_HI_QWORD(n, bx_poly_trap_saved_regs.xmm_hi[n]);
     }
     if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 &&
-        bx_poly_trap_saved_regs.aarch64_extra_valid) {
-      write_poly_aarch64_reg(7, bx_poly_trap_saved_regs.aarch64_x7);
-      write_poly_aarch64_reg(8, bx_poly_trap_saved_regs.aarch64_x8);
-      write_poly_aarch64_reg(9, bx_poly_trap_saved_regs.aarch64_x9);
-      write_poly_aarch64_reg(10, bx_poly_trap_saved_regs.aarch64_x10);
+        bx_poly_trap_saved_regs.aarch64_state_valid) {
+      for (unsigned n = 1; n < 31; n++) {
+        if (bx_poly_trap_saved_regs.aarch64_x_valid[n])
+          write_poly_aarch64_reg(n, bx_poly_trap_saved_regs.aarch64_x[n]);
+      }
+      for (unsigned n = 0; n < 32; n++) {
+        write_poly_aarch64_fp128_reg(n, bx_poly_trap_saved_regs.aarch64_fp[n],
+          bx_poly_trap_saved_regs.aarch64_fp_hi[n]);
+      }
+      bx_poly_aarch64_nzcv = bx_poly_trap_saved_regs.aarch64_nzcv;
     }
     else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
-             bx_poly_trap_saved_regs.riscv_extra_valid) {
-      write_poly_riscv_reg(5, bx_poly_trap_saved_regs.riscv_x5);
-      write_poly_riscv_reg(6, bx_poly_trap_saved_regs.riscv_x6);
-      write_poly_riscv_reg(7, bx_poly_trap_saved_regs.riscv_x7);
-      write_poly_riscv_reg(17, bx_poly_trap_saved_regs.riscv_x17);
+             bx_poly_trap_saved_regs.riscv_state_valid) {
+      for (unsigned n = 1; n < 32; n++) {
+        if (n != 10 && bx_poly_trap_saved_regs.riscv_x_valid[n])
+          write_poly_riscv_reg(n, bx_poly_trap_saved_regs.riscv_x[n]);
+      }
+      for (unsigned n = 0; n < 32; n++) {
+        write_poly_riscv_fp128_reg(n, bx_poly_trap_saved_regs.riscv_fp[n],
+          bx_poly_trap_saved_regs.riscv_fp_hi[n]);
+      }
     }
     bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   }
