@@ -104,7 +104,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 118;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 119;
 static const Bit64u BX_POLY_ERRNO_TLS_OFFSET = BX_CONST64(4096);
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
@@ -257,7 +257,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STACK_CHK_FAIL = 114,
   BX_POLY_IMPORT_FUNC_ERRNO_LOCATION = 115,
   BX_POLY_IMPORT_FUNC_GETAUXVAL = 116,
-  BX_POLY_IMPORT_FUNC_GETPAGESIZE = 117
+  BX_POLY_IMPORT_FUNC_GETPAGESIZE = 117,
+  BX_POLY_IMPORT_FUNC_SYSCONF = 118
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
@@ -3472,6 +3473,10 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   else if (import_id == BX_POLY_IMPORT_FUNC_GETPAGESIZE) {
     result = 4096;
     op_name = "getpagesize";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_SYSCONF) {
+    result = arg0 == 30 ? 4096 : (Bit64u) -1;
+    op_name = "sysconf";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRLEN) {
     result = 0;
