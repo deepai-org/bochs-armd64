@@ -708,6 +708,10 @@ void bx_init_options()
       "poly_enabled", "Enable dormant poly instruction scaffold",
       "Enable the dormant poly instruction scaffold for controlled probe runs",
       0);
+  new bx_param_bool_c(cpu_param,
+      "poly_compat_traps", "Enable Bochs poly trap compatibility runtime",
+      "Enable the test-only syscall/libcall compatibility service after recording architectural poly trap packets",
+      1);
 #if BX_CONFIGURE_MSRS
   new bx_param_filename_c(cpu_param,
       "msrs",
@@ -3628,6 +3632,7 @@ int bx_write_configuration(const char *rc, int overwrite)
   fprintf(fp, ", mwait_is_nop=%d", SIM->get_param_bool(BXPN_MWAIT_IS_NOP)->get());
 #endif
   fprintf(fp, ", poly_enabled=%d", SIM->get_param_bool(BXPN_POLY_ENABLED)->get());
+  fprintf(fp, ", poly_compat_traps=%d", SIM->get_param_bool(BXPN_POLY_COMPAT_TRAPS)->get());
 #if BX_CONFIGURE_MSRS
   sparam = SIM->get_param_string(BXPN_CONFIGURABLE_MSRS_PATH);
   if (!sparam->isempty())

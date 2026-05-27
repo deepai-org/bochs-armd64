@@ -993,6 +993,7 @@ public: // for now...
 #endif
   bool    speculative_rsp;
   bool    poly_feature_enabled;
+  bool    poly_compat_traps_enabled;
 
   Bit64u icount;
   Bit64u icount_last_sync;

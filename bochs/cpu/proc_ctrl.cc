@@ -8986,6 +8986,18 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   // following compatibility service is Bochs test firmware, not CPU semantics.
   bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, trap_selector, RIP,
     arg0, arg1, arg2, arg3, arg4, arg5);
+  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled) {
+    bx_address trap_pc = RIP;
+    BX_INFO(("poly_ud: architectural %s %s trap exit without compat dispatch mode=%u pc=%llx",
+      arch_name, trap_name, bx_poly_current_mode, (unsigned long long) trap_pc));
+    bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_clear_cross_return_stack();
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_stack_key(RSP));
+    RIP = trap_pc;
+    exception(BX_UD_EXCEPTION, 0);
+    return true;
+  }
   return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
     dispatch_number, status_number, unknown_number, arg0, arg1, arg2, arg3,
     arg4, arg5, next_rip);
@@ -9049,6 +9061,17 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   // The named libcall behavior below is only the Bochs compatibility service.
   bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_selector,
     trap_pc, RDI, arg1, arg2);
+  if (!BX_CPU_THIS_PTR poly_compat_traps_enabled) {
+    BX_INFO(("poly_ud: architectural %s %s break trap exit without compat dispatch mode=%u pc=%llx",
+      arch_name, trap_name, bx_poly_current_mode, (unsigned long long) trap_pc));
+    bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_clear_cross_return_stack();
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_stack_key(RSP));
+    RIP = trap_pc;
+    exception(BX_UD_EXCEPTION, 0);
+    return true;
+  }
   return handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
     trap_pc, arg1, arg2);
 }
@@ -10425,11 +10448,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     return;
   }
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 1) {
-    RAX = 1; // poly CPUID ABI version
-    RBX = (1U << BX_POLY_MODE_X86) |
-          (1U << BX_POLY_MODE_RAW_AARCH64) |
-          (1U << BX_POLY_MODE_RAW_RISCV);
-    RCX = BX_POLY_CPUID_FEATURE_RAW_AARCH64 |
+    Bit32u feature_mask =
+          BX_POLY_CPUID_FEATURE_RAW_AARCH64 |
           BX_POLY_CPUID_FEATURE_RAW_RISCV |
           BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH |
           BX_POLY_CPUID_FEATURE_NATIVE_RET |
@@ -10440,7 +10460,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE |
           BX_POLY_CPUID_FEATURE_X86_TSO |
           BX_POLY_CPUID_FEATURE_THREAD_BANKS |
-          BX_POLY_CPUID_FEATURE_COMPAT_TRAPS |
           BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES |
           BX_POLY_CPUID_FEATURE_FPAIR32_RET |
           BX_POLY_CPUID_FEATURE_FPAIR32_ARG |
@@ -10454,6 +10473,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_X86_IMPORT_DESCRIPTORS |
           BX_POLY_CPUID_FEATURE_FP64_STACK_ARGS |
           BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK;
+    if (BX_CPU_THIS_PTR poly_compat_traps_enabled)
+      feature_mask |= BX_POLY_CPUID_FEATURE_COMPAT_TRAPS;
+    RAX = 1; // poly CPUID ABI version
+    RBX = (1U << BX_POLY_MODE_X86) |
+          (1U << BX_POLY_MODE_RAW_AARCH64) |
+          (1U << BX_POLY_MODE_RAW_RISCV);
+    RCX = feature_mask;
     RDX = 0; // no architectural XSAVE component is exposed yet
     BX_NEXT_INSTR(i);
     return;
