@@ -9544,11 +9544,18 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
     return true;
   }
 
+  if (syscall_number == 436) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s close_range first=%llu last=%llu flags=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
   if (syscall_number == 237 || syscall_number == 238 || syscall_number == 239 ||
       syscall_number == 277 || syscall_number == 280 || syscall_number == 282 ||
       (syscall_number >= 288 && syscall_number <= 290) ||
       syscall_number == 424 ||
-      (syscall_number >= 434 && syscall_number <= 438) ||
+      syscall_number == 434 || syscall_number == 435 ||
+      syscall_number == 437 || syscall_number == 438 ||
       syscall_number == 440 ||
       (syscall_number >= 444 && syscall_number <= 446) ||
       (syscall_number >= 448 && syscall_number <= 450)) {
