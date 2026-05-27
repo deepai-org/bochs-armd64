@@ -9186,7 +9186,6 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   }
 
   bx_poly_current_mode = trap_vector_mode;
-  bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
 
