@@ -8684,6 +8684,69 @@ bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall
   (void) arg4;
   (void) arg5;
 
+  if (syscall_number == 90) {
+    if (arg1 != 0) {
+      for (unsigned n = 0; n < 6; n++)
+        write_virtual_dword(BX_SEG_REG_DS, (bx_address) (arg1 + n * 4), 0);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s capget hdr=%llx data=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 91) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s capset hdr=%llx data=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 92) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s personality persona=%llx result=0", arch_name, (unsigned long long) arg0));
+    return true;
+  }
+
+  if (syscall_number == 140) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s setpriority which=%llu who=%llu prio=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
+    return true;
+  }
+
+  if (syscall_number == 141) {
+    RAX = 20;
+    BX_INFO(("poly_ud: emulated %s getpriority which=%llu who=%llu result=20", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 154) {
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s setpgid pid=%llu pgid=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
+  if (syscall_number == 157) {
+    RAX = 4242;
+    BX_INFO(("poly_ud: emulated %s setsid sid=4242", arch_name));
+    return true;
+  }
+
+  if (syscall_number == 166) {
+    RAX = 022;
+    BX_INFO(("poly_ud: emulated %s umask mask=%llo previous=%llo", arch_name, (unsigned long long) arg0, (unsigned long long) RAX));
+    return true;
+  }
+
+  if (syscall_number == 167) {
+    if (arg0 == 16 && arg1 != 0) {
+      const char name[] = "poly";
+      for (unsigned n = 0; n < sizeof(name); n++)
+        write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n), (Bit8u) name[n]);
+    }
+    RAX = 0;
+    BX_INFO(("poly_ud: emulated %s prctl option=%llu arg1=%llx result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1));
+    return true;
+  }
+
   if (syscall_number == 143 || syscall_number == 144 || syscall_number == 145 ||
       syscall_number == 146 || syscall_number == 147 || syscall_number == 149 ||
       syscall_number == 159) {
