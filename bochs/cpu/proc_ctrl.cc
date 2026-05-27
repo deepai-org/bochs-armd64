@@ -8727,6 +8727,12 @@ bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall
     return true;
   }
 
+  if (syscall_number == 260) {
+    RAX = (Bit64u) -10;
+    BX_INFO(("poly_ud: emulated %s wait4 pid=%lld status=%llx options=%llx rusage=%llx result=%lld", arch_name, (long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2, (unsigned long long) arg3, (long long) RAX));
+    return true;
+  }
+
   if (syscall_number == 140) {
     RAX = 0;
     BX_INFO(("poly_ud: emulated %s setpriority which=%llu who=%llu prio=%llu result=0", arch_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) arg2));
