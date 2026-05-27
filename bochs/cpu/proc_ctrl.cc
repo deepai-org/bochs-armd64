@@ -434,6 +434,10 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     case BX_POLY_IMPORT_FUNC_GETGID:
     case BX_POLY_IMPORT_FUNC_GETEGID:
     case BX_POLY_IMPORT_FUNC_GETTID:
+    case BX_POLY_IMPORT_FUNC_UDIVTI3:
+    case BX_POLY_IMPORT_FUNC_UMODTI3:
+    case BX_POLY_IMPORT_FUNC_DIVTI3:
+    case BX_POLY_IMPORT_FUNC_MODTI3:
     case BX_POLY_IMPORT_FUNC_CLZDI2:
     case BX_POLY_IMPORT_FUNC_CTZDI2:
     case BX_POLY_IMPORT_FUNC_PARITYDI2:
@@ -442,6 +446,14 @@ static inline bool bx_poly_import_requires_software_descriptor(Bit64u import_id)
     default:
       return false;
   }
+}
+
+static inline bool bx_poly_import_x86_returns_i128(Bit64u import_id)
+{
+  return import_id == BX_POLY_IMPORT_FUNC_UDIVTI3 ||
+    import_id == BX_POLY_IMPORT_FUNC_UMODTI3 ||
+    import_id == BX_POLY_IMPORT_FUNC_DIVTI3 ||
+    import_id == BX_POLY_IMPORT_FUNC_MODTI3;
 }
 
 enum {
@@ -643,6 +655,7 @@ static bool bx_poly_import_x86_return_valid = false;
 static Bit32u bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_import_x86_return_rip = 0;
 static bx_address bx_poly_import_x86_return_rsp = 0;
+static Bit64u bx_poly_import_x86_return_import_id = 0;
 static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
@@ -686,6 +699,7 @@ struct bx_poly_reg_state_t {
   Bit32u import_x86_return_mode;
   bx_address import_x86_return_rip;
   bx_address import_x86_return_rsp;
+  Bit64u import_x86_return_import_id;
   bool interrupted_raw_valid;
   Bit32u interrupted_raw_mode;
   bx_address interrupted_raw_rip;
@@ -1494,6 +1508,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].import_x86_return_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].import_x86_return_rip = 0;
   bx_poly_reg_states[victim].import_x86_return_rsp = 0;
+  bx_poly_reg_states[victim].import_x86_return_import_id = 0;
   bx_poly_reg_states[victim].interrupted_raw_valid = false;
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
@@ -1559,6 +1574,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].import_x86_return_mode = bx_poly_import_x86_return_mode;
   bx_poly_reg_states[slot].import_x86_return_rip = bx_poly_import_x86_return_rip;
   bx_poly_reg_states[slot].import_x86_return_rsp = bx_poly_import_x86_return_rsp;
+  bx_poly_reg_states[slot].import_x86_return_import_id =
+    bx_poly_import_x86_return_import_id;
   bx_poly_reg_states[slot].interrupted_raw_valid = bx_poly_interrupted_raw_valid;
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
@@ -1610,6 +1627,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_import_x86_return_mode = bx_poly_reg_states[slot].import_x86_return_mode;
   bx_poly_import_x86_return_rip = bx_poly_reg_states[slot].import_x86_return_rip;
   bx_poly_import_x86_return_rsp = bx_poly_reg_states[slot].import_x86_return_rsp;
+  bx_poly_import_x86_return_import_id =
+    bx_poly_reg_states[slot].import_x86_return_import_id;
   bx_poly_interrupted_raw_valid = bx_poly_reg_states[slot].interrupted_raw_valid;
   bx_poly_interrupted_raw_mode = bx_poly_reg_states[slot].interrupted_raw_mode;
   bx_poly_interrupted_raw_rip = bx_poly_reg_states[slot].interrupted_raw_rip;
@@ -2571,12 +2590,18 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   Bit32u return_mode = bx_poly_import_x86_return_mode;
   bx_address return_rip = bx_poly_import_x86_return_rip;
   bx_address return_rsp = bx_poly_import_x86_return_rsp;
+  Bit64u import_id = bx_poly_import_x86_return_import_id;
+  const bool returns_i128 = bx_poly_import_x86_returns_i128(import_id);
   bool mapped = false;
   if (return_mode == BX_POLY_MODE_RAW_AARCH64) {
     mapped = write_poly_aarch64_reg(0, RAX);
+    if (mapped && returns_i128)
+      mapped = write_poly_aarch64_reg(1, RDX);
   }
   else if (return_mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = write_poly_riscv_reg(10, RAX);
+    if (mapped && returns_i128)
+      mapped = write_poly_riscv_reg(11, RDX);
   }
 
   if (!mapped)
@@ -2590,13 +2615,15 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   bx_poly_import_x86_return_mode = BX_POLY_MODE_X86;
   bx_poly_import_x86_return_rip = 0;
   bx_poly_import_x86_return_rsp = 0;
+  bx_poly_import_x86_return_import_id = 0;
   if (return_poly_abi_call(return_mode, return_rip))
     return true;
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_ud: import x86 return mode=%u result=%llu rip=%llx",
-    bx_poly_current_mode, (unsigned long long) RAX, (unsigned long long) RIP));
+  BX_INFO(("poly_ud: import x86 return mode=%u descriptor=%u result=%llu high=%llu rip=%llx",
+    bx_poly_current_mode, (unsigned) import_id, (unsigned long long) RAX,
+    (unsigned long long) RDX, (unsigned long long) RIP));
   return true;
 }
 
@@ -2783,6 +2810,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       bx_poly_import_x86_return_mode = mode;
       bx_poly_import_x86_return_rip = return_rip;
       bx_poly_import_x86_return_rsp = foreign_rsp;
+      bx_poly_import_x86_return_import_id = import_id;
       bx_poly_current_mode = BX_POLY_MODE_X86;
       bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
         bx_poly_current_state_key(RSP));
@@ -2799,74 +2827,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   Bit32u aarch64_atomic_op = 0;
   Bit32u aarch64_atomic_size = 0;
   const char *aarch64_atomic_name = 0;
-  if (import_id == BX_POLY_IMPORT_FUNC_UDIVTI3 ||
-      import_id == BX_POLY_IMPORT_FUNC_UMODTI3 ||
-      import_id == BX_POLY_IMPORT_FUNC_DIVTI3 ||
-      import_id == BX_POLY_IMPORT_FUNC_MODTI3) {
-    Bit64u dividend_lo = 0, dividend_hi = 0, divisor_lo = 0, divisor_hi = 0;
-    bool mapped = false;
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = read_poly_aarch64_reg(0, &dividend_lo) &&
-        read_poly_aarch64_reg(1, &dividend_hi) &&
-        read_poly_aarch64_reg(2, &divisor_lo) &&
-        read_poly_aarch64_reg(3, &divisor_hi);
-    }
-    else if (mode == BX_POLY_MODE_RAW_RISCV) {
-      mapped = read_poly_riscv_reg(10, &dividend_lo) &&
-        read_poly_riscv_reg(11, &dividend_hi) &&
-        read_poly_riscv_reg(12, &divisor_lo) &&
-        read_poly_riscv_reg(13, &divisor_hi);
-    }
-    if (!mapped)
-      return false;
-
-    unsigned __int128 divisor =
-      ((unsigned __int128) divisor_hi << 64) | divisor_lo;
-    if (divisor == 0)
-      return false;
-
-    unsigned __int128 result = 0;
-    unsigned __int128 dividend =
-      ((unsigned __int128) dividend_hi << 64) | dividend_lo;
-    if (import_id == BX_POLY_IMPORT_FUNC_UDIVTI3) {
-      result = dividend / divisor;
-    }
-    else if (import_id == BX_POLY_IMPORT_FUNC_UMODTI3) {
-      result = dividend % divisor;
-    }
-    else {
-      __int128 signed_dividend = (__int128) dividend;
-      __int128 signed_divisor = (__int128) divisor;
-      __int128 signed_result =
-        import_id == BX_POLY_IMPORT_FUNC_DIVTI3 ?
-        (signed_dividend / signed_divisor) :
-        (signed_dividend % signed_divisor);
-      result = (unsigned __int128) signed_result;
-    }
-
-    Bit64u result_lo = (Bit64u) result;
-    Bit64u result_hi = (Bit64u) (result >> 64);
-    if (mode == BX_POLY_MODE_RAW_AARCH64) {
-      mapped = write_poly_aarch64_reg(0, result_lo) &&
-        write_poly_aarch64_reg(1, result_hi);
-    }
-    else {
-      mapped = write_poly_riscv_reg(10, result_lo) &&
-        write_poly_riscv_reg(11, result_hi);
-    }
-    if (!mapped)
-      return false;
-
-    if (return_poly_abi_call(mode, return_rip))
-      return true;
-    RIP = return_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_raw: import int128 helper id=%u target=%llx return=%llx",
-      (unsigned) import_id, (unsigned long long) target_rip,
-      (unsigned long long) return_rip));
-    return true;
-  }
-
   if (import_id == BX_POLY_IMPORT_FUNC_FIXDFTI ||
       import_id == BX_POLY_IMPORT_FUNC_FIXUNSDFTI) {
     Bit64u source_bits = 0;
@@ -3811,6 +3771,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       bx_poly_import_x86_return_mode = mode;
       bx_poly_import_x86_return_rip = return_rip;
       bx_poly_import_x86_return_rsp = foreign_rsp;
+      bx_poly_import_x86_return_import_id = import_id;
       bx_poly_current_mode = BX_POLY_MODE_X86;
       bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
         bx_poly_current_state_key(RSP));
@@ -3889,6 +3850,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     bx_poly_import_x86_return_mode = mode;
     bx_poly_import_x86_return_rip = return_rip;
     bx_poly_import_x86_return_rsp = foreign_rsp;
+    bx_poly_import_x86_return_import_id = import_id;
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     RIP = target;
