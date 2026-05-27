@@ -1488,9 +1488,11 @@ public: // for now...
   BX_SMF void POLYRET(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_ud(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF bool handle_poly_exit_syscall(const char *, Bit32u);
-  BX_SMF void handle_poly_unknown_syscall(const char *, const char *, const char *, Bit32u);
+  BX_SMF bool handle_poly_compat_exit_syscall(const char *, Bit32u);
+  BX_SMF void handle_poly_compat_unknown_syscall(const char *, const char *, const char *, Bit32u);
+  BX_SMF bool handle_poly_compat_foreign_syscall(const char *, const char *, const char *, Bit32u, Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
   BX_SMF bool handle_poly_foreign_syscall(const char *, const char *, const char *, Bit32u, Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
+  BX_SMF bool handle_poly_compat_break_trap(const char *, const char *, Bit32u, bx_address, Bit64u, Bit64u);
   BX_SMF bool handle_poly_libcall(const char *, const char *, Bit32u, bx_address, Bit64u, Bit64u);
   BX_SMF bool handle_poly_process_syscall(const char *, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u);
   BX_SMF bool handle_poly_file_syscall(const char *, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u);

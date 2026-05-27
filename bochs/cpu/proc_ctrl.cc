@@ -1044,7 +1044,7 @@ static Bit64u bx_poly_riscv_indirect_target(Bit64u target, bx_address pc)
   return (target & ~BX_CONST64(1)) | (pc & 0x1);
 }
 
-static void bx_poly_record_trap(Bit32u reason, Bit32u mode, Bit32u number,
+static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u number,
   bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
   Bit64u arg4, Bit64u arg5)
 {
@@ -1058,6 +1058,27 @@ static void bx_poly_record_trap(Bit32u reason, Bit32u mode, Bit32u number,
   bx_poly_last_trap_args[3] = arg3;
   bx_poly_last_trap_args[4] = arg4;
   bx_poly_last_trap_args[5] = arg5;
+}
+
+static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number,
+  bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
+  Bit64u arg4, Bit64u arg5)
+{
+  bx_poly_last_syscall_mode = mode;
+  bx_poly_last_syscall_number = number;
+  bx_poly_foreign_syscall_count++;
+  bx_poly_record_architectural_trap(BX_POLY_TRAP_SYSCALL, mode, number,
+    pc, arg0, arg1, arg2, arg3, arg4, arg5);
+}
+
+static void bx_poly_record_break_trap(Bit32u mode, Bit32u number,
+  bx_address pc, Bit64u arg0, Bit64u arg1, Bit64u arg2)
+{
+  bx_poly_last_libcall_mode = mode;
+  bx_poly_last_libcall_number = number;
+  bx_poly_foreign_libcall_count++;
+  bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number,
+    pc, arg0, arg1, arg2, 0, 0, 0);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -8883,7 +8904,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
   BX_NEXT_TRACE(i); // keep compiler happy
 }
 
-bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_number)
+bool BX_CPU_C::handle_poly_compat_exit_syscall(const char *arch_name, Bit32u syscall_number)
 {
   if (syscall_number != 93 && syscall_number != 94)
     return false;
@@ -8896,30 +8917,26 @@ bool BX_CPU_C::handle_poly_exit_syscall(const char *arch_name, Bit32u syscall_nu
   bx_poly_clear_cross_return_stack();
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_stack_key(RSP));
   RIP = ret_addr;
-  BX_INFO(("poly_ud: emulated %s %s code=%llu rip=%llx", arch_name,
+  BX_INFO(("poly_ud: compat %s %s code=%llu rip=%llx", arch_name,
     syscall_number == 94 ? "exit_group" : "exit",
     (unsigned long long) exit_code, (unsigned long long) ret_addr));
   return true;
 }
 
-void BX_CPU_C::handle_poly_unknown_syscall(const char *arch_name, const char *trap_name,
+void BX_CPU_C::handle_poly_compat_unknown_syscall(const char *arch_name, const char *trap_name,
   const char *number_prefix, Bit32u syscall_number)
 {
   RAX = 0x53000000 | (syscall_number << 8) | bx_poly_current_mode;
-  BX_INFO(("poly_ud: emulated %s %s %s%u mode=%u", arch_name, trap_name, number_prefix, syscall_number, bx_poly_current_mode));
+  BX_INFO(("poly_ud: compat %s %s %s%u mode=%u", arch_name, trap_name, number_prefix, syscall_number, bx_poly_current_mode));
 }
 
-bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
+bool BX_CPU_C::handle_poly_compat_foreign_syscall(const char *arch_name, const char *trap_name,
   const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
   Bit32u unknown_number, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
   Bit64u arg4, Bit64u arg5, bx_address next_rip)
 {
   const bx_poly_scalar_syscall_entry *scalar_syscall = 0;
-  bx_poly_last_syscall_mode = bx_poly_current_mode;
-  bx_poly_last_syscall_number = status_number;
-  bx_poly_foreign_syscall_count++;
-  bx_poly_record_trap(BX_POLY_TRAP_SYSCALL, bx_poly_current_mode, status_number,
-    RIP, arg0, arg1, arg2, arg3, arg4, arg5);
+  (void) status_number;
 
   if (handle_poly_file_syscall(arch_name, dispatch_number, arg0, arg1, arg2, arg3, arg4, arg5)) {
   }
@@ -8929,33 +8946,43 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
   }
   else if (bx_poly_lookup_scalar_syscall(dispatch_number, arg0, &scalar_syscall)) {
     RAX = scalar_syscall->result;
-    BX_INFO(("poly_ud: emulated %s %s %s=%llu", arch_name, scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
+    BX_INFO(("poly_ud: compat %s %s %s=%llu", arch_name, scalar_syscall->name, scalar_syscall->result_name, (unsigned long long) RAX));
   }
-  else if (handle_poly_exit_syscall(arch_name, dispatch_number)) {
+  else if (handle_poly_compat_exit_syscall(arch_name, dispatch_number)) {
     return true;
   }
   else {
-    handle_poly_unknown_syscall(arch_name, trap_name, number_prefix, unknown_number);
+    handle_poly_compat_unknown_syscall(arch_name, trap_name, number_prefix, unknown_number);
   }
 
   RIP = next_rip;
   return true;
 }
 
-bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
+bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
+  const char *number_prefix, Bit32u dispatch_number, Bit32u status_number,
+  Bit32u unknown_number, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
+  Bit64u arg4, Bit64u arg5, bx_address next_rip)
+{
+  // Hardware/FPGA contract: capture an OS-neutral trap packet first. The
+  // following compatibility service is Bochs test firmware, not CPU semantics.
+  bx_poly_record_syscall_trap(bx_poly_current_mode, status_number, RIP,
+    arg0, arg1, arg2, arg3, arg4, arg5);
+  return handle_poly_compat_foreign_syscall(arch_name, trap_name, number_prefix,
+    dispatch_number, status_number, unknown_number, arg0, arg1, arg2, arg3,
+    arg4, arg5, next_rip);
+}
+
+bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *trap_name,
   Bit32u libcall_id, bx_address trap_pc, Bit64u arg1, Bit64u arg2)
 {
-  bx_poly_last_libcall_mode = bx_poly_current_mode;
-  bx_poly_last_libcall_number = libcall_id;
-  bx_poly_foreign_libcall_count++;
-  bx_poly_record_trap(BX_POLY_TRAP_BREAK, bx_poly_current_mode, libcall_id,
-    trap_pc, RDI, arg1, arg2, 0, 0, 0);
+  (void) trap_pc;
 
   if (libcall_id == 1) {
     RAX = 0;
     while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
       RAX++;
-    BX_INFO(("poly_ud: emulated %s %s strlen addr=%llx len=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) RAX));
+    BX_INFO(("poly_ud: compat %s %s strlen addr=%llx len=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) RAX));
   }
   else if (libcall_id == 2) {
     Bit64u count = RAX < 4096 ? RAX : 4096;
@@ -8963,7 +8990,7 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
     for (Bit64u n = 0; n < count; n++)
       write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
     RAX = count;
-    BX_INFO(("poly_ud: emulated %s %s memfill addr=%llx count=%llu value=%u", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) count, value));
+    BX_INFO(("poly_ud: compat %s %s memfill addr=%llx count=%llu value=%u", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) count, value));
   }
   else if (libcall_id == 3) {
     Bit64u count = arg2 < 4096 ? arg2 : 4096;
@@ -8977,7 +9004,7 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
       }
     }
     RAX = (Bit64u) result;
-    BX_INFO(("poly_ud: emulated %s %s memcmp left=%llx right=%llx count=%llu result=%lld", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count, (long long) result));
+    BX_INFO(("poly_ud: compat %s %s memcmp left=%llx right=%llx count=%llu result=%lld", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count, (long long) result));
   }
   else if (libcall_id == 4) {
     Bit64u count = RAX < 4096 ? RAX : 4096;
@@ -8986,14 +9013,25 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
       write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
     }
     RAX = count;
-    BX_INFO(("poly_ud: emulated %s %s memcpy dest=%llx src=%llx count=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count));
+    BX_INFO(("poly_ud: compat %s %s memcpy dest=%llx src=%llx count=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count));
   }
   else {
     RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
-    BX_INFO(("poly_ud: emulated %s %s #%u libcall mode=%u", arch_name, trap_name, libcall_id, bx_poly_current_mode));
+    BX_INFO(("poly_ud: compat %s %s #%u break trap mode=%u", arch_name, trap_name, libcall_id, bx_poly_current_mode));
   }
 
   return true;
+}
+
+bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
+  Bit32u libcall_id, bx_address trap_pc, Bit64u arg1, Bit64u arg2)
+{
+  // Hardware/FPGA contract: BRK/EBREAK is an OS-neutral breakpoint trap exit.
+  // The named libcall behavior below is only the Bochs compatibility service.
+  bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_pc, RDI,
+    arg1, arg2);
+  return handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
+    trap_pc, arg1, arg2);
 }
 
 bool BX_CPU_C::handle_poly_process_syscall(const char *arch_name, Bit32u syscall_number,
