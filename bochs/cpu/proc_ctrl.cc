@@ -104,7 +104,7 @@ static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_ADD_HELPER_SIZE = BX_CONST64(13);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(16);
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 127;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 130;
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_BASE_OFFSET = BX_CONST64(16);
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_SIZE_OFFSET = BX_CONST64(24);
 static const Bit64u BX_POLY_IMPORT_PAGE_HEAP_CURSOR_OFFSET = BX_CONST64(32);
@@ -270,7 +270,10 @@ enum {
   BX_POLY_IMPORT_FUNC_REALLOC = 123,
   BX_POLY_IMPORT_FUNC_FREE = 124,
   BX_POLY_IMPORT_FUNC_STRDUP = 125,
-  BX_POLY_IMPORT_FUNC_STRNDUP = 126
+  BX_POLY_IMPORT_FUNC_STRNDUP = 126,
+  BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN = 127,
+  BX_POLY_IMPORT_FUNC_ALIGNED_ALLOC = 128,
+  BX_POLY_IMPORT_FUNC_MEMALIGN = 129
 };
 
 static inline bool bx_poly_import_is_x86_descriptor(Bit64u import_id)
@@ -284,20 +287,18 @@ static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
   return import_id == BX_POLY_IMPORT_FUNC_X86_SLOT5;
 }
 
-#define BX_POLY_IMPORT_HEAP_ALLOC(request_size_, result_) do { \
+#define BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(request_size_, alignment_, result_) do { \
   (result_) = 0; \
   Bit64u bx_poly_heap_request = (request_size_); \
+  Bit64u bx_poly_heap_alignment = (alignment_); \
   if (R14 != 0) { \
     if (bx_poly_heap_request == 0) \
       bx_poly_heap_request = 1; \
-    if (bx_poly_heap_request <= BX_CONST64(0x100000)) { \
-      Bit64u bx_poly_heap_aligned = \
-        (bx_poly_heap_request + 15) & ~BX_CONST64(15); \
-      if (bx_poly_heap_aligned >= bx_poly_heap_request && \
-          bx_poly_heap_aligned <= BX_CONST64(0xffffffffffffffff) - \
-            BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE) { \
-        Bit64u bx_poly_heap_total = bx_poly_heap_aligned + \
-          BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE; \
+    if (bx_poly_heap_alignment < 16) \
+      bx_poly_heap_alignment = 16; \
+    if (bx_poly_heap_request <= BX_CONST64(0x100000) && \
+        bx_poly_heap_alignment <= BX_CONST64(0x100000) && \
+        (bx_poly_heap_alignment & (bx_poly_heap_alignment - 1)) == 0) { \
         bx_address bx_poly_heap_page = (bx_address) R14; \
         Bit64u bx_poly_heap_base = read_virtual_qword(BX_SEG_REG_DS, \
           bx_poly_heap_page + BX_POLY_IMPORT_PAGE_HEAP_BASE_OFFSET); \
@@ -307,24 +308,51 @@ static inline bool bx_poly_import_uses_x86_stack_args(Bit64u import_id)
           bx_poly_heap_page + BX_POLY_IMPORT_PAGE_HEAP_CURSOR_OFFSET); \
         if (bx_poly_heap_base != 0 && bx_poly_heap_size != 0 && \
             bx_poly_heap_cursor <= bx_poly_heap_size && \
-            bx_poly_heap_total <= bx_poly_heap_size - bx_poly_heap_cursor) { \
-          bx_address bx_poly_heap_header = \
-            (bx_address) (bx_poly_heap_base + bx_poly_heap_cursor); \
-          bx_address bx_poly_heap_user = bx_poly_heap_header + \
-            BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE; \
-          write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_header, \
-            bx_poly_heap_request); \
-          write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_header + 8, \
-            BX_CONST64(0x706f6c7968656170)); \
-          write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_page + \
-            BX_POLY_IMPORT_PAGE_HEAP_CURSOR_OFFSET, \
-            bx_poly_heap_cursor + bx_poly_heap_total); \
-          (result_) = bx_poly_heap_user; \
+            bx_poly_heap_base <= BX_CONST64(0xffffffffffffffff) - \
+              bx_poly_heap_cursor) { \
+          Bit64u bx_poly_heap_raw = bx_poly_heap_base + bx_poly_heap_cursor; \
+          if (bx_poly_heap_raw <= BX_CONST64(0xffffffffffffffff) - \
+                BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE && \
+              bx_poly_heap_raw + BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE <= \
+                BX_CONST64(0xffffffffffffffff) - \
+                  (bx_poly_heap_alignment - 1)) { \
+            Bit64u bx_poly_heap_user64 = \
+              (bx_poly_heap_raw + BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE + \
+               bx_poly_heap_alignment - 1) & ~(bx_poly_heap_alignment - 1); \
+            if (bx_poly_heap_user64 >= bx_poly_heap_raw + \
+                  BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE && \
+                bx_poly_heap_request <= BX_CONST64(0xffffffffffffffff) - \
+                  bx_poly_heap_user64) { \
+              Bit64u bx_poly_heap_end = bx_poly_heap_user64 + \
+                bx_poly_heap_request; \
+              Bit64u bx_poly_heap_total = bx_poly_heap_end - \
+                bx_poly_heap_raw; \
+              Bit64u bx_poly_heap_aligned_total = \
+                (bx_poly_heap_total + 15) & ~BX_CONST64(15); \
+              if (bx_poly_heap_aligned_total >= bx_poly_heap_total && \
+                  bx_poly_heap_aligned_total <= bx_poly_heap_size - \
+                    bx_poly_heap_cursor) { \
+                bx_address bx_poly_heap_header = (bx_address) \
+                  (bx_poly_heap_user64 - BX_POLY_IMPORT_HEAP_ALLOC_HEADER_SIZE); \
+                bx_address bx_poly_heap_user = (bx_address) bx_poly_heap_user64; \
+                write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_header, \
+                  bx_poly_heap_request); \
+                write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_header + 8, \
+                  BX_CONST64(0x706f6c7968656170)); \
+                write_virtual_qword(BX_SEG_REG_DS, bx_poly_heap_page + \
+                  BX_POLY_IMPORT_PAGE_HEAP_CURSOR_OFFSET, \
+                  bx_poly_heap_cursor + bx_poly_heap_aligned_total); \
+                (result_) = bx_poly_heap_user; \
+              } \
+            } \
+          } \
         } \
-      } \
     } \
   } \
 } while (0)
+
+#define BX_POLY_IMPORT_HEAP_ALLOC(request_size_, result_) \
+  BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED((request_size_), 16, (result_))
 
 enum {
   BX_POLY_AARCH64_ATOMIC_LDADD = 0,
@@ -3452,6 +3480,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          bx_poly_import_is_x86_descriptor(import_id) ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
+         import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
@@ -3492,6 +3521,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
          bx_poly_import_is_x86_descriptor(import_id) ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCMP ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCASECMP ||
+         import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN ||
          import_id == BX_POLY_IMPORT_FUNC_MEMCHR ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCPY ||
          import_id == BX_POLY_IMPORT_FUNC_STRNCAT ||
@@ -3617,6 +3647,37 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
     if (result != 0)
       write_virtual_byte(BX_SEG_REG_DS, (bx_address) (result + len), 0);
     op_name = "strndup";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_POSIX_MEMALIGN) {
+    Bit64u allocated = 0;
+    if (arg1 < 8 || (arg1 & (arg1 - 1)) != 0) {
+      result = 22;
+    }
+    else {
+      BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(arg2, arg1, allocated);
+      if (allocated == 0) {
+        result = 12;
+      }
+      else {
+        write_virtual_qword(BX_SEG_REG_DS, (bx_address) arg0, allocated);
+        result = 0;
+      }
+    }
+    op_name = "posix_memalign";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_ALIGNED_ALLOC) {
+    if (arg0 == 0 || (arg0 & (arg0 - 1)) != 0 || (arg1 % arg0) != 0)
+      result = 0;
+    else
+      BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(arg1, arg0, result);
+    op_name = "aligned_alloc";
+  }
+  else if (import_id == BX_POLY_IMPORT_FUNC_MEMALIGN) {
+    if (arg0 == 0 || (arg0 & (arg0 - 1)) != 0)
+      result = 0;
+    else
+      BX_POLY_IMPORT_HEAP_ALLOC_ALIGNED(arg1, arg0, result);
+    op_name = "memalign";
   }
   else if (import_id == BX_POLY_IMPORT_FUNC_STRLEN) {
     result = 0;
