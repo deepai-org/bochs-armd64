@@ -679,6 +679,10 @@ struct bx_poly_reg_state_t {
   bx_address foreign_tls_base;
   bx_address trap_vector;
   Bit32u trap_vector_mode;
+  Bit32u last_syscall_mode;
+  Bit32u last_syscall_number;
+  Bit32u last_libcall_mode;
+  Bit32u last_libcall_number;
   bx_poly_trap_packet last_trap;
   struct bx_poly_trap_saved_regs trap_saved_regs;
   Bit64u aarch64_x[32];
@@ -1492,6 +1496,10 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].foreign_tls_base = 0;
   bx_poly_reg_states[victim].trap_vector = 0;
   bx_poly_reg_states[victim].trap_vector_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].last_syscall_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].last_syscall_number = 0;
+  bx_poly_reg_states[victim].last_libcall_mode = BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].last_libcall_number = 0;
   bx_poly_reg_states[victim].last_trap.reason = BX_POLY_TRAP_NONE;
   bx_poly_reg_states[victim].last_trap.mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].last_trap.number = 0;
@@ -1551,6 +1559,10 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].foreign_tls_base = bx_poly_foreign_tls_base;
   bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
   bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
+  bx_poly_reg_states[slot].last_syscall_mode = bx_poly_last_syscall_mode;
+  bx_poly_reg_states[slot].last_syscall_number = bx_poly_last_syscall_number;
+  bx_poly_reg_states[slot].last_libcall_mode = bx_poly_last_libcall_mode;
+  bx_poly_reg_states[slot].last_libcall_number = bx_poly_last_libcall_number;
   bx_poly_reg_states[slot].last_trap = bx_poly_last_trap;
   bx_poly_reg_states[slot].trap_saved_regs = bx_poly_trap_saved_regs;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
@@ -1600,6 +1612,10 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_foreign_tls_base = bx_poly_reg_states[slot].foreign_tls_base;
   bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
   bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
+  bx_poly_last_syscall_mode = bx_poly_reg_states[slot].last_syscall_mode;
+  bx_poly_last_syscall_number = bx_poly_reg_states[slot].last_syscall_number;
+  bx_poly_last_libcall_mode = bx_poly_reg_states[slot].last_libcall_mode;
+  bx_poly_last_libcall_number = bx_poly_reg_states[slot].last_libcall_number;
   bx_poly_last_trap = bx_poly_reg_states[slot].last_trap;
   bx_poly_trap_saved_regs = bx_poly_reg_states[slot].trap_saved_regs;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
