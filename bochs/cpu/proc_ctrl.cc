@@ -64,12 +64,16 @@ struct bx_poly_trap_saved_regs {
   bool valid;
   Bit32u mode;
   Bit64u rax;
+  Bit64u rbx;
   Bit64u rdi;
   Bit64u rsi;
   Bit64u rdx;
   Bit64u rcx;
   Bit64u r8;
   Bit64u r9;
+  Bit64u r10;
+  Bit64u r11;
+  Bit64u r12;
   Bit64u rsp;
   Bit64u xmm_lo[8];
   Bit64u xmm_hi[8];
@@ -91,12 +95,16 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   regs->valid = false;
   regs->mode = BX_POLY_MODE_X86;
   regs->rax = 0;
+  regs->rbx = 0;
   regs->rdi = 0;
   regs->rsi = 0;
   regs->rdx = 0;
   regs->rcx = 0;
   regs->r8 = 0;
   regs->r9 = 0;
+  regs->r10 = 0;
+  regs->r11 = 0;
+  regs->r12 = 0;
   regs->rsp = 0;
   for (unsigned n = 0; n < 8; n++) {
     regs->xmm_lo[n] = 0;
@@ -9111,12 +9119,16 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
     trap_mode == BX_POLY_MODE_RAW_AARCH64 || trap_mode == BX_POLY_MODE_RAW_RISCV;
   bx_poly_trap_saved_regs.mode = trap_mode;
   bx_poly_trap_saved_regs.rax = RAX;
+  bx_poly_trap_saved_regs.rbx = RBX;
   bx_poly_trap_saved_regs.rdi = RDI;
   bx_poly_trap_saved_regs.rsi = RSI;
   bx_poly_trap_saved_regs.rdx = RDX;
   bx_poly_trap_saved_regs.rcx = RCX;
   bx_poly_trap_saved_regs.r8 = R8;
   bx_poly_trap_saved_regs.r9 = R9;
+  bx_poly_trap_saved_regs.r10 = R10;
+  bx_poly_trap_saved_regs.r11 = R11;
+  bx_poly_trap_saved_regs.r12 = R12;
   bx_poly_trap_saved_regs.rsp = RSP;
   for (unsigned n = 0; n < 8; n++) {
     bx_poly_trap_saved_regs.xmm_lo[n] = BX_READ_XMM_REG_LO_QWORD(n);
@@ -9182,6 +9194,11 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
       RDX = bx_poly_last_trap.pc;
       RSI = bx_poly_last_trap.selector;
       RDI = bx_poly_last_trap.args[0];
+      R8 = bx_poly_last_trap.args[1];
+      R9 = bx_poly_last_trap.args[2];
+      R10 = bx_poly_last_trap.args[3];
+      R11 = bx_poly_last_trap.args[4];
+      R12 = bx_poly_last_trap.args[5];
     }
     else if (trap_vector_mode == BX_POLY_MODE_RAW_AARCH64) {
       write_poly_aarch64_reg(0, bx_poly_last_trap.reason);
@@ -9246,12 +9263,16 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   if (bx_poly_trap_saved_regs.valid &&
       bx_poly_trap_saved_regs.mode == bx_poly_current_mode) {
     Bit64u result = RAX;
+    RBX = bx_poly_trap_saved_regs.rbx;
     RDI = bx_poly_trap_saved_regs.rdi;
     RSI = bx_poly_trap_saved_regs.rsi;
     RDX = bx_poly_trap_saved_regs.rdx;
     RCX = bx_poly_trap_saved_regs.rcx;
     R8 = bx_poly_trap_saved_regs.r8;
     R9 = bx_poly_trap_saved_regs.r9;
+    R10 = bx_poly_trap_saved_regs.r10;
+    R11 = bx_poly_trap_saved_regs.r11;
+    R12 = bx_poly_trap_saved_regs.r12;
     RSP = bx_poly_trap_saved_regs.rsp;
     RAX = result;
     for (unsigned n = 0; n < 8; n++) {
