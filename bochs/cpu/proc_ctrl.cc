@@ -473,31 +473,6 @@ static inline bool bx_poly_import_x86_returns_fp128(Bit64u import_id)
     import_id == BX_POLY_IMPORT_FUNC_FLOATUNSITF;
 }
 
-static inline bool bx_poly_import_uses_fp128_binary_args(Bit64u import_id)
-{
-  return import_id == BX_POLY_IMPORT_FUNC_ADDTF3 ||
-    import_id == BX_POLY_IMPORT_FUNC_SUBTF3 ||
-    import_id == BX_POLY_IMPORT_FUNC_MULTF3 ||
-    import_id == BX_POLY_IMPORT_FUNC_DIVTF3 ||
-    import_id == BX_POLY_IMPORT_FUNC_EQTF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_NETF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_LTTF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_LETF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_GTTF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_GETF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_UNORDTF2;
-}
-
-static inline bool bx_poly_import_uses_fp128_unary_arg(Bit64u import_id)
-{
-  return import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFDI ||
-    import_id == BX_POLY_IMPORT_FUNC_FIXTFDI ||
-    import_id == BX_POLY_IMPORT_FUNC_FIXUNSTFSI ||
-    import_id == BX_POLY_IMPORT_FUNC_FIXTFSI ||
-    import_id == BX_POLY_IMPORT_FUNC_TRUNCTFSF2 ||
-    import_id == BX_POLY_IMPORT_FUNC_TRUNCTFDF2;
-}
-
 static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
 {
   return size == 8 ? BX_CONST64(0xffffffffffffffff) :
@@ -2935,18 +2910,6 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       bx_poly_import_x86_saved_alias[4] = R8;
       bx_poly_import_x86_saved_alias[5] = R9;
       bx_poly_import_x86_saved_alias_valid = true;
-      if (mode == BX_POLY_MODE_RAW_RISCV &&
-          bx_poly_import_uses_fp128_binary_args(import_id)) {
-        BX_WRITE_XMM_REG_LO_QWORD(0, arg0);
-        BX_WRITE_XMM_REG_HI_QWORD(0, arg1);
-        BX_WRITE_XMM_REG_LO_QWORD(1, arg2);
-        BX_WRITE_XMM_REG_HI_QWORD(1, arg3);
-      }
-      else if (mode == BX_POLY_MODE_RAW_RISCV &&
-          bx_poly_import_uses_fp128_unary_arg(import_id)) {
-        BX_WRITE_XMM_REG_LO_QWORD(0, arg0);
-        BX_WRITE_XMM_REG_HI_QWORD(0, arg1);
-      }
       RDI = arg0;
       RSI = arg1;
       RDX = arg2;
