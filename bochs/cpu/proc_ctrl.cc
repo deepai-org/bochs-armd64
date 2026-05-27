@@ -9743,6 +9743,7 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
       syscall_number == 277 || syscall_number == 280 || syscall_number == 282 ||
       (syscall_number >= 288 && syscall_number <= 290) ||
       syscall_number == 424 ||
+      (syscall_number >= 425 && syscall_number <= 427) ||
       syscall_number == 434 || syscall_number == 435 ||
       syscall_number == 437 || syscall_number == 438 ||
       syscall_number == 440 ||
@@ -9759,6 +9760,9 @@ bool BX_CPU_C::handle_poly_memory_syscall(const char *arch_name, Bit32u syscall_
       syscall_number == 289 ? "pkey_alloc" :
       syscall_number == 290 ? "pkey_free" :
       syscall_number == 424 ? "pidfd_send_signal" :
+      syscall_number == 425 ? "io_uring_setup" :
+      syscall_number == 426 ? "io_uring_enter" :
+      syscall_number == 427 ? "io_uring_register" :
       syscall_number == 434 ? "pidfd_open" :
       syscall_number == 435 ? "clone3" :
       syscall_number == 436 ? "close_range" :
