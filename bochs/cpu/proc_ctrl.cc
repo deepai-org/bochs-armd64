@@ -141,7 +141,7 @@ static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32 = 0x0000207b;
 static const Bit32u BX_POLY_RISCV_AARCH64_CALL_FP64_STACK = 0x0000307b;
 static const Bit32u BX_POLY_RISCV_TRAP_RETURN = 0x0000407b;
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
-static const Bit32u BX_POLY_CPUID_MAX = 0x40000003;
+static const Bit32u BX_POLY_CPUID_MAX = 0x40000004;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_RISCV = (1U << 1);
 static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_SWITCH = (1U << 2);
@@ -179,6 +179,15 @@ static const Bit32u BX_POLY_CPUID_STATE_XSAVE_VISIBLE = (1U << 7);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_EXPLICIT = (1U << 8);
 static const Bit32u BX_POLY_CPUID_STATE_TRANSITION_FRAME_32 = (1U << 9);
 static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
+static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 11;
+static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
+static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
+static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 1;
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_XCR0_USER = (1U << 0);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED = (1U << 1);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME = (1U << 2);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_TRAP_STATE = (1U << 3);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_NO_HIDDEN_BANKS = (1U << 4);
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -9082,6 +9091,19 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     RBX = BX_POLY_STATE_STACK_KEY_SHIFT;
     RCX = 0; // no XCR0 component is assigned in this Bochs prototype
     RDX = 0; // no XSAVE byte area is exposed in this Bochs prototype
+    BX_NEXT_INSTR(i);
+    return;
+  }
+  if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 4) {
+    RAX = BX_POLY_STATE_XSAVE_COMPONENT_ARCH;
+    RBX = BX_POLY_STATE_XSAVE_BYTES_ARCH;
+    RCX = BX_POLY_STATE_XSAVE_LAYOUT_VERSION |
+          (BX_POLY_STATE_XSAVE_ALIGN_ARCH << 16);
+    RDX = BX_POLY_STATE_XSAVE_FLAG_XCR0_USER |
+          BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED |
+          BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME |
+          BX_POLY_STATE_XSAVE_FLAG_TRAP_STATE |
+          BX_POLY_STATE_XSAVE_FLAG_NO_HIDDEN_BANKS;
     BX_NEXT_INSTR(i);
     return;
   }
