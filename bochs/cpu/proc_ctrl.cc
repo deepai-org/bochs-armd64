@@ -8579,6 +8579,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = 0x63; // x86 POLY trap-vector mode set opcode
       RDX = 0x64; // x86 POLY trap-vector mode get opcode
     }
+    else if (ECX == 5) {
+      RAX = BX_POLY_IMPORT_CALL_COUNT;
+      RBX = (Bit32u) (BX_POLY_IMPORT_CALL_BASE & 0xffffffff);
+      RCX = (Bit32u) (BX_POLY_IMPORT_CALL_BASE >> 32);
+      RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
+    }
     else {
       RAX = 0;
       RBX = 0;
