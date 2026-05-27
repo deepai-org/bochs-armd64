@@ -1134,13 +1134,13 @@ static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selec
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
-  Bit64u arg3)
+  Bit64u arg3, Bit64u arg4, Bit64u arg5)
 {
   bx_poly_last_libcall_mode = mode;
   bx_poly_last_libcall_number = number;
   bx_poly_foreign_libcall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, arg3, 0, 0);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5);
 }
 
 static bool bx_poly_aarch64_shifted_reg(Bit64u value, Bit32u shift_type, Bit32u shift_amount, Bit64u *result)
@@ -9199,29 +9199,31 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
 }
 
 bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *trap_name,
-  Bit32u libcall_id, bx_address trap_pc, Bit64u arg1, Bit64u arg2)
+  Bit32u libcall_id, bx_address trap_pc, Bit64u arg0, Bit64u arg1,
+  Bit64u arg2, Bit64u arg3)
 {
   (void) trap_pc;
+  (void) arg3;
 
   if (libcall_id == 1) {
     RAX = 0;
-    while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + RAX)) != 0)
+    while (RAX < 4096 && read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + RAX)) != 0)
       RAX++;
-    BX_INFO(("poly_ud: compat %s %s strlen addr=%llx len=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) RAX));
+    BX_INFO(("poly_ud: compat %s %s strlen addr=%llx len=%llu", arch_name, trap_name, (unsigned long long) arg0, (unsigned long long) RAX));
   }
   else if (libcall_id == 2) {
-    Bit64u count = RAX < 4096 ? RAX : 4096;
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
     Bit8u value = (Bit8u) arg1;
     for (Bit64u n = 0; n < count; n++)
-      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), value);
     RAX = count;
-    BX_INFO(("poly_ud: compat %s %s memfill addr=%llx count=%llu value=%u", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) count, value));
+    BX_INFO(("poly_ud: compat %s %s memfill addr=%llx count=%llu value=%u", arch_name, trap_name, (unsigned long long) arg0, (unsigned long long) count, value));
   }
   else if (libcall_id == 3) {
     Bit64u count = arg2 < 4096 ? arg2 : 4096;
     Bit64s result = 0;
     for (Bit64u n = 0; n < count; n++) {
-      Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n));
+      Bit8u left = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n));
       Bit8u right = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
       if (left != right) {
         result = (Bit64s) left - (Bit64s) right;
@@ -9229,16 +9231,16 @@ bool BX_CPU_C::handle_poly_compat_break_trap(const char *arch_name, const char *
       }
     }
     RAX = (Bit64u) result;
-    BX_INFO(("poly_ud: compat %s %s memcmp left=%llx right=%llx count=%llu result=%lld", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count, (long long) result));
+    BX_INFO(("poly_ud: compat %s %s memcmp left=%llx right=%llx count=%llu result=%lld", arch_name, trap_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) count, (long long) result));
   }
   else if (libcall_id == 4) {
-    Bit64u count = RAX < 4096 ? RAX : 4096;
+    Bit64u count = arg2 < 4096 ? arg2 : 4096;
     for (Bit64u n = 0; n < count; n++) {
       Bit8u value = read_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg1 + n));
-      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (RDI + n), value);
+      write_virtual_byte(BX_SEG_REG_DS, (bx_address) (arg0 + n), value);
     }
     RAX = count;
-    BX_INFO(("poly_ud: compat %s %s memcpy dest=%llx src=%llx count=%llu", arch_name, trap_name, (unsigned long long) RDI, (unsigned long long) arg1, (unsigned long long) count));
+    BX_INFO(("poly_ud: compat %s %s memcpy dest=%llx src=%llx count=%llu", arch_name, trap_name, (unsigned long long) arg0, (unsigned long long) arg1, (unsigned long long) count));
   }
   else {
     RAX = 0x4c000000 | (bx_poly_current_mode << 8) | libcall_id;
@@ -9252,14 +9254,41 @@ bool BX_CPU_C::handle_poly_libcall(const char *arch_name, const char *trap_name,
   Bit32u libcall_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip,
   Bit64u arg1, Bit64u arg2)
 {
+  Bit64u trap_arg0 = RAX;
+  Bit64u trap_arg1 = arg1;
+  Bit64u trap_arg2 = arg2;
+  Bit64u trap_arg3 = 0;
+  Bit64u trap_arg4 = 0;
+  Bit64u trap_arg5 = 0;
+
+  if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
+    if (!read_poly_aarch64_reg(0, &trap_arg0) ||
+        !read_poly_aarch64_reg(1, &trap_arg1) ||
+        !read_poly_aarch64_reg(2, &trap_arg2) ||
+        !read_poly_aarch64_reg(3, &trap_arg3) ||
+        !read_poly_aarch64_reg(4, &trap_arg4) ||
+        !read_poly_aarch64_reg(5, &trap_arg5))
+      return false;
+  }
+  else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
+    if (!read_poly_riscv_reg(10, &trap_arg0) ||
+        !read_poly_riscv_reg(11, &trap_arg1) ||
+        !read_poly_riscv_reg(12, &trap_arg2) ||
+        !read_poly_riscv_reg(13, &trap_arg3) ||
+        !read_poly_riscv_reg(14, &trap_arg4) ||
+        !read_poly_riscv_reg(15, &trap_arg5))
+      return false;
+  }
+
   // Hardware/FPGA contract: BRK/EBREAK is an OS-neutral breakpoint trap exit.
   // The named libcall behavior below is only the Bochs compatibility service.
   bx_poly_record_break_trap(bx_poly_current_mode, libcall_id, trap_selector,
-    trap_pc, next_rip, RDI, arg1, arg2, RAX);
+    trap_pc, next_rip, trap_arg0, trap_arg1, trap_arg2, trap_arg3,
+    trap_arg4, trap_arg5);
   if (!BX_CPU_THIS_PTR poly_compat_traps_enabled)
     return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
   if (!handle_poly_compat_break_trap(arch_name, trap_name, libcall_id,
-        trap_pc, arg1, arg2))
+        trap_pc, trap_arg0, trap_arg1, trap_arg2, trap_arg3))
     return false;
   RIP = next_rip;
   return true;
