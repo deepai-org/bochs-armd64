@@ -166,6 +166,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_TRAP_RECORDS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE = (1U << 8);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_TSO = (1U << 9);
 static const Bit32u BX_POLY_CPUID_FEATURE_THREAD_BANKS = (1U << 10);
+static const Bit32u BX_POLY_CPUID_FEATURE_GENERIC_FRONTEND_IDS = (1U << 11);
 static const Bit32u BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES = (1U << 12);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_RET = (1U << 13);
 static const Bit32u BX_POLY_CPUID_FEATURE_FPAIR32_ARG = (1U << 14);
@@ -9046,19 +9047,30 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (opcode0 == 0x0f && opcode1 == 0x3a && opcode2 == 0xfc) {
     Bit8u op = opcode3;
     bx_address next_rip = PREV_RIP + 4;
-      if (op == 0x00 || op == 0x01 || op == 0x02) {
+      if (op == 0x00 || op == 0x01 || op == 0x02 || op == 0x03) {
+        Bit32u target_mode = BX_POLY_MODE_X86;
         if (op == 0x00) {
-          bx_poly_current_mode = BX_POLY_MODE_X86;
-          bx_poly_clear_cross_return_stack();
+          target_mode = BX_POLY_MODE_X86;
         }
         else if (op == 0x01) {
-          bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+          target_mode = BX_POLY_MODE_RAW_AARCH64;
+        }
+        else if (op == 0x02) {
+          target_mode = BX_POLY_MODE_RAW_RISCV;
         }
         else {
-          bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+          target_mode = (Bit32u) R15;
+          if (!bx_poly_valid_frontend_mode(target_mode)) {
+            BX_INFO(("poly_ud: reject generic frontend mode=%u", target_mode));
+            return false;
+          }
         }
+        bx_poly_current_mode = target_mode;
+        if (target_mode == BX_POLY_MODE_X86)
+          bx_poly_clear_cross_return_stack();
         bx_poly_foreign_tls_base = (bx_address) R13;
-        if (op == 0x02 && !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
+        if (target_mode == BX_POLY_MODE_RAW_RISCV &&
+            !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
           return false;
         bx_poly_mode_switch_count++;
         // A frontend switch changes the decoder, not the architectural thread
@@ -9072,7 +9084,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
         RIP = next_rip;
         BX_INFO(("poly_op: x86 poly opcode op=0x%02x mode switch to %u",
-          op, bx_poly_current_mode));
+          op, target_mode));
         return true;
       }
       if (op == 0x10)
@@ -9195,6 +9207,17 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (bx_address) RBX, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
           (Bit32u) R12);
+      if (op == 0x2d) {
+        Bit32u target_mode = (Bit32u) R15;
+        if (!bx_poly_is_raw_mode(target_mode)) {
+          BX_INFO(("poly_ud: reject generic pcall mode=%u", target_mode));
+          return false;
+        }
+        return enter_poly_abi_signature_call(target_mode,
+          (bx_address) RBX, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          (Bit32u) R12);
+      }
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
@@ -9480,6 +9503,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_USER_RETURN_RESTORE |
           BX_POLY_CPUID_FEATURE_X86_TSO |
           BX_POLY_CPUID_FEATURE_THREAD_BANKS |
+          BX_POLY_CPUID_FEATURE_GENERIC_FRONTEND_IDS |
           BX_POLY_CPUID_FEATURE_X86_POLY_OPCODES |
           BX_POLY_CPUID_FEATURE_FPAIR32_RET |
           BX_POLY_CPUID_FEATURE_FPAIR32_ARG |
