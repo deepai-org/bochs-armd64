@@ -2009,32 +2009,44 @@ static Bit32u bx_poly_state_contract_flags(void)
     BX_POLY_CPUID_STATE_IMPORT_RETURN_XSAVE;
 }
 
+static bool bx_poly_read_exchange_window(Bit32u lane, Bit64u *value)
+{
+  switch (lane) {
+  case 0: *value = RAX; return true;
+  case 1: *value = RDX; return true;
+  case 2: *value = RCX; return true;
+  case 3: *value = RDI; return true;
+  case 4: *value = RSI; return true;
+  case 5: *value = R8; return true;
+  case 6: *value = R9; return true;
+  case 7: *value = R10; return true;
+  default: return false;
+  }
+}
+
+static bool bx_poly_write_exchange_window(Bit32u lane, Bit64u value)
+{
+  switch (lane) {
+  case 0: RAX = value; return true;
+  case 1: RDX = value; return true;
+  case 2: RCX = value; return true;
+  case 3: RDI = value; return true;
+  case 4: RSI = value; return true;
+  case 5: R8 = value; return true;
+  case 6: R9 = value; return true;
+  case 7: R10 = value; return true;
+  default: return false;
+  }
+}
+
 bool BX_CPU_C::read_poly_aarch64_reg(Bit32u reg, Bit64u *value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
 
+  if (reg < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT)
+    return bx_poly_read_exchange_window(reg, value);
+
   switch (reg) {
-  case 0:
-    *value = RAX;
-    return true;
-  case 1:
-    *value = RDI;
-    return true;
-  case 2:
-    *value = RSI;
-    return true;
-  case 3:
-    *value = RDX;
-    return true;
-  case 4:
-    *value = RCX;
-    return true;
-  case 5:
-    *value = R8;
-    return true;
-  case 6:
-    *value = R9;
-    return true;
   case 31:
     *value = 0;
     return true;
@@ -2051,42 +2063,15 @@ bool BX_CPU_C::write_poly_aarch64_reg(Bit32u reg, Bit64u value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
 
+  if (reg < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT) {
+    if (!bx_poly_write_exchange_window(reg, value))
+      return false;
+    bx_poly_aarch64_x[reg] = value;
+    bx_poly_aarch64_x_valid[reg] = true;
+    return true;
+  }
+
   switch (reg) {
-  case 0:
-    RAX = value;
-    bx_poly_aarch64_x[0] = value;
-    bx_poly_aarch64_x_valid[0] = true;
-    return true;
-  case 1:
-    RDI = value;
-    bx_poly_aarch64_x[1] = value;
-    bx_poly_aarch64_x_valid[1] = true;
-    return true;
-  case 2:
-    RSI = value;
-    bx_poly_aarch64_x[2] = value;
-    bx_poly_aarch64_x_valid[2] = true;
-    return true;
-  case 3:
-    RDX = value;
-    bx_poly_aarch64_x[3] = value;
-    bx_poly_aarch64_x_valid[3] = true;
-    return true;
-  case 4:
-    RCX = value;
-    bx_poly_aarch64_x[4] = value;
-    bx_poly_aarch64_x_valid[4] = true;
-    return true;
-  case 5:
-    R8 = value;
-    bx_poly_aarch64_x[5] = value;
-    bx_poly_aarch64_x_valid[5] = true;
-    return true;
-  case 6:
-    R9 = value;
-    bx_poly_aarch64_x[6] = value;
-    bx_poly_aarch64_x_valid[6] = true;
-    return true;
   case 31:
     return true;
   default:
@@ -2103,33 +2088,15 @@ bool BX_CPU_C::read_poly_riscv_reg(Bit32u reg, Bit64u *value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
 
+  if (reg >= 10 && reg < 10 + BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT)
+    return bx_poly_read_exchange_window(reg - 10, value);
+
   switch (reg) {
   case 0:
     *value = 0;
     return true;
   case 2:
     *value = RSP;
-    return true;
-  case 10:
-    *value = RAX;
-    return true;
-  case 11:
-    *value = RDI;
-    return true;
-  case 12:
-    *value = RSI;
-    return true;
-  case 13:
-    *value = RDX;
-    return true;
-  case 14:
-    *value = RCX;
-    return true;
-  case 15:
-    *value = R8;
-    return true;
-  case 16:
-    *value = R9;
     return true;
   default:
     if (reg < 32) {
@@ -2144,6 +2111,14 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
 
+  if (reg >= 10 && reg < 10 + BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT) {
+    if (!bx_poly_write_exchange_window(reg - 10, value))
+      return false;
+    bx_poly_riscv_x[reg] = value;
+    bx_poly_riscv_x_valid[reg] = true;
+    return true;
+  }
+
   switch (reg) {
   case 0:
     return true;
@@ -2151,41 +2126,6 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
     RSP = value;
     bx_poly_riscv_x[2] = value;
     bx_poly_riscv_x_valid[2] = true;
-    return true;
-  case 10:
-    RAX = value;
-    bx_poly_riscv_x[10] = value;
-    bx_poly_riscv_x_valid[10] = true;
-    return true;
-  case 11:
-    RDI = value;
-    bx_poly_riscv_x[11] = value;
-    bx_poly_riscv_x_valid[11] = true;
-    return true;
-  case 12:
-    RSI = value;
-    bx_poly_riscv_x[12] = value;
-    bx_poly_riscv_x_valid[12] = true;
-    return true;
-  case 13:
-    RDX = value;
-    bx_poly_riscv_x[13] = value;
-    bx_poly_riscv_x_valid[13] = true;
-    return true;
-  case 14:
-    RCX = value;
-    bx_poly_riscv_x[14] = value;
-    bx_poly_riscv_x_valid[14] = true;
-    return true;
-  case 15:
-    R8 = value;
-    bx_poly_riscv_x[15] = value;
-    bx_poly_riscv_x_valid[15] = true;
-    return true;
-  case 16:
-    R9 = value;
-    bx_poly_riscv_x[16] = value;
-    bx_poly_riscv_x_valid[16] = true;
     return true;
   default:
     if (reg < 32) {
@@ -2682,12 +2622,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   if (saved_mode == BX_POLY_MODE_RAW_RISCV) {
     RSP = riscv_gpr[2];
     RAX = riscv_gpr[10];
-    RDI = riscv_gpr[11];
-    RSI = riscv_gpr[12];
-    RDX = riscv_gpr[13];
-    RCX = riscv_gpr[14];
+    RDX = riscv_gpr[11];
+    RCX = riscv_gpr[12];
+    RDI = riscv_gpr[13];
+    RSI = riscv_gpr[14];
     R8 = riscv_gpr[15];
     R9 = riscv_gpr[16];
+    R10 = riscv_gpr[17];
     for (unsigned n = 10; n <= 17; n++) {
       unsigned xmm = n - 10;
       BX_WRITE_XMM_REG_LO_QWORD(xmm, riscv_fp_lo[n]);
@@ -2696,12 +2637,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   }
   else {
     RAX = aarch64_gpr[0];
-    RDI = aarch64_gpr[1];
-    RSI = aarch64_gpr[2];
-    RDX = aarch64_gpr[3];
-    RCX = aarch64_gpr[4];
+    RDX = aarch64_gpr[1];
+    RCX = aarch64_gpr[2];
+    RDI = aarch64_gpr[3];
+    RSI = aarch64_gpr[4];
     R8 = aarch64_gpr[5];
     R9 = aarch64_gpr[6];
+    R10 = aarch64_gpr[7];
     for (unsigned n = 0; n < 8; n++) {
       BX_WRITE_XMM_REG_LO_QWORD(n, aarch64_fp_lo[n]);
       BX_WRITE_XMM_REG_HI_QWORD(n, aarch64_fp_hi[n]);
