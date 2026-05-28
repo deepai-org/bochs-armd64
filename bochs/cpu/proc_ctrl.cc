@@ -265,7 +265,8 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_SIZE = BX_CONST64(32);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS = BX_CONST64(1) << 0;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 = BX_CONST64(1) << 1;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128 = BX_CONST64(1) << 2;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 144;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 145;
+static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
@@ -443,7 +444,8 @@ enum {
   BX_POLY_IMPORT_FUNC_PUTS = 140,
   BX_POLY_IMPORT_FUNC_CXA_GUARD_ACQUIRE = 141,
   BX_POLY_IMPORT_FUNC_CXA_GUARD_RELEASE = 142,
-  BX_POLY_IMPORT_FUNC_CXA_GUARD_ABORT = 143
+  BX_POLY_IMPORT_FUNC_CXA_GUARD_ABORT = 143,
+  BX_POLY_IMPORT_FUNC_X86_SUM10 = 144
 };
 
 static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
@@ -3187,20 +3189,39 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       descriptor + 8);
     Bit64u descriptor_flags = read_virtual_qword(BX_SEG_REG_DS,
       descriptor + 16);
+    Bit64u descriptor_stack_arg_qwords = read_virtual_qword(BX_SEG_REG_DS,
+      descriptor + 24);
     if (target != 0 && trampoline != 0) {
-      const bool uses_x86_stack_args =
+      const bool descriptor_has_x86_stack_args =
         (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS) != 0;
-      if (uses_x86_stack_args && mode == BX_POLY_MODE_RAW_AARCH64) {
+      if (!descriptor_has_x86_stack_args)
+        descriptor_stack_arg_qwords = 0;
+      else if (descriptor_stack_arg_qwords == 0)
+        descriptor_stack_arg_qwords = 2;
+      if (descriptor_stack_arg_qwords >
+          BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX)
+        return false;
+
+      Bit64u stack_args[BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX] = {};
+      if (descriptor_stack_arg_qwords > 0 && mode == BX_POLY_MODE_RAW_AARCH64) {
         mapped = read_poly_aarch64_reg(6, &arg6) &&
           read_poly_aarch64_reg(7, &arg7);
       }
-      else if (uses_x86_stack_args && mode == BX_POLY_MODE_RAW_RISCV) {
+      else if (descriptor_stack_arg_qwords > 0 && mode == BX_POLY_MODE_RAW_RISCV) {
         mapped = read_poly_riscv_reg(16, &arg6) &&
           read_poly_riscv_reg(17, &arg7);
       }
       if (!mapped)
         return false;
       bx_address foreign_rsp = RSP;
+      if (descriptor_stack_arg_qwords > 0)
+        stack_args[0] = arg6;
+      if (descriptor_stack_arg_qwords > 1)
+        stack_args[1] = arg7;
+      for (Bit64u n = 2; n < descriptor_stack_arg_qwords; n++) {
+        stack_args[n] = read_virtual_qword(BX_SEG_REG_SS,
+          foreign_rsp + (bx_address) ((n - 2) * 8));
+      }
       bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
         bx_poly_current_state_key(foreign_rsp));
       if (bx_poly_import_x86_return_top >= BX_POLY_IMPORT_RETURN_DEPTH)
@@ -3225,15 +3246,21 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       RCX = arg3;
       R8 = arg4;
       R9 = arg5;
-      bx_address x86_rsp = x86_stack_base - 32;
+      bx_address x86_stack_bytes =
+        (bx_address) ((1 + descriptor_stack_arg_qwords) * 8);
+      x86_stack_bytes = (x86_stack_bytes + 15) & ~((bx_address) 15);
+      if (x86_stack_base < x86_stack_bytes)
+        return false;
+      bx_address x86_rsp = x86_stack_base - x86_stack_bytes;
       write_virtual_qword(BX_SEG_REG_SS, x86_rsp, trampoline);
-      if (uses_x86_stack_args) {
-        write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 8, arg6);
-        write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 16, arg7);
+      for (Bit64u n = 0; n < descriptor_stack_arg_qwords; n++) {
+        write_virtual_qword(BX_SEG_REG_SS, x86_rsp + 8 +
+          (bx_address) (n * 8), stack_args[n]);
       }
-      BX_INFO(("poly_raw: import descriptor call mode=%u descriptor=%u target=%llx trampoline=%llx stack=%llx arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu arg6=%llu arg7=%llu return=%llx",
+      BX_INFO(("poly_raw: import descriptor call mode=%u descriptor=%u target=%llx trampoline=%llx stack=%llx stack_args=%llu arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu arg6=%llu arg7=%llu return=%llx",
         mode, (unsigned) import_id, (unsigned long long) target,
         (unsigned long long) trampoline, (unsigned long long) x86_rsp,
+        (unsigned long long) descriptor_stack_arg_qwords,
         (unsigned long long) arg0,
         (unsigned long long) arg1, (unsigned long long) arg2,
         (unsigned long long) arg3, (unsigned long long) arg4,
