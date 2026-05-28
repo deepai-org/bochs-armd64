@@ -3697,6 +3697,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & ~(Bit32u)(0x1f | (0x1f << 5))) == 0x5ef1b800) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit64u lo = 0, hi = 0;
+    if (!read_poly_aarch64_fp128_reg(rn, &lo, &hi))
+      return false;
+    if (!write_poly_aarch64_fp64_reg(rd, lo + hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 addp d%u,v%u.2d result=%llu",
+      rd, rn, (unsigned long long) (lo + hi)));
+    return true;
+  }
+
   if ((insn & 0xbfe0fc00) == 0x0e003c00) {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
@@ -5815,6 +5829,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bool writeback = false;
     bool post_index = false;
     bool is_double = false;
+    bool is_quad = false;
     const char *op_name = 0;
 
     switch (pair_op) {
@@ -5878,13 +5893,46 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       is_double = true;
       op_name = "ldp.d-pre";
       break;
+    case 0xac800000:
+      writeback = true;
+      post_index = true;
+      is_quad = true;
+      op_name = "stp.q-post";
+      break;
+    case 0xacc00000:
+      is_load = true;
+      writeback = true;
+      post_index = true;
+      is_quad = true;
+      op_name = "ldp.q-post";
+      break;
+    case 0xad000000:
+      is_quad = true;
+      op_name = "stp.q";
+      break;
+    case 0xad400000:
+      is_load = true;
+      is_quad = true;
+      op_name = "ldp.q";
+      break;
+    case 0xad800000:
+      writeback = true;
+      is_quad = true;
+      op_name = "stp.q-pre";
+      break;
+    case 0xadc00000:
+      is_load = true;
+      writeback = true;
+      is_quad = true;
+      op_name = "ldp.q-pre";
+      break;
     }
 
     if (op_name != 0) {
       Bit32u rt = insn & 0x1f;
       Bit32u rn = (insn >> 5) & 0x1f;
       Bit32u rt2 = (insn >> 10) & 0x1f;
-      Bit32u scale = is_double ? 3 : 2;
+      Bit32u scale = is_quad ? 4 : (is_double ? 3 : 2);
       Bit64s offset = bx_poly_sign_extend((insn >> 15) & 0x7f, 7) << scale;
       Bit64u base = 0;
 
@@ -5895,7 +5943,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
       bx_address addr = (bx_address) (post_index ? base : base + offset);
       if (is_load) {
-        if (is_double) {
+        if (is_quad) {
+          Bit64u lo0 = read_virtual_qword(BX_SEG_REG_DS, addr);
+          Bit64u hi0 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+          Bit64u lo1 = read_virtual_qword(BX_SEG_REG_DS, addr + 16);
+          Bit64u hi1 = read_virtual_qword(BX_SEG_REG_DS, addr + 24);
+          if (!write_poly_aarch64_fp128_reg(rt, lo0, hi0) ||
+              !write_poly_aarch64_fp128_reg(rt2, lo1, hi1))
+            return false;
+        }
+        else if (is_double) {
           Bit64u value0 = read_virtual_qword(BX_SEG_REG_DS, addr);
           Bit64u value1 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
           if (!write_poly_aarch64_fp64_reg(rt, value0) ||
@@ -5911,7 +5968,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         }
       }
       else {
-        if (is_double) {
+        if (is_quad) {
+          Bit64u lo0 = 0, hi0 = 0, lo1 = 0, hi1 = 0;
+          if (!read_poly_aarch64_fp128_reg(rt, &lo0, &hi0) ||
+              !read_poly_aarch64_fp128_reg(rt2, &lo1, &hi1))
+            return false;
+          write_virtual_qword(BX_SEG_REG_DS, addr, lo0);
+          write_virtual_qword(BX_SEG_REG_DS, addr + 8, hi0);
+          write_virtual_qword(BX_SEG_REG_DS, addr + 16, lo1);
+          write_virtual_qword(BX_SEG_REG_DS, addr + 24, hi1);
+        }
+        else if (is_double) {
           Bit64u value0 = 0, value1 = 0;
           if (!read_poly_aarch64_fp64_reg(rt, &value0) ||
               !read_poly_aarch64_fp64_reg(rt2, &value1))
