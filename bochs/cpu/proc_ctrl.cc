@@ -6075,11 +6075,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u frontend_id = (Bit32u) frontend;
     Bit32u target_mode = BX_POLY_MODE_X86;
     if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
-        target_mode == BX_POLY_MODE_X86 ||
         target_mode == BX_POLY_MODE_RAW_AARCH64) {
       BX_INFO(("poly_raw: reject aarch64 generic call frontend=%u mode=%u",
         frontend_id, target_mode));
       return false;
+    }
+    if (target_mode == BX_POLY_MODE_X86) {
+      return handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+        (bx_address) target, (bx_address) return_rip);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
       (bx_address) target, (bx_address) return_rip,
@@ -7079,11 +7082,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u frontend_id = (Bit32u) frontend;
     Bit32u target_mode = BX_POLY_MODE_X86;
     if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
-        target_mode == BX_POLY_MODE_X86 ||
         target_mode == BX_POLY_MODE_RAW_RISCV) {
       BX_INFO(("poly_raw: reject riscv generic call frontend=%u mode=%u",
         frontend_id, target_mode));
       return false;
+    }
+    if (target_mode == BX_POLY_MODE_X86) {
+      return handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+        (bx_address) target, (bx_address) return_rip);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
