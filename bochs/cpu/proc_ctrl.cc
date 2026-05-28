@@ -1319,8 +1319,15 @@ static bool bx_poly_is_stack_region_key(bx_address stack_key)
   return (stack_key & BX_CONST64(0x7fffff)) == 0;
 }
 
-static bx_address bx_poly_thread_selector_key(bx_address rsp)
+static bx_address bx_poly_thread_selector_key(bx_address fsbase,
+  bx_address rsp)
 {
+  // In userspace, CR3+FSBASE is the stable architectural thread identity.
+  // Including RSP here fragments one pthread's hidden foreign register bank
+  // across ordinary call frames. Keep the stack-region key only as a fallback
+  // for code that has no TLS base.
+  if (fsbase != 0)
+    return 0;
   return bx_poly_stack_key(rsp);
 }
 
@@ -1366,7 +1373,7 @@ static unsigned bx_poly_find_or_alloc_thread_key_state(bx_address cr3,
 static bx_address bx_poly_explicit_state_key_for_thread(bx_address cr3,
   bx_address fsbase, bx_address rsp)
 {
-  bx_address stack_key = bx_poly_thread_selector_key(rsp);
+  bx_address stack_key = bx_poly_thread_selector_key(fsbase, rsp);
   unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
     stack_key);
   bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
@@ -1376,7 +1383,7 @@ static bx_address bx_poly_explicit_state_key_for_thread(bx_address cr3,
 static void bx_poly_set_explicit_state_key_for_thread(bx_address cr3,
   bx_address fsbase, bx_address rsp, bx_address explicit_state_key)
 {
-  bx_address stack_key = bx_poly_thread_selector_key(rsp);
+  bx_address stack_key = bx_poly_thread_selector_key(fsbase, rsp);
   unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
     stack_key);
   bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
@@ -1390,7 +1397,7 @@ static bx_address bx_poly_current_state_key_for_thread(bx_address cr3,
     bx_poly_explicit_state_key_for_thread(cr3, fsbase, rsp);
   if (explicit_state_key != 0)
     return explicit_state_key;
-  return bx_poly_stack_key(rsp);
+  return bx_poly_thread_selector_key(fsbase, rsp);
 }
 
 #define bx_poly_current_state_key(rsp) \
@@ -2510,12 +2517,6 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     if (bx_poly_is_raw_mode(frame->mode) && frame->rsp != 0)
       foreign_stack_anchor = frame->rsp;
   }
-  bool preserve_foreign_call_state = false;
-  if (bx_poly_import_x86_return_top != 0) {
-    bx_poly_import_x86_return_frame_t *frame =
-      &bx_poly_import_x86_return_stack[bx_poly_import_x86_return_top - 1];
-    preserve_foreign_call_state = frame->mode == mode;
-  }
   bx_address foreign_stack_rsp =
     (bx_address) ((foreign_stack_anchor - BX_POLY_FOREIGN_STACK_GAP) &
       ~BX_CONST64(0xf));
@@ -2570,8 +2571,9 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
 
   bool mapped = false;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
-    if (!preserve_foreign_call_state)
-      bx_poly_reset_aarch64_regs();
+    // PCALL is a frontend/ABI transition, not a reset of the target ISA.
+    // Hardware would preserve the per-thread foreign register file and only
+    // overwrite the registers named by the call ABI.
     mapped =
       write_poly_aarch64_reg(0, args[0]) &&
       write_poly_aarch64_reg(1, args[1]) &&
@@ -2652,8 +2654,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
-    if (!preserve_foreign_call_state)
-      bx_poly_reset_riscv_regs();
+    // Preserve synthetic registers not explicitly overwritten by the psABI
+    // argument mapping, matching architectural register-file behavior.
     if (sret_call) {
       mapped =
         write_poly_riscv_reg(4, bx_poly_foreign_tls_base) &&
