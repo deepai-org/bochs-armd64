@@ -134,7 +134,7 @@ static inline Bit32u BX_POLY_AARCH64_CTRL(Bit32u subop)
 
 static inline Bit32u BX_POLY_RISCV_CTRL(Bit32u subop)
 {
-  return 0x0000000bU | ((subop & 0x7fU) << 25);
+  return 0x0000700bU | ((subop & 0x7fU) << 25);
 }
 
 static const Bit32u BX_POLY_AARCH64_CTRL_X86_ESCAPE = BX_POLY_AARCH64_CTRL(0x70);
