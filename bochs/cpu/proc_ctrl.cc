@@ -276,7 +276,8 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64 = BX_CONST64(1)
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32 = BX_CONST64(1) << 6;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) << 7;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 149;
+static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 150;
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
@@ -471,7 +472,8 @@ enum {
   BX_POLY_IMPORT_FUNC_X86_FP64_SUM10 = 145,
   BX_POLY_IMPORT_FUNC_X86_FPAIR64 = 146,
   BX_POLY_IMPORT_FUNC_X86_FPAIR32 = 147,
-  BX_POLY_IMPORT_FUNC_X86_VEC128_U32 = 148
+  BX_POLY_IMPORT_FUNC_X86_VEC128_U32 = 148,
+  BX_POLY_IMPORT_FUNC_X86_SRET_U64 = 149
 };
 
 static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
@@ -3409,7 +3411,16 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       const bool descriptor_stack_from_gpr0 =
         (descriptor_flags &
           BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_FROM_GPR0) != 0;
+      const bool descriptor_aarch64_sret_x8 =
+        (descriptor_flags &
+          BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8) != 0;
       Bit64u stack_args[BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX] = {};
+      Bit64u aarch64_sret_ptr = 0;
+      if (descriptor_aarch64_sret_x8) {
+        if (mode != BX_POLY_MODE_RAW_AARCH64)
+          return false;
+        mapped = read_poly_aarch64_reg(8, &aarch64_sret_ptr);
+      }
       if (descriptor_stack_arg_qwords > 0 && !descriptor_stack_from_memory &&
           !descriptor_stack_from_gpr0 &&
           mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -3474,12 +3485,22 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       frame->alias[3] = RCX;
       frame->alias[4] = R8;
       frame->alias[5] = R9;
-      RDI = arg0;
-      RSI = arg1;
-      RDX = arg2;
-      RCX = arg3;
-      R8 = arg4;
-      R9 = arg5;
+      if (descriptor_aarch64_sret_x8) {
+        RDI = aarch64_sret_ptr;
+        RSI = arg0;
+        RDX = arg1;
+        RCX = arg2;
+        R8 = arg3;
+        R9 = arg4;
+      }
+      else {
+        RDI = arg0;
+        RSI = arg1;
+        RDX = arg2;
+        RCX = arg3;
+        R8 = arg4;
+        R9 = arg5;
+      }
       if ((descriptor_flags &
           BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS) != 0) {
         BX_WRITE_XMM_REG_LO_QWORD(0, arg0);
