@@ -295,6 +295,7 @@ static const Bit32u BX_POLY_ABI_BRIDGE_STACK_ALIGN = 16;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
@@ -2748,7 +2749,8 @@ void BX_CPU_C::xrstor_init_poly_state(void)
 static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
 {
   return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
 }
 
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
@@ -2776,6 +2778,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       ~BX_CONST64(0xf));
   bx_address stack_copy_base = arg_kind == BX_POLY_ARG_KIND_FP64_STACK ?
     original_rsp + 8 : original_rsp + 24;
+  const bool register_only_source = !sret_call &&
+    arg_kind == BX_POLY_ARG_KIND_DEFAULT &&
+    (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
 
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject unknown ABI signature kind=%u", source_kind));
@@ -2805,6 +2811,17 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     args[7] = R10;
     stack_copy_base = original_rsp + 8;
   }
+  else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS) {
+    args[0] = RDI;
+    args[1] = RSI;
+    args[2] = RDX;
+    args[3] = RCX;
+    args[4] = R8;
+    args[5] = R9;
+    args[6] = 0;
+    args[7] = 0;
+    stack_copy_base = original_rsp + 8;
+  }
   else {
     args[0] = RDI;
     args[1] = RSI;
@@ -2820,9 +2837,12 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
   }
 
-  for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
-    Bit64u value = read_virtual_qword(BX_SEG_REG_SS, stack_copy_base + n * 8);
-    write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
+  if (!register_only_source) {
+    for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
+      Bit64u value = read_virtual_qword(BX_SEG_REG_SS,
+        stack_copy_base + n * 8);
+      write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
+    }
   }
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
