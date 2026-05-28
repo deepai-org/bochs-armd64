@@ -3677,6 +3677,51 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffe0fc00) == 0x4e000c00 ||
+      (insn & 0xffe0fc00) == 0x0e000c00) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u imm5 = (insn >> 16) & 0x1f;
+    bool q = (insn & 0x40000000) != 0;
+    Bit32u element_bits = 0;
+    Bit64u source = 0;
+    Bit64u lo = 0, hi = 0;
+
+    if (imm5 & 0x01)
+      element_bits = 8;
+    else if (imm5 & 0x02)
+      element_bits = 16;
+    else if (imm5 & 0x04)
+      element_bits = 32;
+    else if (imm5 & 0x08)
+      element_bits = 64;
+    else
+      return false;
+
+    if (!read_poly_aarch64_reg(rn, &source))
+      return false;
+
+    Bit64u value = source;
+    if (element_bits < 64)
+      value &= (BX_CONST64(1) << element_bits) - 1;
+
+    Bit32u lanes = (q ? 128 : 64) / element_bits;
+    for (Bit32u lane = 0; lane < lanes; lane++) {
+      Bit32u bit_offset = lane * element_bits;
+      Bit64u *qword = bit_offset < 64 ? &lo : &hi;
+      Bit32u shift = bit_offset & 63;
+      *qword |= value << shift;
+    }
+
+    if (!write_poly_aarch64_fp128_reg(rd, lo, hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 dup v%u.%u-bit,%c%u value=%llu",
+      rd, element_bits, element_bits == 64 ? 'x' : 'w', rn,
+      (unsigned long long) value));
+    return true;
+  }
+
   if ((insn & 0xffe0fc00) == 0x4e60d400) {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
