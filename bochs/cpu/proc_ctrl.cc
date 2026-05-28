@@ -285,7 +285,7 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32 = BX_CONST64(1)
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) << 7;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 195;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 200;
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
@@ -526,7 +526,12 @@ enum {
   BX_POLY_IMPORT_FUNC_CLOCK_GETRES = 191,
   BX_POLY_IMPORT_FUNC_TIME = 192,
   BX_POLY_IMPORT_FUNC_GETTIMEOFDAY = 193,
-  BX_POLY_IMPORT_FUNC_CLOCK = 194
+  BX_POLY_IMPORT_FUNC_CLOCK = 194,
+  BX_POLY_IMPORT_FUNC_ATOI = 195,
+  BX_POLY_IMPORT_FUNC_STRTOL = 196,
+  BX_POLY_IMPORT_FUNC_STRTOUL = 197,
+  BX_POLY_IMPORT_FUNC_STRTOLL = 198,
+  BX_POLY_IMPORT_FUNC_STRTOULL = 199
 };
 
 static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
@@ -9017,18 +9022,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (PREV_RIP > 1)
     opcode_m2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP - 2);
 
-  BX_INFO(("poly_ud: bytes=%02x %02x %02x prev=%02x prev2=%02x", opcode0, opcode1, opcode2, opcode_m1, opcode_m2));
+  BX_INFO(("poly_op: bytes=%02x %02x %02x prev=%02x prev2=%02x", opcode0, opcode1, opcode2, opcode_m1, opcode_m2));
 
   if (opcode0 == 0x0f && opcode1 == 0x24) {
     Bit8u op = opcode2;
-    Bit8u magic0 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 3);
-    Bit8u magic1 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 4);
-    Bit8u magic2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 5);
-    Bit8u magic3 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 6);
-    Bit8u magic4 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 7);
-    if (magic0 == 'P' && magic1 == 'O' && magic2 == 'L' &&
-        magic3 == 'Y' && magic4 == '!') {
-      bx_address next_rip = PREV_RIP + 8;
+    bx_address next_rip = PREV_RIP + 3;
       if (op == 0x00 || op == 0x01 || op == 0x02) {
         if (op == 0x00) {
           bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -9051,7 +9049,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_current_state_key(RSP));
         BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
         RIP = next_rip;
-        BX_INFO(("poly_ud: x86 poly opcode op=0x%02x mode switch to %u",
+        BX_INFO(("poly_op: x86 poly opcode op=0x%02x mode switch to %u",
           op, bx_poly_current_mode));
         return true;
       }
@@ -9337,10 +9335,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_last_trap.next_pc));
         return true;
       }
-    }
   }
 
-  BX_INFO(("poly_ud: reject non-poly opcode bytes=%02x %02x %02x",
+  BX_INFO(("poly_op: reject non-poly opcode bytes=%02x %02x %02x",
     opcode0, opcode1, opcode2));
   return false;
 }
