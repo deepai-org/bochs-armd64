@@ -293,6 +293,7 @@ static const Bit32u BX_POLY_ABI_BRIDGE_STACK_ALIGN = 16;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
+static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -9333,6 +9334,26 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
           (Bit32u) R12);
       }
+      if (op == BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE) {
+        Bit8u signature_slot = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 4);
+        Bit32u frontend_id = (Bit32u) R15;
+        Bit32u target_mode = BX_POLY_MODE_X86;
+        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+            !bx_poly_is_raw_mode(target_mode)) {
+          BX_INFO(("poly_ud: reject immediate pcall frontend=%u",
+            frontend_id));
+          return false;
+        }
+        if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+          BX_INFO(("poly_ud: reject immediate pcall signature slot=%u",
+            signature_slot));
+          return false;
+        }
+        return enter_poly_abi_signature_call(target_mode,
+          (bx_address) RBX, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          signature_slot);
+      }
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
@@ -9687,6 +9708,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 6) {
       RAX = BX_POLY_AARCH64_CTRL_SWITCH_MODE;
       RBX = BX_POLY_RISCV_CTRL_SWITCH_MODE;
+      RCX = 0;
+      RDX = 0;
+    }
+    else if (ECX == 7) {
+      RAX = BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE;
+      RBX = BX_POLY_ABI_SIGNATURE_SLOT_COUNT;
       RCX = 0;
       RDX = 0;
     }
