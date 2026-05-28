@@ -127,22 +127,32 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   }
 }
 
-static const Bit32u BX_POLY_AARCH64_BRK_X86_ESCAPE = 0x7fff;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_SWITCH = 0x7ffe;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL = 0x7ffd;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 = 0x7ffc;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_F32_U32 = 0x7ffb;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_FP64_STACK = 0x7ffa;
-static const Bit32u BX_POLY_AARCH64_BRK_TRAP_RETURN = 0x7ff9;
-static const Bit32u BX_POLY_AARCH64_BRK_RISCV_CALL_VEC128_U32 = 0x7ff8;
-static const Bit32u BX_POLY_RISCV_X86_ESCAPE = 0x0000000b;
-static const Bit32u BX_POLY_RISCV_AARCH64_SWITCH = 0x0000002b;
-static const Bit32u BX_POLY_RISCV_AARCH64_CALL = 0x0000005b;
-static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 = 0x0000107b;
-static const Bit32u BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32 = 0x0000207b;
-static const Bit32u BX_POLY_RISCV_AARCH64_CALL_FP64_STACK = 0x0000307b;
-static const Bit32u BX_POLY_RISCV_TRAP_RETURN = 0x0000407b;
-static const Bit32u BX_POLY_RISCV_AARCH64_CALL_VEC128_U32 = 0x0000507b;
+static inline Bit32u BX_POLY_AARCH64_CTRL(Bit32u subop)
+{
+  return 0xd503201fU | ((subop & 0x7fU) << 5);
+}
+
+static inline Bit32u BX_POLY_RISCV_CTRL(Bit32u subop)
+{
+  return 0x0000000bU | ((subop & 0x7fU) << 25);
+}
+
+static const Bit32u BX_POLY_AARCH64_CTRL_X86_ESCAPE = BX_POLY_AARCH64_CTRL(0x70);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_SWITCH = BX_POLY_AARCH64_CTRL(0x71);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL = BX_POLY_AARCH64_CTRL(0x72);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_U32_F32 = BX_POLY_AARCH64_CTRL(0x73);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_F32_U32 = BX_POLY_AARCH64_CTRL(0x74);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK = BX_POLY_AARCH64_CTRL(0x75);
+static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_RETURN = BX_POLY_AARCH64_CTRL(0x76);
+static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32 = BX_POLY_AARCH64_CTRL(0x77);
+static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32 = BX_POLY_RISCV_CTRL(3);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_F32_U32 = BX_POLY_RISCV_CTRL(4);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK = BX_POLY_RISCV_CTRL(5);
+static const Bit32u BX_POLY_RISCV_CTRL_TRAP_RETURN = BX_POLY_RISCV_CTRL(6);
+static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32 = BX_POLY_RISCV_CTRL(7);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000009;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -5941,33 +5951,33 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_X86_ESCAPE << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_X86_ESCAPE) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_clear_cross_return_stack();
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: aarch64 brk #0x%x escape to x86", BX_POLY_AARCH64_BRK_X86_ESCAPE));
+    BX_INFO(("poly_raw: aarch64 polyctrl escape to x86"));
     return true;
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_TRAP_RETURN << 5))) {
-    BX_INFO(("poly_raw: aarch64 brk #0x%x trap return", BX_POLY_AARCH64_BRK_TRAP_RETURN));
+  if (insn == BX_POLY_AARCH64_CTRL_TRAP_RETURN) {
+    BX_INFO(("poly_raw: aarch64 polyctrl trap return"));
     return return_poly_architectural_trap();
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_SWITCH << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_RISCV_SWITCH) {
     bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: aarch64 brk #0x%x switch to riscv", BX_POLY_AARCH64_BRK_RISCV_SWITCH));
+    BX_INFO(("poly_raw: aarch64 polyctrl switch to riscv"));
     return true;
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_aarch64_reg(16, &target) ||
@@ -5978,15 +5988,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       BX_POLY_CROSS_BRIDGE_DEFAULT);
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 << 5)) ||
-      insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_F32_U32 << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_U32_F32 ||
+      insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_F32_U32) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_aarch64_reg(16, &target) ||
         !read_poly_aarch64_reg(17, &return_rip))
       return false;
     Bit32u bridge_kind =
-      insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_COMPACT_U32_F32 << 5)) ?
+      insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_U32_F32 ?
       BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 :
       BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
@@ -5994,7 +6004,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bridge_kind);
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_FP64_STACK << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_aarch64_reg(16, &target) ||
@@ -6005,7 +6015,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       BX_POLY_CROSS_BRIDGE_FP64_STACK);
   }
 
-  if (insn == (0xd4200000 | (BX_POLY_AARCH64_BRK_RISCV_CALL_VEC128_U32 << 5))) {
+  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_aarch64_reg(16, &target) ||
@@ -6892,33 +6902,33 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     }
   }
 
-  if (insn == BX_POLY_RISCV_X86_ESCAPE) {
+  if (insn == BX_POLY_RISCV_CTRL_X86_ESCAPE) {
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_clear_cross_return_stack();
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: riscv custom-0 escape to x86"));
+    BX_INFO(("poly_raw: riscv polyctrl escape to x86"));
     return true;
   }
 
-  if (insn == BX_POLY_RISCV_TRAP_RETURN) {
-    BX_INFO(("poly_raw: riscv custom trap return"));
+  if (insn == BX_POLY_RISCV_CTRL_TRAP_RETURN) {
+    BX_INFO(("poly_raw: riscv polyctrl trap return"));
     return return_poly_architectural_trap();
   }
 
-  if (insn == BX_POLY_RISCV_AARCH64_SWITCH) {
+  if (insn == BX_POLY_RISCV_CTRL_AARCH64_SWITCH) {
     bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: riscv custom-1 switch to aarch64"));
+    BX_INFO(("poly_raw: riscv polyctrl switch to aarch64"));
     return true;
   }
 
-  if (insn == BX_POLY_RISCV_AARCH64_CALL) {
+  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_riscv_reg(5, &target) ||
@@ -6929,15 +6939,15 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       BX_POLY_CROSS_BRIDGE_DEFAULT);
   }
 
-  if (insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 ||
-      insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32) {
+  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32 ||
+      insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_F32_U32) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_riscv_reg(5, &target) ||
         !read_poly_riscv_reg(6, &return_rip))
       return false;
     Bit32u bridge_kind =
-      insn == BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32 ?
+      insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32 ?
       BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 :
       BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
@@ -6945,7 +6955,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       bridge_kind);
   }
 
-  if (insn == BX_POLY_RISCV_AARCH64_CALL_FP64_STACK) {
+  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_riscv_reg(5, &target) ||
@@ -6956,7 +6966,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       BX_POLY_CROSS_BRIDGE_FP64_STACK);
   }
 
-  if (insn == BX_POLY_RISCV_AARCH64_CALL_VEC128_U32) {
+  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
     if (!read_poly_riscv_reg(5, &target) ||
@@ -9446,17 +9456,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   }
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 2) {
     if (ECX == 0) {
-      RAX = BX_POLY_AARCH64_BRK_X86_ESCAPE |
-            (BX_POLY_AARCH64_BRK_RISCV_SWITCH << 16);
-      RBX = BX_POLY_AARCH64_BRK_RISCV_CALL;
-      RCX = BX_POLY_RISCV_X86_ESCAPE;
-      RDX = BX_POLY_RISCV_AARCH64_SWITCH;
+      RAX = BX_POLY_AARCH64_CTRL_X86_ESCAPE;
+      RBX = BX_POLY_AARCH64_CTRL_RISCV_SWITCH;
+      RCX = BX_POLY_RISCV_CTRL_X86_ESCAPE;
+      RDX = BX_POLY_RISCV_CTRL_AARCH64_SWITCH;
     }
     else if (ECX == 1) {
-      RAX = BX_POLY_RISCV_AARCH64_CALL;
-      RBX = BX_POLY_RISCV_AARCH64_CALL_COMPACT_U32_F32;
-      RCX = BX_POLY_RISCV_AARCH64_CALL_COMPACT_F32_U32;
-      RDX = 0;
+      RAX = BX_POLY_AARCH64_CTRL_RISCV_CALL;
+      RBX = BX_POLY_RISCV_CTRL_AARCH64_CALL;
+      RCX = BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_U32_F32;
+      RDX = BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32;
     }
     else if (ECX == 2) {
       RAX = BX_POLY_IMPORT_FUNC_X86_SLOT0;
@@ -9465,16 +9474,16 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
     }
     else if (ECX == 3) {
-      RAX = BX_POLY_AARCH64_BRK_RISCV_CALL_FP64_STACK;
-      RBX = BX_POLY_RISCV_AARCH64_CALL_FP64_STACK;
-      RCX = BX_POLY_AARCH64_BRK_RISCV_CALL_VEC128_U32;
-      RDX = BX_POLY_RISCV_AARCH64_CALL_VEC128_U32;
+      RAX = BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_F32_U32;
+      RBX = BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_F32_U32;
+      RCX = BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK;
+      RDX = BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK;
     }
     else if (ECX == 4) {
-      RAX = BX_POLY_AARCH64_BRK_TRAP_RETURN;
-      RBX = BX_POLY_RISCV_TRAP_RETURN;
-      RCX = 0x63; // x86 POLY trap-vector mode set opcode
-      RDX = 0x64; // x86 POLY trap-vector mode get opcode
+      RAX = BX_POLY_AARCH64_CTRL_TRAP_RETURN;
+      RBX = BX_POLY_RISCV_CTRL_TRAP_RETURN;
+      RCX = BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32;
+      RDX = BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32;
     }
     else if (ECX == 5) {
       RAX = BX_POLY_IMPORT_CALL_COUNT;
