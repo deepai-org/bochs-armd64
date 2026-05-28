@@ -9050,6 +9050,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         else {
           bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
         }
+        bx_poly_foreign_tls_base = (bx_address) R13;
+        if (op == 0x02 && !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
+          return false;
         bx_poly_mode_switch_count++;
         // A frontend switch changes the decoder, not the architectural thread
         // state. New per-thread banks are zero-initialized when allocated; an
