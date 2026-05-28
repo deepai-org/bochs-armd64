@@ -1026,13 +1026,13 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u
 
 static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selector,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
-  Bit64u arg3, Bit64u arg4, Bit64u arg5)
+  Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
   bx_poly_last_syscall_mode = mode;
   bx_poly_last_syscall_number = number;
   bx_poly_foreign_syscall_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_SYSCALL, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, 0, 0);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
@@ -6341,18 +6341,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0xffe0001f) == 0xd4000001) {
     Bit32u syscall_id = (insn >> 5) & 0xffff;
-    Bit64u syscall_value = 0, arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0;
+    Bit64u syscall_value = 0, arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0, arg6 = 0, arg7 = 0;
     if (!read_poly_aarch64_reg(8, &syscall_value) ||
         !read_poly_aarch64_reg(0, &arg0) ||
         !read_poly_aarch64_reg(1, &arg1) ||
         !read_poly_aarch64_reg(2, &arg2) ||
         !read_poly_aarch64_reg(3, &arg3) ||
         !read_poly_aarch64_reg(4, &arg4) ||
-        !read_poly_aarch64_reg(5, &arg5))
+        !read_poly_aarch64_reg(5, &arg5) ||
+        !read_poly_aarch64_reg(6, &arg6) ||
+        !read_poly_aarch64_reg(7, &arg7))
       return false;
     Bit32u syscall_reg = (Bit32u) syscall_value;
     return handle_poly_foreign_syscall("aarch64", "svc", syscall_reg,
-      syscall_id, arg0, arg1, arg2, arg3, arg4, arg5, next_rip);
+      syscall_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
   if ((insn & 0xffe0001f) == 0xd4200000) {
@@ -7650,18 +7652,20 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   }
 
   if (insn == 0x00000073) {
-    Bit64u syscall_value = 0, arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0;
+    Bit64u syscall_value = 0, arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0, arg6 = 0, arg7 = 0;
     if (!read_poly_riscv_reg(17, &syscall_value) ||
         !read_poly_riscv_reg(10, &arg0) ||
         !read_poly_riscv_reg(11, &arg1) ||
         !read_poly_riscv_reg(12, &arg2) ||
         !read_poly_riscv_reg(13, &arg3) ||
         !read_poly_riscv_reg(14, &arg4) ||
-        !read_poly_riscv_reg(15, &arg5))
+        !read_poly_riscv_reg(15, &arg5) ||
+        !read_poly_riscv_reg(16, &arg6) ||
+        !read_poly_riscv_reg(17, &arg7))
       return false;
     Bit32u syscall_number = (Bit32u) syscall_value;
     return handle_poly_foreign_syscall("riscv", "ecall", syscall_number, 0,
-      arg0, arg1, arg2, arg3, arg4, arg5, next_rip);
+      arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
   if (insn == 0x00100073) {
@@ -8424,12 +8428,13 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
 
 bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
   Bit32u syscall_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
-  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, bx_address next_rip)
+  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6,
+  Bit64u arg7, bx_address next_rip)
 {
   // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
   // the architectural trap path. Linux syscall translation is guest policy.
   bx_poly_record_syscall_trap(bx_poly_current_mode, syscall_number, trap_selector,
-    RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5);
+    RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
