@@ -3598,6 +3598,99 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   return true;
 }
 
+bool BX_CPU_C::handle_poly_x86_ret_cookie(bx_address target_rip)
+{
+  if (target_rip != (bx_address) BX_POLY_RETURN_COOKIE)
+    return false;
+
+  return return_poly_import_x86_call();
+}
+
+bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
+  bx_address return_rip)
+{
+  if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
+    return false;
+
+  Bit64u arg0 = 0, arg1 = 0, arg2 = 0, arg3 = 0, arg4 = 0, arg5 = 0;
+  bool mapped = false;
+  if (mode == BX_POLY_MODE_RAW_AARCH64) {
+    mapped = read_poly_aarch64_reg(0, &arg0) &&
+      read_poly_aarch64_reg(1, &arg1) &&
+      read_poly_aarch64_reg(2, &arg2) &&
+      read_poly_aarch64_reg(3, &arg3) &&
+      read_poly_aarch64_reg(4, &arg4) &&
+      read_poly_aarch64_reg(5, &arg5);
+  }
+  else if (mode == BX_POLY_MODE_RAW_RISCV) {
+    mapped = read_poly_riscv_reg(10, &arg0) &&
+      read_poly_riscv_reg(11, &arg1) &&
+      read_poly_riscv_reg(12, &arg2) &&
+      read_poly_riscv_reg(13, &arg3) &&
+      read_poly_riscv_reg(14, &arg4) &&
+      read_poly_riscv_reg(15, &arg5);
+  }
+
+  if (!mapped)
+    return false;
+
+  bx_address foreign_rsp = RSP;
+  bx_address x86_stack_base = bx_poly_return_cookie_valid ?
+    bx_poly_return_cookie_rsp : RSP;
+  bx_address x86_stack_bytes = 16;
+  if (x86_stack_base < x86_stack_bytes)
+    return false;
+
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(foreign_rsp));
+  if (bx_poly_import_x86_return_top >= BX_POLY_IMPORT_RETURN_DEPTH)
+    return false;
+
+  bx_poly_import_x86_return_frame_t *frame =
+    &bx_poly_import_x86_return_stack[bx_poly_import_x86_return_top++];
+  frame->mode = mode;
+  frame->rip = return_rip;
+  frame->rsp = foreign_rsp;
+  frame->import_id = BX_CONST64(0xffffffffffffffff);
+  frame->descriptor_flags = 0;
+  frame->alias_valid = true;
+  frame->alias[0] = RDI;
+  frame->alias[1] = RSI;
+  frame->alias[2] = RDX;
+  frame->alias[3] = RCX;
+  frame->alias[4] = R8;
+  frame->alias[5] = R9;
+
+  RDI = arg0;
+  RSI = arg1;
+  RDX = arg2;
+  RCX = arg3;
+  R8 = arg4;
+  R9 = arg5;
+
+  bx_address x86_rsp = x86_stack_base - x86_stack_bytes;
+  write_virtual_qword(BX_SEG_REG_SS, x86_rsp,
+    (Bit64u) BX_POLY_RETURN_COOKIE);
+
+  BX_INFO(("poly_raw: direct x86 call mode=%u target=%llx stack=%llx arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu return=%llx",
+    mode, (unsigned long long) target_rip, (unsigned long long) x86_rsp,
+    (unsigned long long) arg0, (unsigned long long) arg1,
+    (unsigned long long) arg2, (unsigned long long) arg3,
+    (unsigned long long) arg4, (unsigned long long) arg5,
+    (unsigned long long) return_rip));
+
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
+  RIP = target_rip;
+  RSP = x86_rsp;
+  bx_poly_mode_switch_count++;
+  BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
+  return true;
+}
+
 void BX_CPU_C::poly_interrupt_enter(void)
 {
   if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
@@ -6081,7 +6174,10 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
     }
     if (target_mode == BX_POLY_MODE_X86) {
-      return handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+            (bx_address) target, (bx_address) return_rip))
+        return true;
+      return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
         (bx_address) target, (bx_address) return_rip);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
@@ -7088,7 +7184,10 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     }
     if (target_mode == BX_POLY_MODE_X86) {
-      return handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+            (bx_address) target, (bx_address) return_rip))
+        return true;
+      return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,

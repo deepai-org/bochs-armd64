@@ -60,6 +60,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::RETnear64_Iw(bxInstruction_c *i)
   }
 #endif
 
+  if (handle_poly_x86_ret_cookie((bx_address) return_RIP)) {
+    RSP_COMMIT;
+    BX_INSTR_UCNEAR_BRANCH(BX_CPU_ID, BX_INSTR_IS_RET, PREV_RIP, RIP);
+    BX_NEXT_TRACE(i);
+  }
+
   if (! IsCanonical(return_RIP)) {
     BX_ERROR(("%s: canonical RIP violation", i->getIaOpcodeNameShort()));
     exception(BX_GP_EXCEPTION, 0);
