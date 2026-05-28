@@ -174,6 +174,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_STATE_KEY = (1U << 26);
 static const Bit32u BX_POLY_CPUID_FEATURE_VEC128_BRIDGE = (1U << 27);
 static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET = (1U << 28);
 static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA32_RET = (1U << 29);
+static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA_ARGS = (1U << 30);
 static const Bit32u BX_POLY_CPUID_STATE_OVERLAP_GPRS = (1U << 0);
 static const Bit32u BX_POLY_CPUID_STATE_SYNTHETIC_BANKS = (1U << 1);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_CR3 = (1U << 2);
@@ -306,7 +307,11 @@ enum {
   BX_POLY_ARG_KIND_COMPACT_U32_F32 = 6,
   BX_POLY_ARG_KIND_COMPACT_F32_U32 = 7,
   BX_POLY_ARG_KIND_FP64_STACK = 8,
-  BX_POLY_ARG_KIND_VEC128_U32 = 9
+  BX_POLY_ARG_KIND_VEC128_U32 = 9,
+  BX_POLY_ARG_KIND_AARCH64_HFA3_F64 = 10,
+  BX_POLY_ARG_KIND_AARCH64_HFA4_F64 = 11,
+  BX_POLY_ARG_KIND_AARCH64_HFA3_F32 = 12,
+  BX_POLY_ARG_KIND_AARCH64_HFA4_F32 = 13
 };
 
 enum {
@@ -2614,6 +2619,29 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       mapped =
         write_poly_aarch64_fp128_reg(0, fp_args[0], fp_args_hi[0]) &&
         write_poly_aarch64_fp128_reg(1, fp_args[1], fp_args_hi[1]);
+    }
+    else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F64 ||
+        arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)) {
+      mapped =
+        write_poly_aarch64_fp64_reg(0,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8)) &&
+        write_poly_aarch64_fp64_reg(1,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 16)) &&
+        write_poly_aarch64_fp64_reg(2,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 24));
+      if (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)
+        mapped = mapped && write_poly_aarch64_fp64_reg(3,
+          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 32));
+    }
+    else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F32 ||
+        arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32)) {
+      mapped =
+        write_poly_aarch64_fp32_reg(0, (Bit32u) fp_args[0]) &&
+        write_poly_aarch64_fp32_reg(1, (Bit32u) (fp_args[0] >> 32)) &&
+        write_poly_aarch64_fp32_reg(2, (Bit32u) fp_args[1]);
+      if (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32)
+        mapped = mapped &&
+          write_poly_aarch64_fp32_reg(3, (Bit32u) (fp_args[1] >> 32));
     }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
@@ -8691,6 +8719,22 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_AARCH64_HFA4_F32, BX_POLY_ARG_KIND_DEFAULT);
+      if (op == 0x27)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA3_F64);
+      if (op == 0x28)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA4_F64);
+      if (op == 0x29)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA3_F32);
+      if (op == 0x2a)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA4_F32);
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
@@ -8962,7 +9006,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_STATE_KEY |
           BX_POLY_CPUID_FEATURE_VEC128_BRIDGE |
           BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET |
-          BX_POLY_CPUID_FEATURE_AARCH64_HFA32_RET;
+          BX_POLY_CPUID_FEATURE_AARCH64_HFA32_RET |
+          BX_POLY_CPUID_FEATURE_AARCH64_HFA_ARGS;
     RAX = 1; // poly CPUID ABI version
     RBX = (1U << BX_POLY_MODE_X86) |
           (1U << BX_POLY_MODE_RAW_AARCH64) |
