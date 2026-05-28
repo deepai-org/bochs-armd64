@@ -262,6 +262,8 @@ void bx_cpuid_t::get_std_cpuid_xsave_leaf(Bit32u subfunction, cpuid_function_t *
       // ECX[1] - set to indicate this component must be aligned to 64-byte
       // ECX[2] - XFD support for this component
       leaf->ecx = (cpu->ia32_xss_suppmask & (1 << subfunction)) != 0;
+      if (subfunction == xcr0_t::BX_XCR0_POLY_BIT)
+        leaf->ecx |= (1 << 1);
       leaf->edx = 0;
     }
   }

@@ -1377,6 +1377,51 @@ static void bx_poly_reset_import_x86_return_frame(
     frame->alias[n] = 0;
 }
 
+static void bx_poly_reset_current_xstate(void)
+{
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_clear_return_cookie();
+  bx_poly_return_cookie_top = 0;
+  for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
+    bx_poly_reset_return_cookie_frame(&bx_poly_return_cookie_stack[n]);
+  bx_poly_clear_cross_return_stack();
+  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
+    bx_poly_cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
+    bx_poly_cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
+    bx_poly_cross_return_stack[n].bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    bx_poly_cross_return_stack[n].return_rip = 0;
+    bx_poly_cross_return_stack[n].return_rsp = 0;
+    bx_poly_cross_return_stack[n].flags = 0;
+  }
+  bx_poly_clear_import_x86_return_stack();
+  for (unsigned n = 0; n < BX_POLY_IMPORT_RETURN_DEPTH; n++)
+    bx_poly_reset_import_x86_return_frame(&bx_poly_import_x86_return_stack[n]);
+  bx_poly_interrupted_raw_valid = false;
+  bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
+  bx_poly_interrupted_raw_rip = 0;
+  bx_poly_foreign_tls_base = 0;
+  bx_poly_trap_vector = 0;
+  bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
+  bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
+  bx_poly_last_syscall_number = 0;
+  bx_poly_last_break_mode = BX_POLY_MODE_X86;
+  bx_poly_last_break_number = 0;
+  bx_poly_last_trap.reason = BX_POLY_TRAP_NONE;
+  bx_poly_last_trap.mode = BX_POLY_MODE_X86;
+  bx_poly_last_trap.number = 0;
+  bx_poly_last_trap.selector = 0;
+  bx_poly_last_trap.pc = 0;
+  bx_poly_last_trap.next_pc = 0;
+  for (unsigned n = 0; n < 8; n++)
+    bx_poly_last_trap.args[n] = 0;
+  bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
+  bx_poly_reset_aarch64_regs();
+  bx_poly_reset_riscv_regs();
+  bx_poly_riscv_reservation_valid = false;
+  bx_poly_riscv_reservation_addr = 0;
+  bx_poly_riscv_reservation_size = 0;
+}
+
 static void bx_poly_update_raw_owner(bx_address cr3, bx_address fsbase,
   bx_address stack_key)
 {
@@ -1677,6 +1722,7 @@ static Bit32u bx_poly_state_contract_flags(void)
     BX_POLY_CPUID_STATE_KEY_STACK_REGION |
     BX_POLY_CPUID_STATE_USER_RETURN_RESTORE |
     BX_POLY_CPUID_STATE_X86_TSO |
+    BX_POLY_CPUID_STATE_XSAVE_VISIBLE |
     BX_POLY_CPUID_STATE_KEY_EXPLICIT |
     BX_POLY_CPUID_STATE_TRANSITION_FRAME_32 |
     BX_POLY_CPUID_STATE_EXPLICIT_SAVE_RESTORE |
@@ -2293,6 +2339,33 @@ bool BX_CPU_C::import_poly_xsave_state(bx_address base)
   bx_poly_riscv_reservation_valid = bx_poly_riscv_reservation_size != 0;
 
   return true;
+}
+
+bool BX_CPU_C::xsave_poly_state_xinuse(void)
+{
+  return BX_CPU_THIS_PTR poly_feature_enabled;
+}
+
+void BX_CPU_C::xsave_poly_state(bxInstruction_c *i, bx_address offset)
+{
+  (void) i;
+  export_poly_xsave_state(offset);
+}
+
+void BX_CPU_C::xrstor_poly_state(bxInstruction_c *i, bx_address offset)
+{
+  (void) i;
+  if (!import_poly_xsave_state(offset))
+    exception(BX_GP_EXCEPTION, 0);
+}
+
+void BX_CPU_C::xrstor_init_poly_state(void)
+{
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
+  bx_poly_reset_current_xstate();
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
 }
 
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
@@ -8410,7 +8483,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           (1U << BX_POLY_MODE_RAW_AARCH64) |
           (1U << BX_POLY_MODE_RAW_RISCV);
     RCX = feature_mask;
-    RDX = 0; // no architectural XSAVE component is exposed yet
+    RDX = BX_POLY_STATE_XSAVE_COMPONENT_ARCH;
     BX_NEXT_INSTR(i);
     return;
   }
@@ -8464,8 +8537,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 3) {
     RAX = bx_poly_state_contract_flags();
     RBX = BX_POLY_STATE_STACK_KEY_SHIFT;
-    RCX = 0; // no XCR0 component is assigned in this Bochs prototype
-    RDX = 0; // no XSAVE byte area is exposed in this Bochs prototype
+    RCX = BX_POLY_STATE_XSAVE_COMPONENT_ARCH;
+    RDX = BX_POLY_STATE_XSAVE_BYTES_ARCH;
     BX_NEXT_INSTR(i);
     return;
   }

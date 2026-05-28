@@ -1886,6 +1886,14 @@ void BX_CPU_C::xsave_xrestor_init(void)
 #endif
 
   // XCR0[19]: APX state (not implemented)
+
+  // XCR0[20]: Polyglot foreign frontend state
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].len    = XSAVE_POLY_STATE_LEN;
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].offset = XSAVE_POLY_STATE_OFFSET;
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].xstate_in_use_method = &BX_CPU_C::xsave_poly_state_xinuse;
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].xsave_method = &BX_CPU_C::xsave_poly_state;
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].xrstor_method = &BX_CPU_C::xrstor_poly_state;
+  xsave_restore[xcr0_t::BX_XCR0_POLY_BIT].xrstor_init_method = &BX_CPU_C::xrstor_init_poly_state;
 }
 
 #if BX_CPU_LEVEL >= 5
@@ -1936,6 +1944,8 @@ Bit32u BX_CPU_C::get_xcr0_allow_mask(void)
   if (BX_CPUID_SUPPORT_ISA_EXTENSION(BX_ISA_AMX))
     allowMask |= BX_XCR0_XTILE_BITS_MASK;
 #endif
+  if (BX_CPU_THIS_PTR poly_feature_enabled)
+    allowMask |= BX_XCR0_POLY_MASK;
   return allowMask;
 }
 
