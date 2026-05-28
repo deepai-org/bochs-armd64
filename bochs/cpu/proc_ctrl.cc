@@ -152,6 +152,7 @@ static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK = BX_POLY_AARCH64
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_RETURN = BX_POLY_AARCH64_CTRL(0x76);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32 = BX_POLY_AARCH64_CTRL(0x77);
 static const Bit32u BX_POLY_AARCH64_CTRL_SWITCH_MODE = BX_POLY_AARCH64_CTRL(0x78);
+static const Bit32u BX_POLY_AARCH64_CTRL_CALL_MODE = BX_POLY_AARCH64_CTRL(0x79);
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
@@ -161,6 +162,7 @@ static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK = BX_POLY_RISCV_C
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_RETURN = BX_POLY_RISCV_CTRL(6);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32 = BX_POLY_RISCV_CTRL(7);
 static const Bit32u BX_POLY_RISCV_CTRL_SWITCH_MODE = BX_POLY_RISCV_CTRL(8);
+static const Bit32u BX_POLY_RISCV_CTRL_CALL_MODE = BX_POLY_RISCV_CTRL(9);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000009;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -6042,6 +6044,28 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == BX_POLY_AARCH64_CTRL_CALL_MODE) {
+    Bit64u target = 0;
+    Bit64u frontend = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_aarch64_reg(16, &target) ||
+        !read_poly_aarch64_reg(17, &frontend) ||
+        !read_poly_aarch64_reg(18, &return_rip))
+      return false;
+    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u target_mode = BX_POLY_MODE_X86;
+    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+        target_mode == BX_POLY_MODE_X86 ||
+        target_mode == BX_POLY_MODE_RAW_AARCH64) {
+      BX_INFO(("poly_raw: reject aarch64 generic call frontend=%u mode=%u",
+        frontend_id, target_mode));
+      return false;
+    }
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
+      (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
@@ -7022,6 +7046,28 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     BX_INFO(("poly_raw: riscv generic switch frontend=%u mode=%u target=%llx",
       frontend_id, target_mode, (unsigned long long) target));
     return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_CALL_MODE) {
+    Bit64u target = 0;
+    Bit64u frontend = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_riscv_reg(5, &target) ||
+        !read_poly_riscv_reg(6, &frontend) ||
+        !read_poly_riscv_reg(7, &return_rip))
+      return false;
+    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u target_mode = BX_POLY_MODE_X86;
+    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+        target_mode == BX_POLY_MODE_X86 ||
+        target_mode == BX_POLY_MODE_RAW_RISCV) {
+      BX_INFO(("poly_raw: reject riscv generic call frontend=%u mode=%u",
+        frontend_id, target_mode));
+      return false;
+    }
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
+      (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
   }
 
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL) {
@@ -9708,8 +9754,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 6) {
       RAX = BX_POLY_AARCH64_CTRL_SWITCH_MODE;
       RBX = BX_POLY_RISCV_CTRL_SWITCH_MODE;
-      RCX = 0;
-      RDX = 0;
+      RCX = BX_POLY_AARCH64_CTRL_CALL_MODE;
+      RDX = BX_POLY_RISCV_CTRL_CALL_MODE;
     }
     else if (ECX == 7) {
       RAX = BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE;
