@@ -538,7 +538,6 @@ static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
 static bx_address bx_poly_foreign_tls_base = 0;
-static bx_address bx_poly_explicit_state_key = 0;
 static bx_address bx_poly_trap_vector = 0;
 static Bit32u bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
 static Bit64u bx_poly_aarch64_x[32];
@@ -608,7 +607,18 @@ struct bx_poly_reg_state_t {
   Bit32u riscv_reservation_size;
 };
 
+struct bx_poly_thread_key_state_t {
+  bool valid;
+  bx_address cr3;
+  bx_address fsbase;
+  bx_address stack_key;
+  Bit64u age;
+  bx_address explicit_state_key;
+};
+
 static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
+static bx_poly_thread_key_state_t
+  bx_poly_thread_key_states[BX_POLY_REG_STATE_SLOTS];
 static bool bx_poly_loaded_reg_state_valid = false;
 static bx_address bx_poly_loaded_reg_state_cr3 = 0;
 static bx_address bx_poly_loaded_reg_state_fsbase = 0;
@@ -1274,12 +1284,82 @@ static bool bx_poly_is_stack_region_key(bx_address stack_key)
   return (stack_key & BX_CONST64(0x7fffff)) == 0;
 }
 
-static bx_address bx_poly_current_state_key(bx_address rsp)
+static bx_address bx_poly_thread_selector_key(bx_address rsp)
 {
-  if (bx_poly_explicit_state_key != 0)
-    return bx_poly_explicit_state_key;
   return bx_poly_stack_key(rsp);
 }
+
+static bool bx_poly_thread_key_matches(const bx_poly_thread_key_state_t *state,
+  bx_address cr3, bx_address fsbase, bx_address stack_key)
+{
+  return state->valid && state->cr3 == cr3 && state->fsbase == fsbase &&
+    state->stack_key == stack_key;
+}
+
+static unsigned bx_poly_find_or_alloc_thread_key_state(bx_address cr3,
+  bx_address fsbase, bx_address stack_key)
+{
+  unsigned victim = 0;
+  Bit64u oldest_age = ~BX_CONST64(0);
+
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    if (bx_poly_thread_key_matches(&bx_poly_thread_key_states[n], cr3,
+          fsbase, stack_key))
+      return n;
+  }
+
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    if (!bx_poly_thread_key_states[n].valid) {
+      victim = n;
+      break;
+    }
+    if (bx_poly_thread_key_states[n].age < oldest_age) {
+      oldest_age = bx_poly_thread_key_states[n].age;
+      victim = n;
+    }
+  }
+
+  bx_poly_thread_key_states[victim].valid = true;
+  bx_poly_thread_key_states[victim].cr3 = cr3;
+  bx_poly_thread_key_states[victim].fsbase = fsbase;
+  bx_poly_thread_key_states[victim].stack_key = stack_key;
+  bx_poly_thread_key_states[victim].age = bx_poly_reg_state_age++;
+  bx_poly_thread_key_states[victim].explicit_state_key = 0;
+  return victim;
+}
+
+static bx_address bx_poly_explicit_state_key_for_thread(bx_address cr3,
+  bx_address fsbase, bx_address rsp)
+{
+  bx_address stack_key = bx_poly_thread_selector_key(rsp);
+  unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
+    stack_key);
+  bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
+  return bx_poly_thread_key_states[slot].explicit_state_key;
+}
+
+static void bx_poly_set_explicit_state_key_for_thread(bx_address cr3,
+  bx_address fsbase, bx_address rsp, bx_address explicit_state_key)
+{
+  bx_address stack_key = bx_poly_thread_selector_key(rsp);
+  unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
+    stack_key);
+  bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
+  bx_poly_thread_key_states[slot].explicit_state_key = explicit_state_key;
+}
+
+static bx_address bx_poly_current_state_key_for_thread(bx_address cr3,
+  bx_address fsbase, bx_address rsp)
+{
+  bx_address explicit_state_key =
+    bx_poly_explicit_state_key_for_thread(cr3, fsbase, rsp);
+  if (explicit_state_key != 0)
+    return explicit_state_key;
+  return bx_poly_stack_key(rsp);
+}
+
+#define bx_poly_current_state_key(rsp) \
+  bx_poly_current_state_key_for_thread(BX_CPU_THIS_PTR cr3, MSR_FSBASE, (rsp))
 
 static bool bx_poly_key_matches(const bx_poly_reg_state_t *state,
   bx_address cr3, bx_address fsbase, bx_address stack_key)
@@ -1420,6 +1500,14 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_riscv_reservation_valid = false;
   bx_poly_riscv_reservation_addr = 0;
   bx_poly_riscv_reservation_size = 0;
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    bx_poly_thread_key_states[n].valid = false;
+    bx_poly_thread_key_states[n].cr3 = 0;
+    bx_poly_thread_key_states[n].fsbase = 0;
+    bx_poly_thread_key_states[n].stack_key = 0;
+    bx_poly_thread_key_states[n].age = 0;
+    bx_poly_thread_key_states[n].explicit_state_key = 0;
+  }
 }
 
 static void bx_poly_update_raw_owner(bx_address cr3, bx_address fsbase,
@@ -8262,18 +8350,21 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x65) {
         bx_address old_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
-        bx_poly_explicit_state_key = (bx_address) RAX;
+        bx_poly_set_explicit_state_key_for_thread(BX_CPU_THIS_PTR cr3,
+          MSR_FSBASE, RSP, (bx_address) RAX);
         bx_address new_key = bx_poly_current_state_key(RSP);
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
         bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
         RIP = next_rip;
         BX_INFO(("poly_ud: state key set explicit=%llx effective=%llx",
-          (unsigned long long) bx_poly_explicit_state_key,
+          (unsigned long long) bx_poly_explicit_state_key_for_thread(
+            BX_CPU_THIS_PTR cr3, MSR_FSBASE, RSP),
           (unsigned long long) new_key));
         return true;
       }
       if (op == 0x66) {
-        RAX = bx_poly_explicit_state_key;
+        RAX = bx_poly_explicit_state_key_for_thread(BX_CPU_THIS_PTR cr3,
+          MSR_FSBASE, RSP);
         RIP = next_rip;
         BX_INFO(("poly_ud: state key get value=%llx",
           (unsigned long long) RAX));
