@@ -1037,13 +1037,13 @@ static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selec
 
 static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
-  Bit64u arg3, Bit64u arg4, Bit64u arg5)
+  Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
   bx_poly_last_break_mode = mode;
   bx_poly_last_break_number = number;
   bx_poly_foreign_break_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_BREAK, mode, number, selector,
-    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, 0, 0);
+    pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
 static void bx_poly_record_import_trap(Bit32u mode, Bit32u import_id,
@@ -8444,6 +8444,8 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
   Bit64u trap_arg3 = 0;
   Bit64u trap_arg4 = 0;
   Bit64u trap_arg5 = 0;
+  Bit64u trap_arg6 = 0;
+  Bit64u trap_arg7 = 0;
 
   if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
     if (!read_poly_aarch64_reg(0, &trap_arg0) ||
@@ -8451,7 +8453,9 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
         !read_poly_aarch64_reg(2, &trap_arg2) ||
         !read_poly_aarch64_reg(3, &trap_arg3) ||
         !read_poly_aarch64_reg(4, &trap_arg4) ||
-        !read_poly_aarch64_reg(5, &trap_arg5))
+        !read_poly_aarch64_reg(5, &trap_arg5) ||
+        !read_poly_aarch64_reg(6, &trap_arg6) ||
+        !read_poly_aarch64_reg(7, &trap_arg7))
       return false;
   }
   else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
@@ -8460,7 +8464,9 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
         !read_poly_riscv_reg(12, &trap_arg2) ||
         !read_poly_riscv_reg(13, &trap_arg3) ||
         !read_poly_riscv_reg(14, &trap_arg4) ||
-        !read_poly_riscv_reg(15, &trap_arg5))
+        !read_poly_riscv_reg(15, &trap_arg5) ||
+        !read_poly_riscv_reg(16, &trap_arg6) ||
+        !read_poly_riscv_reg(17, &trap_arg7))
       return false;
   }
 
@@ -8468,7 +8474,7 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
   // Runtime helper ids are guest policy, not CPU semantics.
   bx_poly_record_break_trap(bx_poly_current_mode, break_id, trap_selector,
     trap_pc, next_rip, trap_arg0, trap_arg1, trap_arg2, trap_arg3,
-    trap_arg4, trap_arg5);
+    trap_arg4, trap_arg5, trap_arg6, trap_arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
