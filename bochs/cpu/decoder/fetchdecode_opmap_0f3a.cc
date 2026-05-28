@@ -90,6 +90,7 @@ static const Bit64u BxOpcodeTable0F3ACC[] = { last_opcode(ATTR_SSE_NO_PREFIX, BX
 static const Bit64u BxOpcodeTable0F3ACE[] = { last_opcode(ATTR_SSE_PREFIX_66, BX_IA_GF2P8AFFINEQB_VdqWdqIb) };
 static const Bit64u BxOpcodeTable0F3ACF[] = { last_opcode(ATTR_SSE_PREFIX_66, BX_IA_GF2P8AFFINEINVQB_VdqWdqIb) };
 static const Bit64u BxOpcodeTable0F3ADF[] = { last_opcode(ATTR_SSE_PREFIX_66, BX_IA_AESKEYGENASSIST_VdqWdqIb) };
+static const Bit64u BxOpcodeTable0F3AFC[] = { last_opcode(0, BX_IA_POLYMODE) }; // Poly Control Opcode Page: 0F 3A FC <subop>
 
 /* ************************************************************************ */
 
@@ -347,7 +348,7 @@ const Bit64u *BxOpcodeTable0F3A[256] = {
   /* 0F 3A F9 */ BxOpcodeGroup_ERR,
   /* 0F 3A FA */ BxOpcodeGroup_ERR,
   /* 0F 3A FB */ BxOpcodeGroup_ERR,
-  /* 0F 3A FC */ BxOpcodeGroup_ERR,
+  /* 0F 3A FC */ BxOpcodeTable0F3AFC,
   /* 0F 3A FD */ BxOpcodeGroup_ERR,
   /* 0F 3A FE */ BxOpcodeGroup_ERR,
   /* 0F 3A FF */ BxOpcodeGroup_ERR

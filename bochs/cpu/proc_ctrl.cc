@@ -9025,6 +9025,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   Bit8u opcode0 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP);
   Bit8u opcode1 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 1);
   Bit8u opcode2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 2);
+  Bit8u opcode3 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 3);
   Bit8u opcode_m1 = 0;
   Bit8u opcode_m2 = 0;
   if (PREV_RIP > 0)
@@ -9032,11 +9033,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (PREV_RIP > 1)
     opcode_m2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP - 2);
 
-  BX_INFO(("poly_op: bytes=%02x %02x %02x prev=%02x prev2=%02x", opcode0, opcode1, opcode2, opcode_m1, opcode_m2));
+  BX_INFO(("poly_op: bytes=%02x %02x %02x %02x prev=%02x prev2=%02x",
+    opcode0, opcode1, opcode2, opcode3, opcode_m1, opcode_m2));
 
-  if (opcode0 == 0x0f && opcode1 == 0x24) {
-    Bit8u op = opcode2;
-    bx_address next_rip = PREV_RIP + 3;
+  if (opcode0 == 0x0f && opcode1 == 0x3a && opcode2 == 0xfc) {
+    Bit8u op = opcode3;
+    bx_address next_rip = PREV_RIP + 4;
       if (op == 0x00 || op == 0x01 || op == 0x02) {
         if (op == 0x00) {
           bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -9347,8 +9349,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       }
   }
 
-  BX_INFO(("poly_op: reject non-poly opcode bytes=%02x %02x %02x",
-    opcode0, opcode1, opcode2));
+  BX_INFO(("poly_op: reject non-poly opcode bytes=%02x %02x %02x %02x",
+    opcode0, opcode1, opcode2, opcode3));
   return false;
 }
 

@@ -1755,7 +1755,7 @@ static const Bit64u BxOpcodeTable0F23_64[] = { last_opcode(0, BX_IA_MOV_DqRq) };
 #endif
 
 // opcode 0F 24
-static const Bit64u BxOpcodeTable0F24[] = { last_opcode(0, BX_IA_POLYMODE) }; // Poly Control Opcode Page: 0F 24 <subop>
+static const Bit64u BxOpcodeTable0F24[] = { last_opcode(0, BX_IA_ERROR) }; // BX_IA_MOV_TdRd not implemented
 // opcode 0F 26
 static const Bit64u BxOpcodeTable0F26[] = { last_opcode(0, BX_IA_ERROR) }; // BX_IA_MOV_TdRd not implemented
 
