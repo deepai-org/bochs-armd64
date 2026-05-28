@@ -172,6 +172,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK = (1U << 24);
 static const Bit32u BX_POLY_CPUID_FEATURE_TRAP_VECTOR = (1U << 25);
 static const Bit32u BX_POLY_CPUID_FEATURE_STATE_KEY = (1U << 26);
 static const Bit32u BX_POLY_CPUID_FEATURE_VEC128_BRIDGE = (1U << 27);
+static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET = (1U << 28);
 static const Bit32u BX_POLY_CPUID_STATE_OVERLAP_GPRS = (1U << 0);
 static const Bit32u BX_POLY_CPUID_STATE_SYNTHETIC_BANKS = (1U << 1);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_CR3 = (1U << 2);
@@ -287,7 +288,9 @@ enum {
   BX_POLY_RETURN_KIND_HETERO_F32_U64 = 5,
   BX_POLY_RETURN_KIND_COMPACT_U32_F32 = 6,
   BX_POLY_RETURN_KIND_COMPACT_F32_U32 = 7,
-  BX_POLY_RETURN_KIND_VEC128_U32 = 8
+  BX_POLY_RETURN_KIND_VEC128_U32 = 8,
+  BX_POLY_RETURN_KIND_AARCH64_HFA3_F64 = 9,
+  BX_POLY_RETURN_KIND_AARCH64_HFA4_F64 = 10
 };
 
 enum {
@@ -2479,7 +2482,11 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   Bit64u args[8];
   Bit64u fp_args[8];
   Bit64u fp_args_hi[8];
-  bx_address sret_ptr = sret_call ? (bx_address) RDI : 0;
+  bool aarch64_hfa64_sret =
+    return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA3_F64 ||
+    return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64;
+  bx_address sret_ptr = (sret_call || aarch64_hfa64_sret) ?
+    (bx_address) RDI : 0;
   bx_address original_rsp = RSP;
   bx_address foreign_stack_anchor = RSP;
   if (bx_poly_import_x86_return_top != 0) {
@@ -2715,6 +2722,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   bool has_fpair32_result = false;
   Bit64u vec128_lo = 0, vec128_hi = 0;
   bool has_vec128_result = false;
+  Bit64u hfa64_result[4] = {};
+  bool has_hfa64_result = false;
   bool sret_call = bx_poly_return_cookie_sret;
   bx_address sret_ptr = bx_poly_return_cookie_sret_ptr;
   bx_address return_rsp = bx_poly_return_cookie_rsp;
@@ -2783,6 +2792,17 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       read_poly_riscv_reg(10, &vec128_lo) &&
       read_poly_riscv_reg(11, &vec128_hi);
   }
+  else if ((return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA3_F64 ||
+      return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64) &&
+      mode == BX_POLY_MODE_RAW_AARCH64) {
+    has_hfa64_result =
+      read_poly_aarch64_fp64_reg(0, &hfa64_result[0]) &&
+      read_poly_aarch64_fp64_reg(1, &hfa64_result[1]) &&
+      read_poly_aarch64_fp64_reg(2, &hfa64_result[2]);
+    if (return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64)
+      has_hfa64_result = has_hfa64_result &&
+        read_poly_aarch64_fp64_reg(3, &hfa64_result[3]);
+  }
   else if (mode == BX_POLY_MODE_RAW_AARCH64)
     has_second_result = read_poly_aarch64_reg(1, &second_result);
   else if (mode == BX_POLY_MODE_RAW_RISCV)
@@ -2795,6 +2815,14 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   RIP = return_rip;
   if (sret_call)
     RAX = sret_ptr;
+  else if (has_hfa64_result && sret_ptr != 0) {
+    write_virtual_qword(BX_SEG_REG_DS, sret_ptr, hfa64_result[0]);
+    write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 8, hfa64_result[1]);
+    write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 16, hfa64_result[2]);
+    if (return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64)
+      write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 24, hfa64_result[3]);
+    RAX = sret_ptr;
+  }
   else if (has_fpair32_result) {
     BX_WRITE_XMM_REG_LO_QWORD(0,
       ((Bit64u) fpair32_hi << 32) | (Bit64u) fpair32_lo);
@@ -8625,6 +8653,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32);
+      if (op == 0x23)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_AARCH64_HFA3_F64, BX_POLY_ARG_KIND_DEFAULT);
+      if (op == 0x24)
+        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
+          (bx_address) R10, (bx_address) R11, false,
+          BX_POLY_RETURN_KIND_AARCH64_HFA4_F64, BX_POLY_ARG_KIND_DEFAULT);
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
@@ -8894,7 +8930,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_NEUTRAL_FP64_STACK |
           BX_POLY_CPUID_FEATURE_TRAP_VECTOR |
           BX_POLY_CPUID_FEATURE_STATE_KEY |
-          BX_POLY_CPUID_FEATURE_VEC128_BRIDGE;
+          BX_POLY_CPUID_FEATURE_VEC128_BRIDGE |
+          BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET;
     RAX = 1; // poly CPUID ABI version
     RBX = (1U << BX_POLY_MODE_X86) |
           (1U << BX_POLY_MODE_RAW_AARCH64) |
