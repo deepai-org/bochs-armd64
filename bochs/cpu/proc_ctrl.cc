@@ -9087,6 +9087,31 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           op, target_mode));
         return true;
       }
+      if (op == 0x04) {
+        Bit32u target_mode = (Bit32u) R15;
+        bx_address target_rip = (bx_address) RBX;
+        if (!bx_poly_valid_frontend_mode(target_mode)) {
+          BX_INFO(("poly_ud: reject generic switch mode=%u", target_mode));
+          return false;
+        }
+        bx_poly_current_mode = target_mode;
+        if (target_mode == BX_POLY_MODE_X86)
+          bx_poly_clear_cross_return_stack();
+        bx_poly_foreign_tls_base = (bx_address) R13;
+        if (target_mode == BX_POLY_MODE_RAW_RISCV &&
+            !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
+          return false;
+        bx_poly_mode_switch_count++;
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+        RIP = target_rip;
+        BX_INFO(("poly_op: x86 poly opcode pswitch mode=%u target=%llx",
+          target_mode, (unsigned long long) target_rip));
+        return true;
+      }
       if (op == 0x10)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
