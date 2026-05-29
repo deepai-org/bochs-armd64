@@ -3746,6 +3746,9 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
     if (mapped && returns_i128)
       mapped = write_poly_riscv_reg(11, result_rdx);
   }
+  else if (return_mode == BX_POLY_MODE_X86) {
+    mapped = true;
+  }
 
   if (!mapped)
     return false;
@@ -3799,6 +3802,26 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_riscv_reg(10 + n, &args[n]);
+  }
+  else if (mode == BX_POLY_MODE_X86) {
+    if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE) {
+      args[0] = RAX;
+      args[1] = RDX;
+      args[2] = RCX;
+      args[3] = RDI;
+      args[4] = RSI;
+      args[5] = R8;
+      args[6] = R9;
+      args[7] = R10;
+    }
+    else {
+      args[0] = RDI;
+      args[1] = RSI;
+      args[2] = RDX;
+      args[3] = RCX;
+      args[4] = R8;
+      args[5] = R9;
+    }
   }
   else {
     mapped = false;
@@ -9978,9 +10001,26 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x2d) {
         Bit32u frontend_id = (Bit32u) R15;
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
-            !bx_poly_is_raw_mode(target_mode)) {
+        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
           BX_INFO(("poly_ud: reject generic pcall frontend=%u", frontend_id));
+          return false;
+        }
+        if (target_mode == BX_POLY_MODE_X86) {
+          bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+            bx_poly_current_state_key(RSP));
+          Bit32u signature_slot = (Bit32u) R12;
+          if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+            BX_INFO(("poly_ud: reject generic pcall signature slot=%u",
+              signature_slot));
+            return false;
+          }
+          Bit32u source_kind =
+            bx_poly_abi_signature_slots[signature_slot].kind;
+          return enter_poly_x86_direct_call(BX_POLY_MODE_X86,
+            (bx_address) RBX, (bx_address) R11, source_kind);
+        }
+        if (!bx_poly_is_raw_mode(target_mode)) {
+          BX_INFO(("poly_ud: reject generic pcall mode=%u", target_mode));
           return false;
         }
         return enter_poly_abi_signature_call(target_mode,
@@ -9992,8 +10032,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         Bit8u signature_slot = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP + 4);
         Bit32u frontend_id = (Bit32u) R15;
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
-            !bx_poly_is_raw_mode(target_mode)) {
+        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
           BX_INFO(("poly_ud: reject immediate pcall frontend=%u",
             frontend_id));
           return false;
@@ -10001,6 +10040,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
           BX_INFO(("poly_ud: reject immediate pcall signature slot=%u",
             signature_slot));
+          return false;
+        }
+        if (target_mode == BX_POLY_MODE_X86) {
+          bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+            bx_poly_current_state_key(RSP));
+          Bit32u source_kind =
+            bx_poly_abi_signature_slots[signature_slot].kind;
+          return enter_poly_x86_direct_call(BX_POLY_MODE_X86,
+            (bx_address) RBX, (bx_address) R11, source_kind);
+        }
+        if (!bx_poly_is_raw_mode(target_mode)) {
+          BX_INFO(("poly_ud: reject immediate pcall mode=%u", target_mode));
           return false;
         }
         return enter_poly_abi_signature_call(target_mode,
