@@ -412,10 +412,12 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32 = BX_CONST64(1)
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) << 7;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 200;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 201;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
-static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
+// Keep suspended x86 helper frames and active foreign frames from colliding
+// when libc helpers use deep stack frames beneath the x86 return cookie.
+static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x4000);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
 enum {
@@ -659,7 +661,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STRTOL = 196,
   BX_POLY_IMPORT_FUNC_STRTOUL = 197,
   BX_POLY_IMPORT_FUNC_STRTOLL = 198,
-  BX_POLY_IMPORT_FUNC_STRTOULL = 199
+  BX_POLY_IMPORT_FUNC_STRTOULL = 199,
+  BX_POLY_IMPORT_FUNC_SNPRINTF = 200
 };
 
 static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
@@ -3199,10 +3202,6 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       ~BX_CONST64(0xf));
   bx_address stack_copy_base = arg_kind == BX_POLY_ARG_KIND_FP64_STACK ?
     original_rsp + 8 : original_rsp + 24;
-  const bool register_only_source = !sret_call &&
-    arg_kind == BX_POLY_ARG_KIND_DEFAULT &&
-    bx_poly_register_only_abi_signature_kind(source_kind);
-
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject unknown ABI signature kind=%u", source_kind));
     return false;
@@ -3229,7 +3228,11 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     args[5] = R8;
     args[6] = R9;
     args[7] = R10;
-    stack_copy_base = original_rsp + 8;
+    // The exchange window already carries eight integer arguments. From an
+    // x86 SysV caller, the first source stack slot after those eight logical
+    // arguments is arg8, which lives at [rsp+24] because arg6 and arg7 are
+    // also on the x86 stack but mapped into R9/R10 before PCALL.
+    stack_copy_base = original_rsp + 24;
   }
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
@@ -3260,12 +3263,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
   }
 
-  if (!register_only_source) {
-    for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
-      Bit64u value = read_virtual_qword(BX_SEG_REG_SS,
-        stack_copy_base + n * 8);
-      write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
-    }
+  for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
+    Bit64u value = read_virtual_qword(BX_SEG_REG_SS,
+      stack_copy_base + n * 8);
+    write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
   }
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
@@ -4109,8 +4110,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   bx_address foreign_rsp = RSP;
   bx_address x86_stack_base = bx_poly_return_cookie_valid ?
     bx_poly_return_cookie_rsp : RSP;
-  bx_address x86_stack_bytes = 16;
-  if (x86_stack_base < x86_stack_bytes)
+  if (x86_stack_base < 24)
     return false;
 
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -4162,7 +4162,9 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     R9 = args[5];
   }
 
-  bx_address x86_rsp = x86_stack_base - x86_stack_bytes;
+  bx_address x86_rsp = ((x86_stack_base - 16) & ~BX_CONST64(0xf)) + 8;
+  if (x86_rsp + 8 > x86_stack_base)
+    return false;
   write_virtual_qword(BX_SEG_REG_SS, x86_rsp,
     (Bit64u) BX_POLY_RETURN_COOKIE);
 
