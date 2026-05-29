@@ -1588,6 +1588,27 @@ static const char *bx_poly_aarch64_barrier_name(Bit32u insn)
   return 0;
 }
 
+static const char *bx_poly_aarch64_hint_name(Bit32u insn)
+{
+  if ((insn & ~(0x7fU << 5)) != 0xd503201fU)
+    return 0;
+
+  Bit32u subop = (insn >> 5) & 0x7fU;
+  if (subop >= BX_POLY_AARCH64_CTRL_SUBOP_CALL_SIG_IMM_BASE)
+    return 0;
+
+  switch (subop) {
+  case 0x00: return "nop";
+  case 0x01: return "yield";
+  case 0x02: return "wfe";
+  case 0x03: return "wfi";
+  case 0x04: return "sev";
+  case 0x05: return "sevl";
+  case 0x22: return "bti";
+  default: return "hint";
+  }
+}
+
 static const char *bx_poly_riscv_fence_name(Bit32u insn)
 {
   if ((insn & 0x0000707f) == 0x0000000f)
@@ -4299,12 +4320,6 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 {
   bx_address next_rip = pc + 4;
 
-  if (insn == 0xd503201f) {
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 nop"));
-    return true;
-  }
-
   if (insn == 0xd503305f) {
     bx_poly_aarch64_reservation_valid = false;
     bx_poly_aarch64_reservation_addr = 0;
@@ -4312,6 +4327,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 clrex"));
     return true;
+  }
+
+  {
+    const char *hint_name = bx_poly_aarch64_hint_name(insn);
+    if (hint_name != 0) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s as no-op", hint_name));
+      return true;
+    }
   }
 
   if ((insn & 0xffffffe0) == 0xd53bd040) {
