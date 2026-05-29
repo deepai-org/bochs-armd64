@@ -241,7 +241,6 @@ static const Bit32u BX_POLY_CPUID_STATE_MONITOR_PACKET_XSAVE = (1U << 14);
 static const Bit32u BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE = (1U << 15);
 static const Bit32u BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE = (1U << 16);
 static const Bit32u BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE = (1U << 17);
-static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
 static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
@@ -10938,7 +10937,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   }
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 3) {
     RAX = bx_poly_state_contract_flags();
-    RBX = BX_POLY_STATE_STACK_KEY_SHIFT;
+    RBX = 0;
     RCX = BX_POLY_STATE_XSAVE_COMPONENT_ARCH;
     RDX = BX_POLY_STATE_XSAVE_BYTES_ARCH;
     BX_NEXT_INSTR(i);
