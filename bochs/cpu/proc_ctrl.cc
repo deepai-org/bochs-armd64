@@ -235,12 +235,13 @@ static const Bit32u BX_POLY_CPUID_STATE_IMPORT_RETURN_XSAVE = (1U << 12);
 static const Bit32u BX_POLY_CPUID_STATE_ABI_SIGNATURE_XSAVE = (1U << 13);
 static const Bit32u BX_POLY_CPUID_STATE_MONITOR_PACKET_XSAVE = (1U << 14);
 static const Bit32u BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE = (1U << 15);
+static const Bit32u BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE = (1U << 16);
 static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
 static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
 static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
-static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 6;
+static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 7;
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_XCR0_USER = (1U << 0);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED = (1U << 1);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME = (1U << 2);
@@ -250,6 +251,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_FLAG_IMPORT_RETURN = (1U << 5);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_ABI_SIGNATURES = (1U << 6);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET = (1U << 7);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN = (1U << 8);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS = (1U << 9);
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_OFFSET = 0x000;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET = 0x040;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET = 0x080;
@@ -278,6 +280,8 @@ static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET =
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET =
   BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET + 16;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES = 0x20;
+static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET = 0xea0;
+static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_BYTES = 0x40;
 static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
 static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
@@ -757,7 +761,8 @@ static unsigned bx_poly_import_x86_return_top = 0;
 static bool bx_poly_interrupted_raw_valid = false;
 static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
-static bx_address bx_poly_foreign_tls_base = 0;
+static bx_address bx_poly_aarch64_tls_base = 0;
+static bx_address bx_poly_riscv_tls_base = 0;
 static bx_address bx_poly_trap_vector = 0;
 static Bit32u bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
 static Bit64u bx_poly_aarch64_x[32];
@@ -804,7 +809,8 @@ struct bx_poly_reg_state_t {
   bool interrupted_raw_valid;
   Bit32u interrupted_raw_mode;
   bx_address interrupted_raw_rip;
-  bx_address foreign_tls_base;
+  bx_address aarch64_tls_base;
+  bx_address riscv_tls_base;
   bx_address trap_vector;
   Bit32u trap_vector_mode;
   bx_address monitor_packet_addr;
@@ -839,6 +845,42 @@ struct bx_poly_thread_key_state_t {
   Bit64u age;
   bx_address explicit_state_key;
 };
+
+static bx_address bx_poly_tls_base_for_mode(Bit32u mode)
+{
+  if (mode == BX_POLY_MODE_RAW_AARCH64)
+    return bx_poly_aarch64_tls_base;
+  if (mode == BX_POLY_MODE_RAW_RISCV)
+    return bx_poly_riscv_tls_base;
+  return 0;
+}
+
+static void bx_poly_set_tls_base_for_mode(Bit32u mode, bx_address value)
+{
+  if (mode == BX_POLY_MODE_RAW_AARCH64) {
+    bx_poly_aarch64_tls_base = value;
+    return;
+  }
+  if (mode == BX_POLY_MODE_RAW_RISCV) {
+    bx_poly_riscv_tls_base = value;
+    bx_poly_riscv_x[4] = value;
+    bx_poly_riscv_x_valid[4] = true;
+  }
+}
+
+static void bx_poly_capture_tls_base_for_mode(Bit32u mode)
+{
+  if (mode == BX_POLY_MODE_RAW_RISCV && bx_poly_riscv_x_valid[4])
+    bx_poly_riscv_tls_base = bx_poly_riscv_x[4];
+}
+
+static void bx_poly_prepare_tls_for_mode(Bit32u mode)
+{
+  if (mode == BX_POLY_MODE_RAW_RISCV) {
+    bx_poly_riscv_x[4] = bx_poly_riscv_tls_base;
+    bx_poly_riscv_x_valid[4] = true;
+  }
+}
 
 static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
 static bx_poly_thread_key_state_t
@@ -1728,7 +1770,8 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_interrupted_raw_valid = false;
   bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_interrupted_raw_rip = 0;
-  bx_poly_foreign_tls_base = 0;
+  bx_poly_aarch64_tls_base = 0;
+  bx_poly_riscv_tls_base = 0;
   bx_poly_trap_vector = 0;
   bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
   bx_poly_monitor_packet_addr = 0;
@@ -1842,7 +1885,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_valid = false;
   bx_poly_reg_states[victim].interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
-  bx_poly_reg_states[victim].foreign_tls_base = 0;
+  bx_poly_reg_states[victim].aarch64_tls_base = 0;
+  bx_poly_reg_states[victim].riscv_tls_base = 0;
   bx_poly_reg_states[victim].trap_vector =
     inherited_trap_vector_valid ? inherited_trap_vector : 0;
   bx_poly_reg_states[victim].trap_vector_mode =
@@ -1978,6 +2022,7 @@ static void bx_poly_restore_aliased_state(Bit32u mode)
 static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_address stack_key)
 {
+  bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
   bx_poly_snapshot_aliased_state(bx_poly_current_mode);
 
   unsigned slot = bx_poly_find_or_alloc_reg_state(cr3, fsbase, stack_key);
@@ -2000,7 +2045,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_valid = bx_poly_interrupted_raw_valid;
   bx_poly_reg_states[slot].interrupted_raw_mode = bx_poly_interrupted_raw_mode;
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
-  bx_poly_reg_states[slot].foreign_tls_base = bx_poly_foreign_tls_base;
+  bx_poly_reg_states[slot].aarch64_tls_base = bx_poly_aarch64_tls_base;
+  bx_poly_reg_states[slot].riscv_tls_base = bx_poly_riscv_tls_base;
   bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
   bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
   bx_poly_reg_states[slot].monitor_packet_addr = bx_poly_monitor_packet_addr;
@@ -2062,7 +2108,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_interrupted_raw_rip = bx_poly_reg_states[slot].interrupted_raw_rip;
   if (bx_poly_interrupted_raw_valid)
     bx_poly_current_mode = BX_POLY_MODE_X86;
-  bx_poly_foreign_tls_base = bx_poly_reg_states[slot].foreign_tls_base;
+  bx_poly_aarch64_tls_base = bx_poly_reg_states[slot].aarch64_tls_base;
+  bx_poly_riscv_tls_base = bx_poly_reg_states[slot].riscv_tls_base;
   bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
   bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
   bx_poly_monitor_packet_addr = bx_poly_reg_states[slot].monitor_packet_addr;
@@ -2097,6 +2144,7 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
     bx_poly_riscv_fp[n] = bx_poly_reg_states[slot].riscv_fp[n];
     bx_poly_riscv_fp_hi[n] = bx_poly_reg_states[slot].riscv_fp_hi[n];
   }
+  bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
   if (bx_poly_is_raw_mode(bx_poly_current_mode))
     bx_poly_restore_aliased_state(bx_poly_current_mode);
   bx_poly_update_raw_owner(cr3, fsbase, stack_key);
@@ -2144,7 +2192,8 @@ static Bit32u bx_poly_state_contract_flags(void)
     BX_POLY_CPUID_STATE_IMPORT_RETURN_XSAVE |
     BX_POLY_CPUID_STATE_ABI_SIGNATURE_XSAVE |
     BX_POLY_CPUID_STATE_MONITOR_PACKET_XSAVE |
-    BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE;
+    BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE |
+    BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE;
 }
 
 static Bit32u bx_poly_xsave_arch_flags(void)
@@ -2157,7 +2206,8 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_IMPORT_RETURN |
     BX_POLY_STATE_XSAVE_FLAG_ABI_SIGNATURES |
     BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET |
-    BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN;
+    BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN |
+    BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS;
 }
 
 static Bit64u bx_poly_trap_packet_flags(void)
@@ -2506,6 +2556,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
+  bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
 
   for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_BYTES_ARCH; offset += 8)
     write_virtual_qword(seg, base + offset, 0);
@@ -2522,7 +2573,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24,
     RIP);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 32,
-    bx_poly_foreign_tls_base);
+    bx_poly_tls_base_for_mode(bx_poly_current_mode));
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40,
     bx_poly_trap_vector);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48,
@@ -2664,6 +2715,15 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
       ((Bit64u) (Bit16u) frame->flags << 16));
   }
 
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET,
+    1);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 8,
+    bx_poly_current_mode);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 16,
+    bx_poly_aarch64_tls_base);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24,
+    bx_poly_riscv_tls_base);
+
   return true;
 }
 
@@ -2693,6 +2753,17 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     BX_POLY_CROSS_RETURN_DEPTH] = {};
   bx_poly_import_x86_return_frame_t
     import_return_frames[BX_POLY_IMPORT_RETURN_DEPTH] = {};
+  Bit64u tls_active_mode = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 8);
+  if (!bx_poly_valid_frontend_mode((Bit32u) tls_active_mode)) {
+    BX_INFO(("poly_state_import: reject TLS active mode=%llu",
+      (unsigned long long) tls_active_mode));
+    return false;
+  }
+  bx_address imported_aarch64_tls_base =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 16);
+  bx_address imported_riscv_tls_base =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24);
   for (unsigned n = 0; n < 32; n++) {
     aarch64_gpr[n] = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + n * 8);
@@ -2707,6 +2778,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     riscv_fp_hi[n] = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_RISCV_FP_OFFSET + n * 16 + 8);
   }
+  riscv_gpr[4] = imported_riscv_tls_base;
 
   Bit64u import_top64 = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET);
@@ -2802,8 +2874,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   bx_poly_current_mode = BX_POLY_MODE_X86;
-  bx_poly_foreign_tls_base =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 32);
+  bx_poly_aarch64_tls_base = imported_aarch64_tls_base;
+  bx_poly_riscv_tls_base = imported_riscv_tls_base;
   bx_poly_trap_vector =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
   bx_poly_trap_vector_mode = (Bit32u)
@@ -3102,7 +3174,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_poly_return_cookie_sret = sret_call;
   bx_poly_return_cookie_sret_ptr = sret_ptr;
   bx_poly_return_cookie_kind = return_kind;
-  bx_poly_foreign_tls_base = (bx_address) R13;
+  bx_poly_set_tls_base_for_mode(mode, (bx_address) R13);
   RSP = foreign_stack_rsp;
 
   bool mapped = false;
@@ -3194,7 +3266,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     // argument mapping, matching architectural register-file behavior.
     if (sret_call) {
       mapped =
-        write_poly_riscv_reg(4, bx_poly_foreign_tls_base) &&
+        write_poly_riscv_reg(4, bx_poly_riscv_tls_base) &&
         write_poly_riscv_reg(10, sret_ptr) &&
         write_poly_riscv_reg(11, args[0]) &&
         write_poly_riscv_reg(12, args[1]) &&
@@ -3207,7 +3279,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     }
     else {
       mapped =
-        write_poly_riscv_reg(4, bx_poly_foreign_tls_base) &&
+        write_poly_riscv_reg(4, bx_poly_riscv_tls_base) &&
         write_poly_riscv_reg(10, args[0]) &&
         write_poly_riscv_reg(11, args[1]) &&
         write_poly_riscv_reg(12, args[2]) &&
@@ -3611,7 +3683,9 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
   frame->return_rip = return_rip;
   frame->return_rsp = RSP;
   frame->flags = 0;
+  bx_poly_capture_tls_base_for_mode(caller_mode);
   bx_poly_current_mode = callee_mode;
+  bx_poly_prepare_tls_for_mode(callee_mode);
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
@@ -3731,7 +3805,9 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   if (!mapped)
     return false;
 
+  bx_poly_capture_tls_base_for_mode(callee_mode);
   bx_poly_current_mode = frame->caller_mode;
+  bx_poly_prepare_tls_for_mode(frame->caller_mode);
   RIP = frame->return_rip;
   bx_poly_cross_return_top--;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
@@ -3773,6 +3849,7 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   const Bit64u result_xmm1_lo = BX_READ_XMM_REG_LO_QWORD(1);
 
   bx_poly_current_mode = return_mode;
+  bx_poly_prepare_tls_for_mode(return_mode);
   RIP = return_rip;
   RSP = return_rsp;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -4143,11 +4220,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0xffffffe0) == 0xd53bd040) {
     Bit32u rd = insn & 0x1f;
-    if (!write_poly_aarch64_reg(rd, bx_poly_foreign_tls_base))
+    if (!write_poly_aarch64_reg(rd, bx_poly_aarch64_tls_base))
       return false;
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,tpidr_el0 value=%llx",
-      rd, (unsigned long long) bx_poly_foreign_tls_base));
+      rd, (unsigned long long) bx_poly_aarch64_tls_base));
     return true;
   }
 
@@ -6360,7 +6437,9 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   }
 
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_SWITCH) {
+    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
+    bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
@@ -6382,13 +6461,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         frontend_id));
       return false;
     }
+    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = target_mode;
     if (target_mode == BX_POLY_MODE_X86)
       bx_poly_clear_cross_return_stack();
-    bx_poly_foreign_tls_base = (bx_address) R13;
-    if (target_mode == BX_POLY_MODE_RAW_RISCV &&
-        !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
-      return false;
+    bx_poly_prepare_tls_for_mode(target_mode);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -7581,7 +7658,9 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   }
 
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_SWITCH) {
+    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
+    bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
@@ -7603,13 +7682,11 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         frontend_id));
       return false;
     }
+    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = target_mode;
     if (target_mode == BX_POLY_MODE_X86)
       bx_poly_clear_cross_return_stack();
-    bx_poly_foreign_tls_base = (bx_address) R13;
-    if (target_mode == BX_POLY_MODE_RAW_RISCV &&
-        !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
-      return false;
+    bx_poly_prepare_tls_for_mode(target_mode);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -9887,10 +9964,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         bx_poly_current_mode = target_mode;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
-        bx_poly_foreign_tls_base = (bx_address) R13;
-        if (target_mode == BX_POLY_MODE_RAW_RISCV &&
-            !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
-          return false;
+        bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
         bx_poly_mode_switch_count++;
         // A frontend switch changes the decoder, not the architectural thread
         // state. New per-thread banks are zero-initialized when allocated; an
@@ -9917,10 +9991,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         bx_poly_current_mode = target_mode;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
-        bx_poly_foreign_tls_base = (bx_address) R13;
-        if (target_mode == BX_POLY_MODE_RAW_RISCV &&
-            !write_poly_riscv_reg(4, bx_poly_foreign_tls_base))
-          return false;
+        bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
         bx_poly_mode_switch_count++;
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
           bx_poly_current_state_key(RSP));
