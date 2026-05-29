@@ -629,7 +629,7 @@ enum {
   BX_POLY_IMPORT_FUNC_STRTOULL = 199
 };
 
-static inline bool bx_poly_import_uses_descriptor_args(Bit64u import_id)
+static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
 {
   return import_id < BX_POLY_IMPORT_CALL_COUNT;
 }
@@ -4033,11 +4033,11 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   if (!mapped)
     return false;
 
-  if (bx_poly_import_uses_descriptor_args(import_id)) {
-    // Hardware/FPGA contract: descriptor-backed imports are architectural
-    // exits. The CPU records the import id and native ABI arguments; software
-    // decides whether this is dynamic binding, libc policy, a generated thunk,
-    // or an application fault. The transition path must not read user-memory
+  if (bx_poly_import_delivers_trap(import_id)) {
+    // Hardware/FPGA contract: reserved import calls are architectural exits.
+    // The CPU records the import id and native ABI arguments; software decides
+    // whether this is dynamic binding, libc policy, a generated thunk, or an
+    // application fault. The transition path must not read user-memory
     // descriptors or rewrite stack layouts.
     if (mode == BX_POLY_MODE_RAW_AARCH64) {
       mapped = read_poly_aarch64_reg(6, &arg6) &&
@@ -4053,7 +4053,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
-    BX_INFO(("poly_raw: import descriptor %u unresolved; delivering import trap",
+    BX_INFO(("poly_raw: import %u unresolved; delivering import trap",
       (unsigned) import_id));
     return deliver_poly_architectural_trap("foreign", "import", target_rip);
   }
