@@ -143,6 +143,7 @@ static inline Bit32u BX_POLY_RISCV_CTRL(Bit32u subop)
   return 0x0000700bU | ((subop & 0x7fU) << 25);
 }
 
+static const Bit32u BX_POLY_AARCH64_CTRL_SUBOP_CALL_SIG_IMM_BASE = 0x60;
 static const Bit32u BX_POLY_AARCH64_CTRL_X86_ESCAPE = BX_POLY_AARCH64_CTRL(0x70);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_SWITCH = BX_POLY_AARCH64_CTRL(0x71);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL = BX_POLY_AARCH64_CTRL(0x72);
@@ -157,6 +158,7 @@ static const Bit32u BX_POLY_AARCH64_CTRL_CALL_SIG_MODE = BX_POLY_AARCH64_CTRL(0x
 static const Bit32u BX_POLY_AARCH64_CTRL_LANDING = BX_POLY_AARCH64_CTRL(0x7b);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET = BX_POLY_AARCH64_CTRL(0x7c);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_GET = BX_POLY_AARCH64_CTRL(0x7d);
+static const Bit32u BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE = 16;
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
@@ -204,6 +206,7 @@ static const Bit32u BX_POLY_CPUID_FEATURE_VEC128_BRIDGE = (1U << 27);
 static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET = (1U << 28);
 static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA32_RET = (1U << 29);
 static const Bit32u BX_POLY_CPUID_FEATURE_AARCH64_HFA_ARGS = (1U << 30);
+static const Bit32u BX_POLY_CPUID_FEATURE_FOREIGN_PCALL_SIG_IMM = (1U << 31);
 static const Bit32u BX_POLY_CPUID_STATE_OVERLAP_GPRS = (1U << 0);
 static const Bit32u BX_POLY_CPUID_STATE_SYNTHETIC_BANKS = (1U << 1);
 static const Bit32u BX_POLY_CPUID_STATE_KEY_CR3 = (1U << 2);
@@ -318,6 +321,33 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
+
+static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
+    Bit32u *slot)
+{
+  if ((insn & ~(0x7fU << 5)) != 0xd503201fU)
+    return false;
+  Bit32u subop = (insn >> 5) & 0x7fU;
+  if (subop < base_subop ||
+      subop >= base_subop + BX_POLY_ABI_SIGNATURE_SLOT_COUNT)
+    return false;
+  *slot = subop - base_subop;
+  return true;
+}
+
+static bool bx_poly_riscv_ctrl_slot(Bit32u insn, Bit32u base_subop,
+    Bit32u *slot)
+{
+  if ((insn & 0x01ffffffU) != 0x0000700bU)
+    return false;
+  Bit32u subop = (insn >> 25) & 0x7fU;
+  if (subop < base_subop ||
+      subop >= base_subop + BX_POLY_ABI_SIGNATURE_SLOT_COUNT)
+    return false;
+  *slot = subop - base_subop;
+  return true;
+}
+
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
@@ -6352,6 +6382,41 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       BX_POLY_CROSS_BRIDGE_DEFAULT);
   }
 
+  Bit32u aarch64_signature_imm_slot = 0;
+  if (bx_poly_aarch64_ctrl_slot(insn,
+        BX_POLY_AARCH64_CTRL_SUBOP_CALL_SIG_IMM_BASE,
+        &aarch64_signature_imm_slot)) {
+    Bit64u target = 0;
+    Bit64u frontend = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_aarch64_reg(16, &target) ||
+        !read_poly_aarch64_reg(17, &frontend) ||
+        !read_poly_aarch64_reg(18, &return_rip))
+      return false;
+    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u target_mode = BX_POLY_MODE_X86;
+    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+        target_mode == BX_POLY_MODE_RAW_AARCH64) {
+      BX_INFO(("poly_raw: reject aarch64 immediate signature call frontend=%u mode=%u",
+        frontend_id, target_mode));
+      return false;
+    }
+    bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    Bit32u source_kind =
+      bx_poly_abi_signature_slots[aarch64_signature_imm_slot].kind;
+    if (target_mode == BX_POLY_MODE_X86) {
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
+            (bx_address) target, (bx_address) return_rip))
+        return true;
+      return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
+        (bx_address) target, (bx_address) return_rip, source_kind);
+    }
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
+      (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_CALL_SIG_MODE) {
     Bit64u target = 0;
     Bit64u frontend = 0;
@@ -7441,6 +7506,41 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip,
         BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
+    }
+    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
+      (bx_address) target, (bx_address) return_rip,
+      BX_POLY_CROSS_BRIDGE_DEFAULT);
+  }
+
+  Bit32u riscv_signature_imm_slot = 0;
+  if (bx_poly_riscv_ctrl_slot(insn,
+        BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE,
+        &riscv_signature_imm_slot)) {
+    Bit64u target = 0;
+    Bit64u frontend = 0;
+    Bit64u return_rip = 0;
+    if (!read_poly_riscv_reg(5, &target) ||
+        !read_poly_riscv_reg(6, &frontend) ||
+        !read_poly_riscv_reg(7, &return_rip))
+      return false;
+    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u target_mode = BX_POLY_MODE_X86;
+    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+        target_mode == BX_POLY_MODE_RAW_RISCV) {
+      BX_INFO(("poly_raw: reject riscv immediate signature call frontend=%u mode=%u",
+        frontend_id, target_mode));
+      return false;
+    }
+    bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    Bit32u source_kind =
+      bx_poly_abi_signature_slots[riscv_signature_imm_slot].kind;
+    if (target_mode == BX_POLY_MODE_X86) {
+      if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
+            (bx_address) target, (bx_address) return_rip))
+        return true;
+      return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
+        (bx_address) target, (bx_address) return_rip, source_kind);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
@@ -10166,7 +10266,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_CPUID_FEATURE_VEC128_BRIDGE |
           BX_POLY_CPUID_FEATURE_AARCH64_HFA64_RET |
           BX_POLY_CPUID_FEATURE_AARCH64_HFA32_RET |
-          BX_POLY_CPUID_FEATURE_AARCH64_HFA_ARGS;
+          BX_POLY_CPUID_FEATURE_AARCH64_HFA_ARGS |
+          BX_POLY_CPUID_FEATURE_FOREIGN_PCALL_SIG_IMM;
     RAX = 1; // poly CPUID ABI version
     RBX = (1U << BX_POLY_MODE_X86) |
           (1U << BX_POLY_MODE_RAW_AARCH64) |
@@ -10242,6 +10343,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_GET;
       RCX = BX_POLY_RISCV_CTRL_ABI_SIGNATURE_SET;
       RDX = BX_POLY_RISCV_CTRL_ABI_SIGNATURE_GET;
+    }
+    else if (ECX == 11) {
+      RAX = BX_POLY_AARCH64_CTRL(BX_POLY_AARCH64_CTRL_SUBOP_CALL_SIG_IMM_BASE);
+      RBX = BX_POLY_RISCV_CTRL(BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE);
+      RCX = BX_POLY_ABI_SIGNATURE_SLOT_COUNT;
+      RDX = 0;
     }
     else {
       RAX = 0;
