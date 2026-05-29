@@ -1235,6 +1235,48 @@ static Bit64u bx_poly_count_leading_zeroes(Bit64u value, unsigned bits)
   return count;
 }
 
+static Bit64u bx_poly_count_trailing_zeroes(Bit64u value, unsigned bits)
+{
+  value &= bx_poly_low_mask(bits);
+  Bit64u count = 0;
+  for (unsigned bit = 0; bit < bits; bit++) {
+    if (value & (BX_CONST64(1) << bit))
+      break;
+    count++;
+  }
+  return count;
+}
+
+static Bit64u bx_poly_rotate_left(Bit64u value, unsigned bits, Bit32u amount)
+{
+  Bit64u mask = bx_poly_low_mask(bits);
+  amount &= bits - 1;
+  value &= mask;
+  if (amount == 0)
+    return value;
+  return ((value << amount) | (value >> (bits - amount))) & mask;
+}
+
+static Bit64u bx_poly_rotate_right(Bit64u value, unsigned bits, Bit32u amount)
+{
+  Bit64u mask = bx_poly_low_mask(bits);
+  amount &= bits - 1;
+  value &= mask;
+  if (amount == 0)
+    return value;
+  return ((value >> amount) | (value << (bits - amount))) & mask;
+}
+
+static Bit64u bx_poly_or_combine_bytes(Bit64u value)
+{
+  Bit64u result = 0;
+  for (unsigned byte = 0; byte < 8; byte++) {
+    if (((value >> (byte * 8)) & 0xff) != 0)
+      result |= BX_CONST64(0xff) << (byte * 8);
+  }
+  return result;
+}
+
 static Bit64u bx_poly_count_leading_sign_bits(Bit64u value, unsigned bits)
 {
   value &= bx_poly_low_mask(bits);
@@ -8763,6 +8805,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
     Bit32u shamt = (insn >> 20) & 0x3f;
     Bit32u shift_top = (insn >> 26) & 0x3f;
+    Bit32u imm_raw = (insn >> 20) & 0xfff;
     Bit64u result = 0;
     const char *op_name = 0;
 
@@ -8805,6 +8848,38 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "srai";
       result = (Bit64u) ((Bit64s) base >> shamt);
     }
+    else if (funct3 == 0x1 && imm_raw == 0x600) {
+      op_name = "clz";
+      result = bx_poly_count_leading_zeroes(base, 64);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x601) {
+      op_name = "ctz";
+      result = bx_poly_count_trailing_zeroes(base, 64);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x602) {
+      op_name = "cpop";
+      result = bx_poly_count_ones64(base);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x604) {
+      op_name = "sext.b";
+      result = (Bit64u) (Bit64s) (Bit8s) (Bit8u) base;
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x605) {
+      op_name = "sext.h";
+      result = (Bit64u) (Bit64s) (Bit16s) (Bit16u) base;
+    }
+    else if (funct3 == 0x5 && ((imm_raw >> 6) == 0x18)) {
+      op_name = "rori";
+      result = bx_poly_rotate_right(base, 64, shamt);
+    }
+    else if (funct3 == 0x5 && imm_raw == 0x287) {
+      op_name = "orc.b";
+      result = bx_poly_or_combine_bytes(base);
+    }
+    else if (funct3 == 0x5 && imm_raw == 0x6b8) {
+      op_name = "rev8";
+      result = bx_poly_reverse_bytes_in_lanes(base, 64, 64);
+    }
 
     if (op_name == 0)
       return false;
@@ -8825,6 +8900,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u shamt = (insn >> 20) & 0x1f;
     Bit32u funct7 = (insn >> 25) & 0x7f;
     Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
+    Bit32u imm_raw = (insn >> 20) & 0xfff;
     Bit64u base = 0;
     Bit32u result32 = 0;
     const char *op_name = 0;
@@ -8847,6 +8923,18 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct3 == 0x5 && funct7 == 0x20) {
       op_name = "sraiw";
       result32 = (Bit32u) ((Bit32s) (Bit32u) base >> shamt);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x600) {
+      op_name = "clzw";
+      result32 = (Bit32u) bx_poly_count_leading_zeroes(base, 32);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x601) {
+      op_name = "ctzw";
+      result32 = (Bit32u) bx_poly_count_trailing_zeroes(base, 32);
+    }
+    else if (funct3 == 0x1 && imm_raw == 0x602) {
+      op_name = "cpopw";
+      result32 = bx_poly_count_ones64((Bit32u) base);
     }
 
     if (op_name == 0)
@@ -8960,6 +9048,42 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "and";
       result = left & right;
     }
+    else if (funct7 == 0x20 && funct3 == 0x4) {
+      op_name = "xnor";
+      result = ~(left ^ right);
+    }
+    else if (funct7 == 0x20 && funct3 == 0x6) {
+      op_name = "orn";
+      result = left | ~right;
+    }
+    else if (funct7 == 0x20 && funct3 == 0x7) {
+      op_name = "andn";
+      result = left & ~right;
+    }
+    else if (funct7 == 0x05 && funct3 == 0x4) {
+      op_name = "min";
+      result = (Bit64s) left < (Bit64s) right ? left : right;
+    }
+    else if (funct7 == 0x05 && funct3 == 0x5) {
+      op_name = "minu";
+      result = left < right ? left : right;
+    }
+    else if (funct7 == 0x05 && funct3 == 0x6) {
+      op_name = "max";
+      result = (Bit64s) left > (Bit64s) right ? left : right;
+    }
+    else if (funct7 == 0x05 && funct3 == 0x7) {
+      op_name = "maxu";
+      result = left > right ? left : right;
+    }
+    else if (funct7 == 0x30 && funct3 == 0x1) {
+      op_name = "rol";
+      result = bx_poly_rotate_left(left, 64, (Bit32u) right);
+    }
+    else if (funct7 == 0x30 && funct3 == 0x5) {
+      op_name = "ror";
+      result = bx_poly_rotate_right(left, 64, (Bit32u) right);
+    }
 
     if (op_name != 0) {
       if (!write_poly_riscv_reg(rd, result))
@@ -9037,6 +9161,20 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x20 && funct3 == 0x5) {
       op_name = "sraw";
       result32 = (Bit32u) ((Bit32s) (Bit32u) left >> (right & 0x1f));
+    }
+    else if (funct7 == 0x04 && funct3 == 0x4 && rs2 == 0) {
+      op_name = "zext.h";
+      result32 = (Bit16u) left;
+    }
+    else if (funct7 == 0x30 && funct3 == 0x1) {
+      op_name = "rolw";
+      result32 = (Bit32u) bx_poly_rotate_left((Bit32u) left, 32,
+        (Bit32u) right);
+    }
+    else if (funct7 == 0x30 && funct3 == 0x5) {
+      op_name = "rorw";
+      result32 = (Bit32u) bx_poly_rotate_right((Bit32u) left, 32,
+        (Bit32u) right);
     }
 
     if (op_name == 0)
