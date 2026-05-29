@@ -2886,6 +2886,27 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
 }
 
+static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
+  Bit32u *bridge_kind)
+{
+  if (!bx_poly_valid_abi_signature_kind(kind))
+    return false;
+
+  // Foreign-to-foreign signature calls are register-renaming only. AArch64 and
+  // RISC-V integer ABI lanes already align as x0/a0 through x7/a7, so the
+  // register-only signature kinds select the default cross bridge. The older
+  // stack-capable SysV kind is intentionally rejected here; stack or aggregate
+  // layout conversion belongs in loader/runtime thunks, not in PCALL.
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
+      kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
+      kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    return true;
+  }
+
+  return false;
+}
+
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, bool sret_call, Bit32u return_kind, Bit32u arg_kind,
   Bit32u source_kind)
@@ -6412,9 +6433,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
         (bx_address) target, (bx_address) return_rip, source_kind);
     }
+    Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
+          &bridge_kind)) {
+      BX_INFO(("poly_raw: reject aarch64 immediate signature call kind=%u",
+        source_kind));
+      return false;
+    }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
       (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
+      bridge_kind);
   }
 
   if (insn == BX_POLY_AARCH64_CTRL_CALL_SIG_MODE) {
@@ -6451,9 +6479,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
         (bx_address) target, (bx_address) return_rip, source_kind);
     }
+    Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
+          &bridge_kind)) {
+      BX_INFO(("poly_raw: reject aarch64 generic signature call kind=%u",
+        source_kind));
+      return false;
+    }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
       (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
+      bridge_kind);
   }
 
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL) {
@@ -7542,9 +7577,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip, source_kind);
     }
+    Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
+          &bridge_kind)) {
+      BX_INFO(("poly_raw: reject riscv immediate signature call kind=%u",
+        source_kind));
+      return false;
+    }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
+      bridge_kind);
   }
 
   if (insn == BX_POLY_RISCV_CTRL_CALL_SIG_MODE) {
@@ -7581,9 +7623,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip, source_kind);
     }
+    Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
+          &bridge_kind)) {
+      BX_INFO(("poly_raw: reject riscv generic signature call kind=%u",
+        source_kind));
+      return false;
+    }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
+      bridge_kind);
   }
 
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL) {
