@@ -1906,18 +1906,19 @@ static void bx_poly_propagate_trap_vector_state(bx_address cr3,
   }
 }
 
+static bool bx_poly_read_exchange_window(Bit32u lane, Bit64u *value);
+static bool bx_poly_write_exchange_window(Bit32u lane, Bit64u value);
+
 static void bx_poly_snapshot_aliased_state(Bit32u mode)
 {
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
-    bx_poly_aarch64_x[0] = RAX;
-    bx_poly_aarch64_x[1] = RDI;
-    bx_poly_aarch64_x[2] = RSI;
-    bx_poly_aarch64_x[3] = RDX;
-    bx_poly_aarch64_x[4] = RCX;
-    bx_poly_aarch64_x[5] = R8;
-    bx_poly_aarch64_x[6] = R9;
-    for (unsigned n = 0; n <= 6; n++)
-      bx_poly_aarch64_x_valid[n] = true;
+    for (unsigned n = 0; n < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT; n++) {
+      Bit64u value = 0;
+      if (bx_poly_read_exchange_window(n, &value)) {
+        bx_poly_aarch64_x[n] = value;
+        bx_poly_aarch64_x_valid[n] = true;
+      }
+    }
     for (unsigned n = 0; n < 8; n++) {
       bx_poly_aarch64_fp[n] = BX_READ_XMM_REG_LO_QWORD(n);
       bx_poly_aarch64_fp_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
@@ -1925,16 +1926,14 @@ static void bx_poly_snapshot_aliased_state(Bit32u mode)
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     bx_poly_riscv_x[2] = RSP;
-    bx_poly_riscv_x[10] = RAX;
-    bx_poly_riscv_x[11] = RDI;
-    bx_poly_riscv_x[12] = RSI;
-    bx_poly_riscv_x[13] = RDX;
-    bx_poly_riscv_x[14] = RCX;
-    bx_poly_riscv_x[15] = R8;
-    bx_poly_riscv_x[16] = R9;
     bx_poly_riscv_x_valid[2] = true;
-    for (unsigned n = 10; n <= 16; n++)
-      bx_poly_riscv_x_valid[n] = true;
+    for (unsigned n = 0; n < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT; n++) {
+      Bit64u value = 0;
+      if (bx_poly_read_exchange_window(n, &value)) {
+        bx_poly_riscv_x[10 + n] = value;
+        bx_poly_riscv_x_valid[10 + n] = true;
+      }
+    }
     for (unsigned n = 0; n < 8; n++) {
       bx_poly_riscv_fp[10 + n] = BX_READ_XMM_REG_LO_QWORD(n);
       bx_poly_riscv_fp_hi[10 + n] = BX_READ_XMM_REG_HI_QWORD(n);
@@ -1945,20 +1944,10 @@ static void bx_poly_snapshot_aliased_state(Bit32u mode)
 static void bx_poly_restore_aliased_state(Bit32u mode)
 {
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
-    if (bx_poly_aarch64_x_valid[0])
-      RAX = bx_poly_aarch64_x[0];
-    if (bx_poly_aarch64_x_valid[1])
-      RDI = bx_poly_aarch64_x[1];
-    if (bx_poly_aarch64_x_valid[2])
-      RSI = bx_poly_aarch64_x[2];
-    if (bx_poly_aarch64_x_valid[3])
-      RDX = bx_poly_aarch64_x[3];
-    if (bx_poly_aarch64_x_valid[4])
-      RCX = bx_poly_aarch64_x[4];
-    if (bx_poly_aarch64_x_valid[5])
-      R8 = bx_poly_aarch64_x[5];
-    if (bx_poly_aarch64_x_valid[6])
-      R9 = bx_poly_aarch64_x[6];
+    for (unsigned n = 0; n < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT; n++) {
+      if (bx_poly_aarch64_x_valid[n])
+        bx_poly_write_exchange_window(n, bx_poly_aarch64_x[n]);
+    }
     for (unsigned n = 0; n < 8; n++) {
       BX_WRITE_XMM_REG_LO_QWORD(n, bx_poly_aarch64_fp[n]);
       BX_WRITE_XMM_REG_HI_QWORD(n, bx_poly_aarch64_fp_hi[n]);
@@ -1967,20 +1956,10 @@ static void bx_poly_restore_aliased_state(Bit32u mode)
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     if (bx_poly_riscv_x_valid[2])
       RSP = bx_poly_riscv_x[2];
-    if (bx_poly_riscv_x_valid[10])
-      RAX = bx_poly_riscv_x[10];
-    if (bx_poly_riscv_x_valid[11])
-      RDI = bx_poly_riscv_x[11];
-    if (bx_poly_riscv_x_valid[12])
-      RSI = bx_poly_riscv_x[12];
-    if (bx_poly_riscv_x_valid[13])
-      RDX = bx_poly_riscv_x[13];
-    if (bx_poly_riscv_x_valid[14])
-      RCX = bx_poly_riscv_x[14];
-    if (bx_poly_riscv_x_valid[15])
-      R8 = bx_poly_riscv_x[15];
-    if (bx_poly_riscv_x_valid[16])
-      R9 = bx_poly_riscv_x[16];
+    for (unsigned n = 0; n < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT; n++) {
+      if (bx_poly_riscv_x_valid[10 + n])
+        bx_poly_write_exchange_window(n, bx_poly_riscv_x[10 + n]);
+    }
     for (unsigned n = 0; n < 8; n++) {
       BX_WRITE_XMM_REG_LO_QWORD(n, bx_poly_riscv_fp[10 + n]);
       BX_WRITE_XMM_REG_HI_QWORD(n, bx_poly_riscv_fp_hi[10 + n]);
