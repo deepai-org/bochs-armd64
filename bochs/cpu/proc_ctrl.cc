@@ -7284,6 +7284,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
 
     addr = (bx_address) (post_index ? base : (Bit64s) base + offset);
+    if (!fp && size == 3 && opc == 2) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 prfum [x%u,#%lld] addr=%llx as no-op",
+        rn, (long long) offset, (unsigned long long) addr));
+      return true;
+    }
     if (fp) {
       if (size < 2)
         return false;
@@ -7451,6 +7457,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
 
     addr = (bx_address) (base + (index << shift));
+    if (!fp && size == 3 && opc == 2) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 prfm [x%u,x%u,extend=%u,lsl=%u] addr=%llx as no-op",
+        rn, rm, option, shift, (unsigned long long) addr));
+      return true;
+    }
     if (fp) {
       if (size < 2)
         return false;
@@ -7561,6 +7573,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
 
     addr = (bx_address) (base + ((Bit64u) imm12 << size));
+    if (size == 3 && opc == 2) {
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 prfm [x%u,#%u] addr=%llx as no-op",
+        rn, imm12 << size, (unsigned long long) addr));
+      return true;
+    }
     if (opc == 1) {
       if (size == 0)
         value = read_virtual_byte(BX_SEG_REG_DS, addr);
