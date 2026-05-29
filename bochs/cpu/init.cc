@@ -207,6 +207,10 @@ void BX_CPU_C::initialize(void)
   BX_CPU_THIS_PTR cpuid->sanity_checks();
 #endif
 
+  BX_CPU_THIS_PTR poly_feature_enabled =
+    SIM->get_param_bool(BXPN_POLY_ENABLED)->get();
+  bx_poly_feature_enabled = BX_CPU_THIS_PTR poly_feature_enabled;
+
   init_FetchDecodeTables(); // must be called after init_isa_features_bitmask()
 
 #if BX_CPU_LEVEL >= 6
@@ -242,7 +246,6 @@ void BX_CPU_C::initialize(void)
   BX_CPU_THIS_PTR ignore_bad_msrs = SIM->get_param_bool(BXPN_IGNORE_BAD_MSRS)->get();
 #endif
 
-  BX_CPU_THIS_PTR poly_feature_enabled = SIM->get_param_bool(BXPN_POLY_ENABLED)->get();
   BX_CPU_THIS_PTR poly_trap_vector = 0;
   BX_CPU_THIS_PTR poly_trap_vector_mode = 0;
 
