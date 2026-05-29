@@ -331,10 +331,12 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128 = 2;
+static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS = 3;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS = 4;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 
 static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
@@ -690,6 +692,8 @@ static void bx_poly_reset_abi_signature_slots(
     BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
   slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128].kind =
     BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
+  slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS].kind =
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
 }
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -732,7 +736,7 @@ static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
@@ -2904,7 +2908,16 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
   return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
+}
+
+static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
+{
+  return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
 }
 
 static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
@@ -2918,9 +2931,7 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
   // register-only signature kinds select the default cross bridge. The older
   // stack-capable SysV kind is intentionally rejected here; stack or aggregate
   // layout conversion belongs in loader/runtime thunks, not in PCALL.
-  if (kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
-      kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
-      kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128) {
+  if (bx_poly_register_only_abi_signature_kind(kind)) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     return true;
   }
@@ -2955,9 +2966,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     original_rsp + 8 : original_rsp + 24;
   const bool register_only_source = !sret_call &&
     arg_kind == BX_POLY_ARG_KIND_DEFAULT &&
-    (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128);
+    bx_poly_register_only_abi_signature_kind(source_kind);
 
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject unknown ABI signature kind=%u", source_kind));
@@ -2988,7 +2997,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     stack_copy_base = original_rsp + 8;
   }
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128) {
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS) {
     args[0] = RDI;
     args[1] = RSI;
     args[2] = RDX;
@@ -10612,10 +10622,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_ABI_SIGNATURE_SLOT_COUNT;
       RCX = BX_POLY_ABI_SIGNATURE_SLOT_EXCHANGE |
         (BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS << 8) |
-        (BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128 << 16);
+        (BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128 << 16) |
+        (BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS << 24);
       RDX = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE |
         (BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS << 8) |
-        (BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 << 16);
+        (BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 << 16) |
+        (BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS << 24);
     }
     else if (ECX == 8) {
       RAX = BX_POLY_AARCH64_CTRL_CALL_SIG_MODE;
