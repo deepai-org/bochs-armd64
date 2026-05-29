@@ -367,6 +367,7 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) 
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 200;
+static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x100);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
@@ -2696,8 +2697,10 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     frame->import_id = read_virtual_qword(seg, frame_base + 24);
     frame->descriptor_flags =
       read_virtual_qword(seg, frame_base + 32);
+    const bool direct_x86_frame =
+      frame->import_id == BX_POLY_DIRECT_X86_IMPORT_ID;
     if (!bx_poly_is_raw_mode(frame->mode) ||
-        frame->import_id >= BX_POLY_IMPORT_CALL_COUNT) {
+        (!direct_x86_frame && frame->import_id >= BX_POLY_IMPORT_CALL_COUNT)) {
       BX_INFO(("poly_state_import: reject import return frame %u mode=%u import=%llu",
         n, frame->mode, (unsigned long long) frame->import_id));
       return false;
@@ -3814,7 +3817,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->mode = mode;
   frame->rip = return_rip;
   frame->rsp = foreign_rsp;
-  frame->import_id = BX_CONST64(0xffffffffffffffff);
+  frame->import_id = BX_POLY_DIRECT_X86_IMPORT_ID;
   frame->descriptor_flags =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ?
       BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
