@@ -414,7 +414,7 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CON
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP64 = BX_CONST64(1) << 10;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP32 = BX_CONST64(1) << 11;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 230;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 233;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 // Keep suspended x86 helper frames and active foreign frames from colliding
@@ -693,7 +693,10 @@ enum {
   BX_POLY_IMPORT_FUNC_LABS = 226,
   BX_POLY_IMPORT_FUNC_LLABS = 227,
   BX_POLY_IMPORT_FUNC_ATOL = 228,
-  BX_POLY_IMPORT_FUNC_ATOLL = 229
+  BX_POLY_IMPORT_FUNC_ATOLL = 229,
+  BX_POLY_IMPORT_FUNC_FFS = 230,
+  BX_POLY_IMPORT_FUNC_FFSL = 231,
+  BX_POLY_IMPORT_FUNC_FFSLL = 232
 };
 
 static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
