@@ -412,7 +412,8 @@ static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32 = BX_CONST64(1)
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) << 7;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 201;
+static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP64 = BX_CONST64(1) << 10;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 202;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 // Keep suspended x86 helper frames and active foreign frames from colliding
@@ -662,7 +663,8 @@ enum {
   BX_POLY_IMPORT_FUNC_STRTOUL = 197,
   BX_POLY_IMPORT_FUNC_STRTOLL = 198,
   BX_POLY_IMPORT_FUNC_STRTOULL = 199,
-  BX_POLY_IMPORT_FUNC_SNPRINTF = 200
+  BX_POLY_IMPORT_FUNC_SNPRINTF = 200,
+  BX_POLY_IMPORT_FUNC_STRTOD = 201
 };
 
 static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
@@ -3951,6 +3953,8 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
     (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128) != 0;
   const bool returns_fp128 =
     (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128) != 0;
+  const bool returns_fp64 =
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP64) != 0;
   const bool returns_fpair64 =
     (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64) != 0;
   const bool returns_fpair32 =
@@ -3993,6 +3997,9 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   else if (return_mode == BX_POLY_MODE_RAW_AARCH64 && returns_fp128) {
     mapped = write_poly_aarch64_fp128_reg(0, result_xmm0_lo, result_xmm0_hi);
   }
+  else if (return_mode == BX_POLY_MODE_RAW_AARCH64 && returns_fp64) {
+    mapped = write_poly_aarch64_fp64_reg(0, result_xmm0_lo);
+  }
   else if (return_mode == BX_POLY_MODE_RAW_AARCH64) {
     mapped = write_poly_aarch64_reg(0, result_rax);
     if (mapped && returns_i128)
@@ -4013,6 +4020,9 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   else if (return_mode == BX_POLY_MODE_RAW_RISCV && returns_fp128) {
     mapped = write_poly_riscv_reg(10, result_xmm0_lo) &&
       write_poly_riscv_reg(11, result_xmm0_hi);
+  }
+  else if (return_mode == BX_POLY_MODE_RAW_RISCV && returns_fp64) {
+    mapped = write_poly_riscv_fp64_reg(10, result_xmm0_lo);
   }
   else if (return_mode == BX_POLY_MODE_RAW_RISCV) {
     mapped = write_poly_riscv_reg(10, result_rax);
