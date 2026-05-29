@@ -362,6 +362,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS = 4;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 = 5;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
@@ -3146,7 +3147,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128;
 }
 
 static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
@@ -3154,7 +3156,8 @@ static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
   return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128;
 }
 
 static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
@@ -3239,7 +3242,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   }
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS) {
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128) {
     args[0] = RDI;
     args[1] = RSI;
     args[2] = RDX;
@@ -4124,7 +4128,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->rsp = foreign_rsp;
   frame->import_id = BX_POLY_DIRECT_X86_IMPORT_ID;
   frame->return_flags =
-    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ?
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ?
       BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
