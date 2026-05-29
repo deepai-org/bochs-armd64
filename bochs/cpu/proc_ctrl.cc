@@ -10010,6 +10010,15 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     }
     bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   }
+  if (bx_poly_last_trap.reason == BX_POLY_TRAP_IMPORT &&
+      return_poly_cross_call(bx_poly_current_mode,
+        (bx_address) bx_poly_last_trap.next_pc)) {
+    bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
+    BX_INFO(("poly_ud: trap return completed cross return mode=%u result=%llx",
+      bx_poly_current_mode, (unsigned long long) RAX));
+    return true;
+  }
+
   RIP = bx_poly_last_trap.next_pc;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
