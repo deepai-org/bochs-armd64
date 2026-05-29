@@ -1522,7 +1522,7 @@ public: // for now...
   BX_SMF bool enter_poly_cross_call(Bit32u, Bit32u, bx_address, bx_address, Bit32u);
   BX_SMF bool return_poly_cross_call(Bit32u, bx_address);
   BX_SMF bool handle_poly_import_call(Bit32u, bx_address, bx_address);
-  BX_SMF bool enter_poly_x86_direct_call(Bit32u, bx_address, bx_address);
+  BX_SMF bool enter_poly_x86_direct_call(Bit32u, bx_address, bx_address, Bit32u);
   BX_SMF bool return_poly_import_x86_call(void);
   BX_SMF bool handle_poly_x86_ret_cookie(bx_address);
   BX_SMF void poly_interrupt_enter(void);
