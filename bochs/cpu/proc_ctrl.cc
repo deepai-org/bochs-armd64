@@ -868,7 +868,6 @@ struct bx_poly_thread_key_state_t {
   bx_address fsbase;
   bx_address stack_key;
   Bit64u age;
-  bx_address explicit_state_key;
 };
 
 static bx_address bx_poly_tls_base_for_mode(Bit32u mode)
@@ -1706,38 +1705,17 @@ static unsigned bx_poly_find_or_alloc_thread_key_state(bx_address cr3,
   bx_poly_thread_key_states[victim].fsbase = fsbase;
   bx_poly_thread_key_states[victim].stack_key = stack_key;
   bx_poly_thread_key_states[victim].age = bx_poly_reg_state_age++;
-  bx_poly_thread_key_states[victim].explicit_state_key = 0;
   return victim;
-}
-
-static bx_address bx_poly_explicit_state_key_for_thread(bx_address cr3,
-  bx_address fsbase, bx_address rsp)
-{
-  bx_address stack_key = bx_poly_thread_selector_key(fsbase, rsp);
-  unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
-    stack_key);
-  bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
-  return bx_poly_thread_key_states[slot].explicit_state_key;
-}
-
-static void bx_poly_set_explicit_state_key_for_thread(bx_address cr3,
-  bx_address fsbase, bx_address rsp, bx_address explicit_state_key)
-{
-  bx_address stack_key = bx_poly_thread_selector_key(fsbase, rsp);
-  unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
-    stack_key);
-  bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
-  bx_poly_thread_key_states[slot].explicit_state_key = explicit_state_key;
 }
 
 static bx_address bx_poly_current_state_key_for_thread(bx_address cr3,
   bx_address fsbase, bx_address rsp)
 {
-  bx_address explicit_state_key =
-    bx_poly_explicit_state_key_for_thread(cr3, fsbase, rsp);
-  if (explicit_state_key != 0)
-    return explicit_state_key;
-  return bx_poly_thread_selector_key(fsbase, rsp);
+  bx_address stack_key = bx_poly_thread_selector_key(fsbase, rsp);
+  unsigned slot = bx_poly_find_or_alloc_thread_key_state(cr3, fsbase,
+    stack_key);
+  bx_poly_thread_key_states[slot].age = bx_poly_reg_state_age++;
+  return stack_key;
 }
 
 #define bx_poly_current_state_key(rsp) \
@@ -1892,7 +1870,6 @@ static void bx_poly_reset_current_xstate(void)
     bx_poly_thread_key_states[n].fsbase = 0;
     bx_poly_thread_key_states[n].stack_key = 0;
     bx_poly_thread_key_states[n].age = 0;
-    bx_poly_thread_key_states[n].explicit_state_key = 0;
   }
 }
 
@@ -10515,28 +10492,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x65) {
-        bx_address old_key = bx_poly_current_state_key(RSP);
-        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
-        bx_poly_set_explicit_state_key_for_thread(BX_CPU_THIS_PTR cr3,
-          MSR_FSBASE, RSP, (bx_address) RAX);
-        bx_address new_key = bx_poly_current_state_key(RSP);
-        bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
-        bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
-        RIP = next_rip;
-        BX_INFO(("poly_ud: state key set explicit=%llx effective=%llx",
-          (unsigned long long) bx_poly_explicit_state_key_for_thread(
-            BX_CPU_THIS_PTR cr3, MSR_FSBASE, RSP),
-          (unsigned long long) new_key));
-        return true;
-      }
-      if (op == 0x66) {
-        RAX = bx_poly_explicit_state_key_for_thread(BX_CPU_THIS_PTR cr3,
-          MSR_FSBASE, RSP);
-        RIP = next_rip;
-        BX_INFO(("poly_ud: state key get value=%llx",
-          (unsigned long long) RAX));
-        return true;
+      if (op == 0x65 || op == 0x66) {
+        BX_INFO(("poly_ud: reject reserved explicit state-key op=%02x", op));
+        return false;
       }
       if (op == 0x67) {
         bx_address buffer = (bx_address) RAX;
