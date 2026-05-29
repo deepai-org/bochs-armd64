@@ -6250,6 +6250,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
     bx_poly_abi_signature_slots[(Bit32u) slot].kind = (Bit32u) kind;
     write_poly_aarch64_reg(0, 0);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
     RIP = next_rip;
     BX_DEBUG(("poly_raw: aarch64 ABI signature set slot=%llu kind=%llu",
       (unsigned long long) slot, (unsigned long long) kind));
@@ -7343,6 +7345,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     }
     bx_poly_abi_signature_slots[(Bit32u) slot].kind = (Bit32u) kind;
     write_poly_riscv_reg(10, 0);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv ABI signature set slot=%llu kind=%llu",
       (unsigned long long) slot, (unsigned long long) kind));
