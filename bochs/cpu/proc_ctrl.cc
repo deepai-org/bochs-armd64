@@ -316,6 +316,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
@@ -639,6 +640,7 @@ static void bx_poly_reset_abi_signature_slots(
   slots[0].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
   for (unsigned n = 1; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++)
     slots[n].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV;
+  slots[2].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
 }
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -680,7 +682,7 @@ static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   BX_POLY_ABI_SIGNATURE_SLOT_COUNT] = {
   { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
+  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
@@ -2850,7 +2852,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
 {
   return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
 }
 
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
@@ -2881,7 +2884,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   const bool register_only_source = !sret_call &&
     arg_kind == BX_POLY_ARG_KIND_DEFAULT &&
     (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128);
 
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject unknown ABI signature kind=%u", source_kind));
@@ -2911,7 +2915,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     args[7] = R10;
     stack_copy_base = original_rsp + 8;
   }
-  else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS) {
+  else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128) {
     args[0] = RDI;
     args[1] = RSI;
     args[2] = RDX;
@@ -3753,7 +3758,9 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->rip = return_rip;
   frame->rsp = foreign_rsp;
   frame->import_id = BX_CONST64(0xffffffffffffffff);
-  frame->descriptor_flags = 0;
+  frame->descriptor_flags =
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ?
+      BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
   frame->alias[1] = RSI;
