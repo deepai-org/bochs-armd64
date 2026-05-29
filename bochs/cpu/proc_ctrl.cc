@@ -3209,7 +3209,7 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
 
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, bool sret_call, Bit32u return_kind, Bit32u arg_kind,
-  Bit32u source_kind)
+  Bit32u source_kind, bool copy_foreign_stack_args)
 {
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, mode,
         BX_POLY_LANDING_POLICY_REQUIRE_CALL, "x86-pcall"))
@@ -3297,10 +3297,12 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
   }
 
-  for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
-    Bit64u value = read_virtual_qword(BX_SEG_REG_SS,
-      stack_copy_base + n * 8);
-    write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
+  if (copy_foreign_stack_args) {
+    for (Bit32u n = 0; n < BX_POLY_FOREIGN_STACK_ARG_QWORDS; n++) {
+      Bit64u value = read_virtual_qword(BX_SEG_REG_SS,
+        stack_copy_base + n * 8);
+      write_virtual_qword(BX_SEG_REG_SS, foreign_stack_rsp + n * 8, value);
+    }
   }
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
@@ -3516,8 +3518,11 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
   BX_DEBUG(("poly_ud: pcall signature mode=%u slot=%u kind=%u target=%llx return=%llx",
     mode, slot, source_kind, (unsigned long long) target_rip,
     (unsigned long long) return_rip));
+  // Signature-slot PCALL is the silicon-oriented fast path: it must only
+  // switch frontend state and apply register aliases. Memory-side ABI work
+  // stays in explicit loader/runtime thunks.
   return enter_poly_abi_call(mode, target_rip, return_rip, sret_call,
-    return_kind, arg_kind, source_kind);
+    return_kind, arg_kind, source_kind, false);
 }
 
 bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
