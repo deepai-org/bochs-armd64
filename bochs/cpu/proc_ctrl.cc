@@ -670,6 +670,7 @@ static void bx_poly_reset_abi_signature_slots(
   slots[0].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
   for (unsigned n = 1; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++)
     slots[n].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV;
+  slots[1].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
   slots[2].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
 }
 
@@ -711,7 +712,7 @@ static unsigned bx_poly_return_cookie_top = 0;
 static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   BX_POLY_ABI_SIGNATURE_SLOT_COUNT] = {
   { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
+  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
