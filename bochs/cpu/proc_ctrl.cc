@@ -158,6 +158,8 @@ static const Bit32u BX_POLY_AARCH64_CTRL_CALL_SIG_MODE = BX_POLY_AARCH64_CTRL(0x
 static const Bit32u BX_POLY_AARCH64_CTRL_LANDING = BX_POLY_AARCH64_CTRL(0x7b);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET = BX_POLY_AARCH64_CTRL(0x7c);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_GET = BX_POLY_AARCH64_CTRL(0x7d);
+static const Bit32u BX_POLY_AARCH64_CTRL_LANDING_POLICY_SET = BX_POLY_AARCH64_CTRL(0x7e);
+static const Bit32u BX_POLY_AARCH64_CTRL_LANDING_POLICY_GET = BX_POLY_AARCH64_CTRL(0x7f);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_SET = BX_POLY_AARCH64_CTRL(0x68);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_GET = BX_POLY_AARCH64_CTRL(0x69);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_AARCH64_CTRL(0x6a);
@@ -185,6 +187,8 @@ static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_RISCV_CTRL
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_RISCV_CTRL(27);
 static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET = BX_POLY_RISCV_CTRL(28);
 static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET = BX_POLY_RISCV_CTRL(29);
+static const Bit32u BX_POLY_RISCV_CTRL_LANDING_POLICY_SET = BX_POLY_RISCV_CTRL(30);
+static const Bit32u BX_POLY_RISCV_CTRL_LANDING_POLICY_GET = BX_POLY_RISCV_CTRL(31);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000009;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -236,12 +240,13 @@ static const Bit32u BX_POLY_CPUID_STATE_ABI_SIGNATURE_XSAVE = (1U << 13);
 static const Bit32u BX_POLY_CPUID_STATE_MONITOR_PACKET_XSAVE = (1U << 14);
 static const Bit32u BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE = (1U << 15);
 static const Bit32u BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE = (1U << 16);
+static const Bit32u BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE = (1U << 17);
 static const Bit32u BX_POLY_STATE_STACK_KEY_SHIFT = 23;
 static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
 static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
-static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 7;
+static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 8;
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_XCR0_USER = (1U << 0);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED = (1U << 1);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME = (1U << 2);
@@ -252,6 +257,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_FLAG_ABI_SIGNATURES = (1U << 6);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET = (1U << 7);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN = (1U << 8);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS = (1U << 9);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY = (1U << 10);
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_OFFSET = 0x000;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET = 0x040;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET = 0x080;
@@ -282,6 +288,8 @@ static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET =
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES = 0x20;
 static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET = 0xea0;
 static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_BYTES = 0x40;
+static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET = 0xee0;
+static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_BYTES = 0x40;
 static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
 static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
@@ -320,6 +328,12 @@ static const Bit32u BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE = (1U << 7);
 static const Bit32u BX_POLY_TRANSITION_FLAG_TRAP_RETURN = (1U << 8);
 static const Bit32u BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW = (1U << 9);
 static const Bit32u BX_POLY_TRANSITION_FLAG_LANDING_PADS = (1U << 10);
+static const Bit32u BX_POLY_TRANSITION_FLAG_LANDING_POLICY = (1U << 11);
+static const Bit64u BX_POLY_LANDING_POLICY_REQUIRE_SWITCH = (1ULL << 0);
+static const Bit64u BX_POLY_LANDING_POLICY_REQUIRE_CALL = (1ULL << 1);
+static const Bit64u BX_POLY_LANDING_POLICY_SUPPORTED =
+  BX_POLY_LANDING_POLICY_REQUIRE_SWITCH |
+  BX_POLY_LANDING_POLICY_REQUIRE_CALL;
 static const Bit32u BX_POLY_TRANSITION_AARCH64_ALIGN = 4;
 static const Bit32u BX_POLY_TRANSITION_RISCV_ALIGN = 2;
 static const Bit32u BX_POLY_ABI_BRIDGE_ABI_VERSION = 1;
@@ -349,6 +363,8 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS = 4;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
+static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
+static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
 
 static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
     Bit32u *slot)
@@ -763,6 +779,7 @@ static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_interrupted_raw_rip = 0;
 static bx_address bx_poly_aarch64_tls_base = 0;
 static bx_address bx_poly_riscv_tls_base = 0;
+static Bit64u bx_poly_landing_policy_flags = 0;
 static bx_address bx_poly_trap_vector = 0;
 static Bit32u bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
 static Bit64u bx_poly_aarch64_x[32];
@@ -811,6 +828,7 @@ struct bx_poly_reg_state_t {
   bx_address interrupted_raw_rip;
   bx_address aarch64_tls_base;
   bx_address riscv_tls_base;
+  Bit64u landing_policy_flags;
   bx_address trap_vector;
   Bit32u trap_vector_mode;
   bx_address monitor_packet_addr;
@@ -868,6 +886,15 @@ static void bx_poly_set_tls_base_for_mode(Bit32u mode, bx_address value)
   }
 }
 
+static void bx_poly_set_runtime_tls_base(bx_address value)
+{
+  // ABI PCALL enters a loaded mixed-frontend program. The runtime's TLS block
+  // is shared by that program's AArch64 and RISC-V objects; per-frontend
+  // offsets are resolved by the loader before execution reaches hardware.
+  bx_poly_set_tls_base_for_mode(BX_POLY_MODE_RAW_AARCH64, value);
+  bx_poly_set_tls_base_for_mode(BX_POLY_MODE_RAW_RISCV, value);
+}
+
 static void bx_poly_capture_tls_base_for_mode(Bit32u mode)
 {
   if (mode == BX_POLY_MODE_RAW_RISCV && bx_poly_riscv_x_valid[4])
@@ -880,6 +907,43 @@ static void bx_poly_prepare_tls_for_mode(Bit32u mode)
     bx_poly_riscv_x[4] = bx_poly_riscv_tls_base;
     bx_poly_riscv_x_valid[4] = true;
   }
+}
+
+static bool bx_poly_valid_landing_policy(Bit64u policy)
+{
+  return (policy & ~BX_POLY_LANDING_POLICY_SUPPORTED) == 0;
+}
+
+bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
+  Bit32u mode)
+{
+  if (mode == BX_POLY_MODE_X86) {
+    return read_virtual_byte(seg, target) == 0x0f &&
+      read_virtual_byte(seg, target + 1) == 0x3a &&
+      read_virtual_byte(seg, target + 2) == 0xfc &&
+      read_virtual_byte(seg, target + 3) == 0x05;
+  }
+
+  Bit32u marker = read_virtual_dword(seg, target);
+  if (mode == BX_POLY_MODE_RAW_AARCH64)
+    return marker == BX_POLY_AARCH64_CTRL_LANDING;
+  if (mode == BX_POLY_MODE_RAW_RISCV)
+    return marker == BX_POLY_RISCV_CTRL_LANDING;
+  return false;
+}
+
+bool BX_CPU_C::bx_poly_require_landing_target(unsigned seg, bx_address target,
+  Bit32u mode, Bit64u policy_bit, const char *op_name)
+{
+  if ((bx_poly_landing_policy_flags & policy_bit) == 0)
+    return true;
+  if (bx_poly_target_has_landing_pad(seg, target, mode))
+    return true;
+
+  BX_INFO(("poly_landing: reject %s mode=%u target=%llx policy=%llx",
+    op_name, mode, (unsigned long long) target,
+    (unsigned long long) bx_poly_landing_policy_flags));
+  return false;
 }
 
 static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
@@ -1772,6 +1836,7 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_interrupted_raw_rip = 0;
   bx_poly_aarch64_tls_base = 0;
   bx_poly_riscv_tls_base = 0;
+  bx_poly_landing_policy_flags = 0;
   bx_poly_trap_vector = 0;
   bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
   bx_poly_monitor_packet_addr = 0;
@@ -1887,6 +1952,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].interrupted_raw_rip = 0;
   bx_poly_reg_states[victim].aarch64_tls_base = 0;
   bx_poly_reg_states[victim].riscv_tls_base = 0;
+  bx_poly_reg_states[victim].landing_policy_flags = 0;
   bx_poly_reg_states[victim].trap_vector =
     inherited_trap_vector_valid ? inherited_trap_vector : 0;
   bx_poly_reg_states[victim].trap_vector_mode =
@@ -2047,6 +2113,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].interrupted_raw_rip = bx_poly_interrupted_raw_rip;
   bx_poly_reg_states[slot].aarch64_tls_base = bx_poly_aarch64_tls_base;
   bx_poly_reg_states[slot].riscv_tls_base = bx_poly_riscv_tls_base;
+  bx_poly_reg_states[slot].landing_policy_flags =
+    bx_poly_landing_policy_flags;
   bx_poly_reg_states[slot].trap_vector = bx_poly_trap_vector;
   bx_poly_reg_states[slot].trap_vector_mode = bx_poly_trap_vector_mode;
   bx_poly_reg_states[slot].monitor_packet_addr = bx_poly_monitor_packet_addr;
@@ -2110,6 +2178,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
     bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_aarch64_tls_base = bx_poly_reg_states[slot].aarch64_tls_base;
   bx_poly_riscv_tls_base = bx_poly_reg_states[slot].riscv_tls_base;
+  bx_poly_landing_policy_flags =
+    bx_poly_reg_states[slot].landing_policy_flags;
   bx_poly_trap_vector = bx_poly_reg_states[slot].trap_vector;
   bx_poly_trap_vector_mode = bx_poly_reg_states[slot].trap_vector_mode;
   bx_poly_monitor_packet_addr = bx_poly_reg_states[slot].monitor_packet_addr;
@@ -2193,7 +2263,8 @@ static Bit32u bx_poly_state_contract_flags(void)
     BX_POLY_CPUID_STATE_ABI_SIGNATURE_XSAVE |
     BX_POLY_CPUID_STATE_MONITOR_PACKET_XSAVE |
     BX_POLY_CPUID_STATE_CROSS_RETURN_XSAVE |
-    BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE;
+    BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE |
+    BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE;
 }
 
 static Bit32u bx_poly_xsave_arch_flags(void)
@@ -2207,7 +2278,8 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_ABI_SIGNATURES |
     BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET |
     BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN |
-    BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS;
+    BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS |
+    BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY;
 }
 
 static Bit64u bx_poly_trap_packet_flags(void)
@@ -2724,6 +2796,11 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24,
     bx_poly_riscv_tls_base);
 
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET,
+    bx_poly_landing_policy_flags);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 8,
+    BX_POLY_LANDING_POLICY_SUPPORTED);
+
   return true;
 }
 
@@ -2764,6 +2841,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 16);
   bx_address imported_riscv_tls_base =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24);
+  Bit64u imported_landing_policy = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET);
+  if (!bx_poly_valid_landing_policy(imported_landing_policy)) {
+    BX_INFO(("poly_state_import: reject landing policy=%llx",
+      (unsigned long long) imported_landing_policy));
+    return false;
+  }
   for (unsigned n = 0; n < 32; n++) {
     aarch64_gpr[n] = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + n * 8);
@@ -2876,6 +2960,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_aarch64_tls_base = imported_aarch64_tls_base;
   bx_poly_riscv_tls_base = imported_riscv_tls_base;
+  bx_poly_landing_policy_flags = imported_landing_policy;
   bx_poly_trap_vector =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
   bx_poly_trap_vector_mode = (Bit32u)
@@ -3074,6 +3159,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, bool sret_call, Bit32u return_kind, Bit32u arg_kind,
   Bit32u source_kind)
 {
+  if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, mode,
+        BX_POLY_LANDING_POLICY_REQUIRE_CALL, "x86-pcall"))
+    return false;
+
   Bit64u args[8];
   Bit64u fp_args[8];
   Bit64u fp_args_hi[8];
@@ -3174,7 +3263,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_poly_return_cookie_sret = sret_call;
   bx_poly_return_cookie_sret_ptr = sret_ptr;
   bx_poly_return_cookie_kind = return_kind;
-  bx_poly_set_tls_base_for_mode(mode, (bx_address) R13);
+  bx_poly_set_runtime_tls_base((bx_address) R13);
   RSP = foreign_stack_rsp;
 
   bool mapped = false;
@@ -3550,6 +3639,9 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
   bx_address target_rip, bx_address return_rip, Bit32u bridge_kind)
 {
   if (bx_poly_cross_return_top >= BX_POLY_CROSS_RETURN_DEPTH)
+    return false;
+  if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, callee_mode,
+        BX_POLY_LANDING_POLICY_REQUIRE_CALL, "foreign-pcall"))
     return false;
 
   Bit64u args[8] = {};
@@ -3945,6 +4037,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, Bit32u source_kind)
 {
   if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
+    return false;
+  if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip,
+        BX_POLY_MODE_X86, BX_POLY_LANDING_POLICY_REQUIRE_CALL,
+        "direct-x86-pcall"))
     return false;
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_raw: reject direct x86 call source kind=%u", source_kind));
@@ -6436,7 +6532,38 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == BX_POLY_AARCH64_CTRL_LANDING_POLICY_SET) {
+    Bit64u policy = 0;
+    if (!read_poly_aarch64_reg(0, &policy))
+      return false;
+    if (!bx_poly_valid_landing_policy(policy)) {
+      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    bx_poly_landing_policy_flags = policy;
+    write_poly_aarch64_reg(0, 0);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 landing policy set value=%llx",
+      (unsigned long long) policy));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_LANDING_POLICY_GET) {
+    write_poly_aarch64_reg(0, bx_poly_landing_policy_flags);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 landing policy get value=%llx",
+      (unsigned long long) bx_poly_landing_policy_flags));
+    return true;
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_SWITCH) {
+    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, next_rip,
+          BX_POLY_MODE_RAW_RISCV, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
+          "aarch64-switch"))
+      return false;
     bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
     bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
@@ -6461,6 +6588,10 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         frontend_id));
       return false;
     }
+    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, (bx_address) target,
+          target_mode, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
+          "aarch64-generic-switch"))
+      return false;
     bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = target_mode;
     if (target_mode == BX_POLY_MODE_X86)
@@ -7657,7 +7788,38 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == BX_POLY_RISCV_CTRL_LANDING_POLICY_SET) {
+    Bit64u policy = 0;
+    if (!read_poly_riscv_reg(10, &policy))
+      return false;
+    if (!bx_poly_valid_landing_policy(policy)) {
+      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    bx_poly_landing_policy_flags = policy;
+    write_poly_riscv_reg(10, 0);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv landing policy set value=%llx",
+      (unsigned long long) policy));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_LANDING_POLICY_GET) {
+    write_poly_riscv_reg(10, bx_poly_landing_policy_flags);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv landing policy get value=%llx",
+      (unsigned long long) bx_poly_landing_policy_flags));
+    return true;
+  }
+
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_SWITCH) {
+    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, next_rip,
+          BX_POLY_MODE_RAW_AARCH64, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
+          "riscv-switch"))
+      return false;
     bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
     bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
@@ -7682,6 +7844,10 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         frontend_id));
       return false;
     }
+    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, (bx_address) target,
+          target_mode, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
+          "riscv-generic-switch"))
+      return false;
     bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
     bx_poly_current_mode = target_mode;
     if (target_mode == BX_POLY_MODE_X86)
@@ -9988,6 +10154,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           BX_INFO(("poly_ud: reject generic switch frontend=%u", frontend_id));
           return false;
         }
+        if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip,
+              target_mode, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
+              "x86-pswitch"))
+          return false;
         bx_poly_current_mode = target_mode;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
@@ -10342,6 +10512,31 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           slot, (unsigned long long) RAX));
         return true;
       }
+      if (op == BX_POLY_X86_CTRL_LANDING_POLICY_SET) {
+        Bit64u policy = RAX;
+        if (!bx_poly_valid_landing_policy(policy)) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject landing policy set value=%llx",
+            (unsigned long long) policy));
+          return true;
+        }
+        bx_poly_landing_policy_flags = policy;
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        RAX = 0;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: landing policy set value=%llx",
+          (unsigned long long) policy));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_LANDING_POLICY_GET) {
+        RAX = bx_poly_landing_policy_flags;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: landing policy get value=%llx",
+          (unsigned long long) RAX));
+        return true;
+      }
       if (op >= 0x30 && op <= 0x32) {
         Bit8u status_id = op - 0x30;
         if (status_id == 1)
@@ -10622,6 +10817,18 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_GET;
       RDX = BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET;
     }
+    else if (ECX == 15) {
+      RAX = BX_POLY_X86_CTRL_LANDING_POLICY_SET;
+      RBX = BX_POLY_X86_CTRL_LANDING_POLICY_GET;
+      RCX = BX_POLY_AARCH64_CTRL_LANDING_POLICY_SET;
+      RDX = BX_POLY_AARCH64_CTRL_LANDING_POLICY_GET;
+    }
+    else if (ECX == 16) {
+      RAX = BX_POLY_RISCV_CTRL_LANDING_POLICY_SET;
+      RBX = BX_POLY_RISCV_CTRL_LANDING_POLICY_GET;
+      RCX = (Bit32u) BX_POLY_LANDING_POLICY_SUPPORTED;
+      RDX = BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET;
+    }
     else {
       RAX = 0;
       RBX = 0;
@@ -10703,7 +10910,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
             BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE |
             BX_POLY_TRANSITION_FLAG_TRAP_RETURN |
             BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW |
-            BX_POLY_TRANSITION_FLAG_LANDING_PADS;
+            BX_POLY_TRANSITION_FLAG_LANDING_PADS |
+            BX_POLY_TRANSITION_FLAG_LANDING_POLICY;
       RCX = BX_POLY_TRANSITION_AARCH64_ALIGN |
             (BX_POLY_TRANSITION_RISCV_ALIGN << 16);
       RDX = (1U << BX_POLY_MODE_X86) |

@@ -1512,6 +1512,8 @@ public: // for now...
   BX_SMF bool write_poly_riscv_fp32_reg(Bit32u, Bit32u);
   BX_SMF bool export_poly_xsave_state(unsigned, bx_address);
   BX_SMF bool import_poly_xsave_state(unsigned, bx_address);
+  BX_SMF bool bx_poly_target_has_landing_pad(unsigned, bx_address, Bit32u);
+  BX_SMF bool bx_poly_require_landing_target(unsigned, bx_address, Bit32u, Bit64u, const char *);
   BX_SMF bool xsave_poly_state_xinuse(void);
   BX_SMF void xsave_poly_state(bxInstruction_c *i, bx_address offset);
   BX_SMF void xrstor_poly_state(bxInstruction_c *i, bx_address offset);
