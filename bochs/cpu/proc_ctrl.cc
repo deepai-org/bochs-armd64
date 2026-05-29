@@ -158,6 +158,12 @@ static const Bit32u BX_POLY_AARCH64_CTRL_CALL_SIG_MODE = BX_POLY_AARCH64_CTRL(0x
 static const Bit32u BX_POLY_AARCH64_CTRL_LANDING = BX_POLY_AARCH64_CTRL(0x7b);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET = BX_POLY_AARCH64_CTRL(0x7c);
 static const Bit32u BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_GET = BX_POLY_AARCH64_CTRL(0x7d);
+static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_SET = BX_POLY_AARCH64_CTRL(0x68);
+static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_GET = BX_POLY_AARCH64_CTRL(0x69);
+static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_AARCH64_CTRL(0x6a);
+static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_AARCH64_CTRL(0x6b);
+static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET = BX_POLY_AARCH64_CTRL(0x6c);
+static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_GET = BX_POLY_AARCH64_CTRL(0x6d);
 static const Bit32u BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE = 16;
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
@@ -173,6 +179,12 @@ static const Bit32u BX_POLY_RISCV_CTRL_CALL_SIG_MODE = BX_POLY_RISCV_CTRL(10);
 static const Bit32u BX_POLY_RISCV_CTRL_LANDING = BX_POLY_RISCV_CTRL(11);
 static const Bit32u BX_POLY_RISCV_CTRL_ABI_SIGNATURE_SET = BX_POLY_RISCV_CTRL(12);
 static const Bit32u BX_POLY_RISCV_CTRL_ABI_SIGNATURE_GET = BX_POLY_RISCV_CTRL(13);
+static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_SET = BX_POLY_RISCV_CTRL(24);
+static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_GET = BX_POLY_RISCV_CTRL(25);
+static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_RISCV_CTRL(26);
+static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_RISCV_CTRL(27);
+static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET = BX_POLY_RISCV_CTRL(28);
+static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET = BX_POLY_RISCV_CTRL(29);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000009;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -6338,6 +6350,83 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == BX_POLY_AARCH64_CTRL_TRAP_VECTOR_SET) {
+    Bit64u vector = 0;
+    if (!read_poly_aarch64_reg(0, &vector))
+      return false;
+    bx_poly_trap_vector = (bx_address) vector;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_aarch64_reg(0, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 trap vector set value=%llx",
+      (unsigned long long) vector));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_TRAP_VECTOR_GET) {
+    write_poly_aarch64_reg(0, bx_poly_trap_vector);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 trap vector get value=%llx",
+      (unsigned long long) bx_poly_trap_vector));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET) {
+    Bit64u mode = 0;
+    if (!read_poly_aarch64_reg(0, &mode))
+      return false;
+    if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    bx_poly_trap_vector_mode = (Bit32u) mode;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_aarch64_reg(0, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 trap vector mode set value=%u",
+      bx_poly_trap_vector_mode));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_GET) {
+    write_poly_aarch64_reg(0, bx_poly_trap_vector_mode);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 trap vector mode get value=%u",
+      bx_poly_trap_vector_mode));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET) {
+    Bit64u packet = 0;
+    if (!read_poly_aarch64_reg(0, &packet))
+      return false;
+    bx_poly_monitor_packet_addr = (bx_address) packet;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_aarch64_reg(0, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 monitor packet set value=%llx",
+      (unsigned long long) packet));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_MONITOR_PACKET_GET) {
+    write_poly_aarch64_reg(0, bx_poly_monitor_packet_addr);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 monitor packet get value=%llx",
+      (unsigned long long) bx_poly_monitor_packet_addr));
+    return true;
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET) {
     Bit64u slot = 0;
     Bit64u kind = 0;
@@ -7479,6 +7568,83 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   if (insn == BX_POLY_RISCV_CTRL_LANDING) {
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv landing pad"));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_TRAP_VECTOR_SET) {
+    Bit64u vector = 0;
+    if (!read_poly_riscv_reg(10, &vector))
+      return false;
+    bx_poly_trap_vector = (bx_address) vector;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_riscv_reg(10, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv trap vector set value=%llx",
+      (unsigned long long) vector));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_TRAP_VECTOR_GET) {
+    write_poly_riscv_reg(10, bx_poly_trap_vector);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv trap vector get value=%llx",
+      (unsigned long long) bx_poly_trap_vector));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET) {
+    Bit64u mode = 0;
+    if (!read_poly_riscv_reg(10, &mode))
+      return false;
+    if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    bx_poly_trap_vector_mode = (Bit32u) mode;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_riscv_reg(10, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv trap vector mode set value=%u",
+      bx_poly_trap_vector_mode));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_GET) {
+    write_poly_riscv_reg(10, bx_poly_trap_vector_mode);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv trap vector mode get value=%u",
+      bx_poly_trap_vector_mode));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET) {
+    Bit64u packet = 0;
+    if (!read_poly_riscv_reg(10, &packet))
+      return false;
+    bx_poly_monitor_packet_addr = (bx_address) packet;
+    bx_address stack_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      stack_key);
+    write_poly_riscv_reg(10, 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv monitor packet set value=%llx",
+      (unsigned long long) packet));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET) {
+    write_poly_riscv_reg(10, bx_poly_monitor_packet_addr);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv monitor packet get value=%llx",
+      (unsigned long long) bx_poly_monitor_packet_addr));
     return true;
   }
 
@@ -10474,6 +10640,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_RISCV_CTRL(BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE);
       RCX = BX_POLY_ABI_SIGNATURE_SLOT_COUNT;
       RDX = 0;
+    }
+    else if (ECX == 12) {
+      RAX = BX_POLY_AARCH64_CTRL_TRAP_VECTOR_SET;
+      RBX = BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET;
+      RCX = BX_POLY_RISCV_CTRL_TRAP_VECTOR_SET;
+      RDX = BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET;
     }
     else {
       RAX = 0;
