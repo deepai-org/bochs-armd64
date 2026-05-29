@@ -154,6 +154,7 @@ static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32 = BX_POLY_AARCH64
 static const Bit32u BX_POLY_AARCH64_CTRL_SWITCH_MODE = BX_POLY_AARCH64_CTRL(0x78);
 static const Bit32u BX_POLY_AARCH64_CTRL_CALL_MODE = BX_POLY_AARCH64_CTRL(0x79);
 static const Bit32u BX_POLY_AARCH64_CTRL_CALL_SIG_MODE = BX_POLY_AARCH64_CTRL(0x7a);
+static const Bit32u BX_POLY_AARCH64_CTRL_LANDING = BX_POLY_AARCH64_CTRL(0x7b);
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
@@ -165,6 +166,7 @@ static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32 = BX_POLY_RISCV_C
 static const Bit32u BX_POLY_RISCV_CTRL_SWITCH_MODE = BX_POLY_RISCV_CTRL(8);
 static const Bit32u BX_POLY_RISCV_CTRL_CALL_MODE = BX_POLY_RISCV_CTRL(9);
 static const Bit32u BX_POLY_RISCV_CTRL_CALL_SIG_MODE = BX_POLY_RISCV_CTRL(10);
+static const Bit32u BX_POLY_RISCV_CTRL_LANDING = BX_POLY_RISCV_CTRL(11);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
 static const Bit32u BX_POLY_CPUID_MAX = 0x40000009;
 static const Bit32u BX_POLY_CPUID_FEATURE_RAW_AARCH64 = (1U << 0);
@@ -286,6 +288,7 @@ static const Bit32u BX_POLY_TRANSITION_FLAG_NEUTRAL_FOREIGN = (1U << 6);
 static const Bit32u BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE = (1U << 7);
 static const Bit32u BX_POLY_TRANSITION_FLAG_TRAP_RETURN = (1U << 8);
 static const Bit32u BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW = (1U << 9);
+static const Bit32u BX_POLY_TRANSITION_FLAG_LANDING_PADS = (1U << 10);
 static const Bit32u BX_POLY_TRANSITION_AARCH64_ALIGN = 4;
 static const Bit32u BX_POLY_TRANSITION_RISCV_ALIGN = 2;
 static const Bit32u BX_POLY_ABI_BRIDGE_ABI_VERSION = 1;
@@ -6223,6 +6226,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return return_poly_architectural_trap();
   }
 
+  if (insn == BX_POLY_AARCH64_CTRL_LANDING) {
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 landing pad"));
+    return true;
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_SWITCH) {
     bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
@@ -7271,6 +7280,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   if (insn == BX_POLY_RISCV_CTRL_TRAP_RETURN) {
     BX_INFO(("poly_raw: riscv polyctrl trap return"));
     return return_poly_architectural_trap();
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_LANDING) {
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv landing pad"));
+    return true;
   }
 
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_SWITCH) {
@@ -9576,6 +9591,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           frontend_id, target_mode, (unsigned long long) target_rip));
         return true;
       }
+      if (op == 0x05) {
+        RIP = next_rip;
+        BX_DEBUG(("poly_op: x86 landing pad"));
+        return true;
+      }
       if (op == 0x10)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
@@ -10122,6 +10142,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = BX_POLY_ABI_SIGNATURE_SLOT_COUNT;
       RDX = 0;
     }
+    else if (ECX == 9) {
+      RAX = 0x05;
+      RBX = BX_POLY_AARCH64_CTRL_LANDING;
+      RCX = BX_POLY_RISCV_CTRL_LANDING;
+      RDX = 0;
+    }
     else {
       RAX = 0;
       RBX = 0;
@@ -10209,7 +10235,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
             BX_POLY_TRANSITION_FLAG_NEUTRAL_FOREIGN |
             BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE |
             BX_POLY_TRANSITION_FLAG_TRAP_RETURN |
-            BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW;
+            BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW |
+            BX_POLY_TRANSITION_FLAG_LANDING_PADS;
       RCX = BX_POLY_TRANSITION_AARCH64_ALIGN |
             (BX_POLY_TRANSITION_RISCV_ALIGN << 16);
       RDX = (1U << BX_POLY_MODE_X86) |
