@@ -3461,7 +3461,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   RIP = target_rip;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_ud: pcall mode=%u target=%llx return=%llx sret=%u kind=%u arg=%u",
+  BX_DEBUG(("poly_ud: pcall mode=%u target=%llx return=%llx sret=%u kind=%u arg=%u",
     mode, (unsigned long long) target_rip, (unsigned long long) return_rip,
     sret_call ? 1 : 0, return_kind, arg_kind));
   return true;
@@ -3485,7 +3485,7 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
     return false;
   }
 
-  BX_INFO(("poly_ud: pcall signature mode=%u slot=%u kind=%u target=%llx return=%llx",
+  BX_DEBUG(("poly_ud: pcall signature mode=%u slot=%u kind=%u target=%llx return=%llx",
     mode, slot, source_kind, (unsigned long long) target_rip,
     (unsigned long long) return_rip));
   return enter_poly_abi_call(mode, target_rip, return_rip, sret_call,
@@ -3660,7 +3660,7 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   bx_poly_restore_previous_return_cookie();
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_raw: pcall return mode=%u rip=%llx", mode, (unsigned long long) RIP));
+  BX_DEBUG(("poly_raw: pcall return mode=%u rip=%llx", mode, (unsigned long long) RIP));
   return true;
 }
 
@@ -3812,7 +3812,7 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   RIP = target_rip;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_raw: cross call caller=%u callee=%u depth=%u target=%llx return=%llx bridge=%u",
+  BX_DEBUG(("poly_raw: cross call caller=%u callee=%u depth=%u target=%llx return=%llx bridge=%u",
     caller_mode, callee_mode, bx_poly_cross_return_top,
     (unsigned long long) target_rip, (unsigned long long) return_rip,
     bridge_kind));
@@ -3935,7 +3935,7 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_raw: cross return callee=%u mode=%u depth=%u rip=%llx bridge=%u",
+  BX_DEBUG(("poly_raw: cross return callee=%u mode=%u depth=%u rip=%llx bridge=%u",
     callee_mode, bx_poly_current_mode, bx_poly_cross_return_top,
     (unsigned long long) RIP, bridge_kind));
   return true;
@@ -4041,12 +4041,12 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
   if (import_id == BX_POLY_DIRECT_X86_IMPORT_ID) {
-    BX_INFO(("poly_raw: direct x86 return mode=%u result=%llu high=%llu rip=%llx",
+    BX_DEBUG(("poly_raw: direct x86 return mode=%u result=%llu high=%llu rip=%llx",
       bx_poly_current_mode, (unsigned long long) result_rax,
       (unsigned long long) result_rdx, (unsigned long long) RIP));
   }
   else {
-    BX_INFO(("poly_raw: import x86 return mode=%u import=%u result=%llu high=%llu rip=%llx",
+    BX_DEBUG(("poly_raw: import x86 return mode=%u import=%u result=%llu high=%llu rip=%llx",
       bx_poly_current_mode, (unsigned) import_id,
       (unsigned long long) result_rax,
       (unsigned long long) result_rdx, (unsigned long long) RIP));
@@ -4171,7 +4171,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   write_virtual_qword(BX_SEG_REG_SS, x86_rsp,
     (Bit64u) BX_POLY_RETURN_COOKIE);
 
-  BX_INFO(("poly_raw: direct x86 call mode=%u kind=%u target=%llx stack=%llx arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu return=%llx",
+  BX_DEBUG(("poly_raw: direct x86 call mode=%u kind=%u target=%llx stack=%llx arg0=%llu arg1=%llu arg2=%llu arg3=%llu arg4=%llu arg5=%llu return=%llx",
     mode, source_kind, (unsigned long long) target_rip,
     (unsigned long long) x86_rsp,
     (unsigned long long) args[0], (unsigned long long) args[1],
@@ -4209,7 +4209,7 @@ void BX_CPU_C::poly_interrupt_enter(void)
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   bx_poly_loaded_reg_state_valid = false;
-  BX_INFO(("poly_raw: interrupt enter mode=%u rip=%llx",
+  BX_DEBUG(("poly_raw: interrupt enter mode=%u rip=%llx",
     bx_poly_interrupted_raw_mode, (unsigned long long) bx_poly_interrupted_raw_rip));
 }
 
@@ -4233,7 +4233,7 @@ void BX_CPU_C::poly_restore_raw_return_to_user(const char *source)
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-  BX_INFO(("poly_raw: %s restore mode=%u rip=%llx",
+  BX_DEBUG(("poly_raw: %s restore mode=%u rip=%llx",
     source, bx_poly_current_mode, (unsigned long long) RIP));
 }
 
@@ -6434,12 +6434,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: aarch64 polyctrl escape to x86"));
+    BX_DEBUG(("poly_raw: aarch64 polyctrl escape to x86"));
     return true;
   }
 
   if (insn == BX_POLY_AARCH64_CTRL_TRAP_RETURN) {
-    BX_INFO(("poly_raw: aarch64 polyctrl trap return"));
+    BX_DEBUG(("poly_raw: aarch64 polyctrl trap return"));
     return return_poly_architectural_trap();
   }
 
@@ -6604,7 +6604,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: aarch64 polyctrl switch to riscv"));
+    BX_DEBUG(("poly_raw: aarch64 polyctrl switch to riscv"));
     return true;
   }
 
@@ -6636,7 +6636,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = (bx_address) target;
-    BX_INFO(("poly_raw: aarch64 generic switch frontend=%u mode=%u target=%llx",
+    BX_DEBUG(("poly_raw: aarch64 generic switch frontend=%u mode=%u target=%llx",
       frontend_id, target_mode, (unsigned long long) target));
     return true;
   }
@@ -7708,12 +7708,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: riscv polyctrl escape to x86"));
+    BX_DEBUG(("poly_raw: riscv polyctrl escape to x86"));
     return true;
   }
 
   if (insn == BX_POLY_RISCV_CTRL_TRAP_RETURN) {
-    BX_INFO(("poly_raw: riscv polyctrl trap return"));
+    BX_DEBUG(("poly_raw: riscv polyctrl trap return"));
     return return_poly_architectural_trap();
   }
 
@@ -7878,7 +7878,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = next_rip;
-    BX_INFO(("poly_raw: riscv polyctrl switch to aarch64"));
+    BX_DEBUG(("poly_raw: riscv polyctrl switch to aarch64"));
     return true;
   }
 
@@ -7910,7 +7910,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     bx_poly_mode_switch_count++;
     RIP = (bx_address) target;
-    BX_INFO(("poly_raw: riscv generic switch frontend=%u mode=%u target=%llx",
+    BX_DEBUG(("poly_raw: riscv generic switch frontend=%u mode=%u target=%llx",
       frontend_id, target_mode, (unsigned long long) target));
     return true;
   }
@@ -10174,7 +10174,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (PREV_RIP > 1)
     opcode_m2 = read_virtual_byte(BX_SEG_REG_CS, PREV_RIP - 2);
 
-  BX_INFO(("poly_op: bytes=%02x %02x %02x %02x prev=%02x prev2=%02x",
+  BX_DEBUG(("poly_op: bytes=%02x %02x %02x %02x prev=%02x prev2=%02x",
     opcode0, opcode1, opcode2, opcode3, opcode_m1, opcode_m2));
 
   if (opcode0 == 0x0f && opcode1 == 0x3a && opcode2 == 0xfc) {
@@ -10213,7 +10213,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_current_state_key(RSP));
         BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
         RIP = next_rip;
-        BX_INFO(("poly_op: x86 poly opcode op=0x%02x mode switch to %u",
+        BX_DEBUG(("poly_op: x86 poly opcode op=0x%02x mode switch to %u",
           op, target_mode));
         return true;
       }
@@ -10240,7 +10240,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_current_state_key(RSP));
         BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
         RIP = target_rip;
-        BX_INFO(("poly_op: x86 poly opcode pswitch frontend=%u mode=%u target=%llx",
+        BX_DEBUG(("poly_op: x86 poly opcode pswitch frontend=%u mode=%u target=%llx",
           frontend_id, target_mode, (unsigned long long) target_rip));
         return true;
       }
