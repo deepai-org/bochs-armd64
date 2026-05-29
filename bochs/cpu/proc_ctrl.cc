@@ -3758,10 +3758,17 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-  BX_INFO(("poly_ud: import x86 return mode=%u descriptor=%u result=%llu high=%llu rip=%llx",
-    bx_poly_current_mode, (unsigned) import_id,
-    (unsigned long long) result_rax,
-    (unsigned long long) result_rdx, (unsigned long long) RIP));
+  if (import_id == BX_POLY_DIRECT_X86_IMPORT_ID) {
+    BX_INFO(("poly_raw: direct x86 return mode=%u result=%llu high=%llu rip=%llx",
+      bx_poly_current_mode, (unsigned long long) result_rax,
+      (unsigned long long) result_rdx, (unsigned long long) RIP));
+  }
+  else {
+    BX_INFO(("poly_ud: import x86 return mode=%u descriptor=%u result=%llu high=%llu rip=%llx",
+      bx_poly_current_mode, (unsigned) import_id,
+      (unsigned long long) result_rax,
+      (unsigned long long) result_rdx, (unsigned long long) RIP));
+  }
   return true;
 }
 
