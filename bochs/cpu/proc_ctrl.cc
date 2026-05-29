@@ -10474,7 +10474,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         if (!bx_poly_valid_frontend_mode((Bit32u) RAX)) {
           BX_INFO(("poly_ud: reject trap vector mode=%llu",
             (unsigned long long) RAX));
-          exception(BX_UD_EXCEPTION, 0);
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
           return true;
         }
         bx_poly_trap_vector_mode = (Bit32u) RAX;
