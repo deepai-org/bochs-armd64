@@ -3702,17 +3702,17 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   bx_address return_rip = frame.rip;
   bx_address return_rsp = frame.rsp;
   Bit64u import_id = frame.import_id;
-  const Bit64u descriptor_flags = frame.descriptor_flags;
+  const Bit64u return_flags = frame.descriptor_flags;
   const bool returns_i128 =
-    (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128) != 0;
   const bool returns_fp128 =
-    (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128) != 0;
   const bool returns_fpair64 =
-    (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64) != 0;
   const bool returns_fpair32 =
-    (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32) != 0;
   const bool returns_vec128 =
-    (descriptor_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128) != 0;
   const Bit64u result_rax = RAX;
   const Bit64u result_rdx = RDX;
   const Bit64u result_xmm0_lo = BX_READ_XMM_REG_LO_QWORD(0);
@@ -3795,7 +3795,7 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
       (unsigned long long) result_rdx, (unsigned long long) RIP));
   }
   else {
-    BX_INFO(("poly_ud: import x86 return mode=%u descriptor=%u result=%llu high=%llu rip=%llx",
+    BX_INFO(("poly_raw: import x86 return mode=%u import=%u result=%llu high=%llu rip=%llx",
       bx_poly_current_mode, (unsigned) import_id,
       (unsigned long long) result_rax,
       (unsigned long long) result_rdx, (unsigned long long) RIP));
