@@ -663,7 +663,7 @@ struct bx_poly_import_x86_return_frame_t {
   bx_address rip;
   bx_address rsp;
   Bit64u import_id;
-  Bit64u descriptor_flags;
+  Bit64u return_flags;
   bool alias_valid;
   Bit64u alias[6];
 };
@@ -1691,7 +1691,7 @@ static void bx_poly_reset_import_x86_return_frame(
   frame->rip = 0;
   frame->rsp = 0;
   frame->import_id = 0;
-  frame->descriptor_flags = 0;
+  frame->return_flags = 0;
   frame->alias_valid = false;
   for (unsigned n = 0; n < 6; n++)
     frame->alias[n] = 0;
@@ -2637,7 +2637,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
     write_virtual_qword(seg, frame_base + 16, frame->rsp);
     write_virtual_qword(seg, frame_base + 24, frame->import_id);
     write_virtual_qword(seg, frame_base + 32,
-      frame->descriptor_flags);
+      frame->return_flags);
     for (unsigned alias = 0; alias < 6; alias++)
       write_virtual_qword(seg, frame_base + 40 + alias * 8,
         frame->alias[alias]);
@@ -2717,7 +2717,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     frame->rip = read_virtual_qword(seg, frame_base + 8);
     frame->rsp = read_virtual_qword(seg, frame_base + 16);
     frame->import_id = read_virtual_qword(seg, frame_base + 24);
-    frame->descriptor_flags =
+    frame->return_flags =
       read_virtual_qword(seg, frame_base + 32);
     const bool direct_x86_frame =
       frame->import_id == BX_POLY_DIRECT_X86_IMPORT_ID;
@@ -3702,7 +3702,7 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   bx_address return_rip = frame.rip;
   bx_address return_rsp = frame.rsp;
   Bit64u import_id = frame.import_id;
-  const Bit64u return_flags = frame.descriptor_flags;
+  const Bit64u return_flags = frame.return_flags;
   const bool returns_i128 =
     (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128) != 0;
   const bool returns_fp128 =
@@ -3876,7 +3876,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->rip = return_rip;
   frame->rsp = foreign_rsp;
   frame->import_id = BX_POLY_DIRECT_X86_IMPORT_ID;
-  frame->descriptor_flags =
+  frame->return_flags =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ?
       BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
   frame->alias_valid = true;
