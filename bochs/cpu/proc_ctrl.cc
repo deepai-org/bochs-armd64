@@ -3826,6 +3826,11 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->alias[4] = R8;
   frame->alias[5] = R9;
 
+  // User-space ABI thunks need the source stack for overflow arguments.
+  // R11 is volatile in the x86_64 SysV ABI, so exposing it here does not add
+  // callee-visible preserved state or descriptor parsing to the CPU path.
+  R11 = foreign_rsp;
+
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE) {
     RAX = args[0];
     RDX = args[1];
