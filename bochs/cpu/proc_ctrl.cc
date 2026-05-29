@@ -4124,7 +4124,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->rsp = foreign_rsp;
   frame->import_id = BX_POLY_DIRECT_X86_IMPORT_ID;
   frame->return_flags =
-    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ?
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ?
       BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
