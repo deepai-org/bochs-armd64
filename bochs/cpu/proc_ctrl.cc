@@ -360,6 +360,8 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS = 3;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_I128 = 4;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32 = 5;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
+// Kind 1 is reserved for the removed stack-capable SysV signature. Real
+// signature slots are register-only; memory-side ABI work belongs in thunks.
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS = 2;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
@@ -717,7 +719,7 @@ static void bx_poly_reset_abi_signature_slots(
 {
   slots[0].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
   for (unsigned n = 1; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++)
-    slots[n].kind = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV;
+    slots[n].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
   slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS].kind =
     BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
   slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128].kind =
@@ -773,8 +775,8 @@ static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS },
   { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 },
   { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV }
+  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
+  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE }
 };
 static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
 static unsigned bx_poly_cross_return_top = 0;
@@ -3127,7 +3129,6 @@ void BX_CPU_C::xrstor_init_poly_state(void)
 static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
 {
   return kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||

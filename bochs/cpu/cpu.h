@@ -1518,7 +1518,7 @@ public: // for now...
   BX_SMF void xsave_poly_state(bxInstruction_c *i, bx_address offset);
   BX_SMF void xrstor_poly_state(bxInstruction_c *i, bx_address offset);
   BX_SMF void xrstor_init_poly_state(void);
-  BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u = 1);
+  BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u = 2);
   BX_SMF bool enter_poly_abi_signature_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u);
   BX_SMF bool return_poly_abi_call(Bit32u, bx_address);
   BX_SMF bool enter_poly_cross_call(Bit32u, Bit32u, bx_address, bx_address, Bit32u);
