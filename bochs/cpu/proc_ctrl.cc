@@ -9425,7 +9425,13 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
     if (funct3 == 0x2) {
       Bit32u rd = ((Bit32u) insn >> 7) & 0x1f;
       Bit64s imm = bx_poly_riscv_ci_imm(insn);
-      if (rd == 0 || !write_poly_riscv_reg(rd, (Bit64u) imm))
+      if (rd == 0) {
+        RIP = next_rip;
+        BX_DEBUG(("poly_raw: emulated riscv c.li x0,%lld as no-op",
+          (long long) imm));
+        return true;
+      }
+      if (!write_poly_riscv_reg(rd, (Bit64u) imm))
         return false;
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv c.li x%u,%lld", rd, (long long) imm));
@@ -9638,7 +9644,12 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       }
       if (!high && rs2 != 0) {
         Bit64u value = 0;
-        if (rd == 0 || !read_poly_riscv_reg(rs2, &value) ||
+        if (rd == 0) {
+          RIP = next_rip;
+          BX_DEBUG(("poly_raw: emulated riscv c.mv x0,x%u as no-op", rs2));
+          return true;
+        }
+        if (!read_poly_riscv_reg(rs2, &value) ||
             !write_poly_riscv_reg(rd, value))
           return false;
         RIP = next_rip;
