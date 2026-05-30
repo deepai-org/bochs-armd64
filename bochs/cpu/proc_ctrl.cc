@@ -1819,10 +1819,11 @@ static bx_address bx_poly_thread_selector_key(bx_address fsbase,
   if (bx_poly_explicit_state_key_valid)
     return bx_poly_explicit_state_key;
 
-  // In userspace, CR3+FSBASE is the stable architectural thread identity.
-  // Including RSP here fragments one pthread's hidden foreign register bank
-  // across ordinary call frames. Keep the stack-region key only as a fallback
-  // for code that has no TLS base.
+  // Prototype isolation fallback only. The silicon-facing contract is explicit
+  // XSAVE/state-key state; CR3+FSBASE is just a practical Bochs key for guest
+  // pthreads that have not installed an explicit key. Including RSP here would
+  // fragment one pthread's bank across ordinary call frames, so keep the stack
+  // region only for code that has no TLS base.
   if (fsbase != 0)
     return 0;
   return bx_poly_stack_key(rsp);
