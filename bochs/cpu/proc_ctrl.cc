@@ -3402,6 +3402,19 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
           caller_mode, target_mode, bridge_kind));
         return false;
       }
+      Bit64u return_rsp = read_virtual_qword(seg,
+        base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
+      const bx_poly_cross_return_frame_t *top_frame =
+        &cross_return_frames[cross_top - 1];
+      if (top_frame->return_rip != return_pc ||
+          top_frame->return_rsp != return_rsp ||
+          top_frame->caller_mode != caller_mode ||
+          top_frame->callee_mode != target_mode ||
+          top_frame->bridge_kind != bridge_kind ||
+          top_frame->flags != flags) {
+        BX_INFO(("poly_state_import: reject mismatched active transition summary"));
+        return false;
+      }
     }
   }
   if (!bx_poly_interrupted_raw_valid && cross_top != 0) {
