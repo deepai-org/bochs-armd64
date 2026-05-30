@@ -4650,6 +4650,61 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0x9ff80c00) == 0x0f000400) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u imm8 = (((insn >> 16) & 0x7) << 5) | ((insn >> 5) & 0x1f);
+    Bit32u cmode = (insn >> 12) & 0xf;
+    bool q = (insn & 0x40000000) != 0;
+    bool op = (insn & 0x20000000) != 0;
+    Bit32u element_bits = 0;
+    Bit64u element = 0;
+    Bit64u lo = 0, hi = 0;
+    const char *shape = 0;
+
+    if (!op && cmode == 14) {
+      element_bits = 8;
+      element = imm8;
+      shape = q ? "16b" : "8b";
+    }
+    else if (!op && (cmode == 8 || cmode == 10)) {
+      element_bits = 16;
+      element = (Bit64u) imm8 << ((cmode == 10) ? 8 : 0);
+      shape = q ? "8h" : "4h";
+    }
+    else if (!op && (cmode & 1) == 0 && cmode < 8) {
+      element_bits = 32;
+      element = (Bit64u) imm8 << (8 * (cmode >> 1));
+      shape = q ? "4s" : "2s";
+    }
+    else if (op && q && cmode == 14) {
+      element_bits = 64;
+      for (Bit32u n = 0; n < 8; n++) {
+        if (imm8 & (1u << n))
+          element |= BX_CONST64(0xff) << (n * 8);
+      }
+      shape = "2d";
+    }
+    else {
+      return false;
+    }
+
+    Bit32u lanes = (q ? 128 : 64) / element_bits;
+    for (Bit32u lane = 0; lane < lanes; lane++) {
+      Bit32u bit_offset = lane * element_bits;
+      Bit64u *qword = bit_offset < 64 ? &lo : &hi;
+      Bit32u shift = bit_offset & 63;
+      *qword |= element << shift;
+    }
+
+    if (!write_poly_aarch64_fp128_reg(rd, lo, hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 movi v%u.%s,#%llx lo=%llu hi=%llu",
+      rd, shape, (unsigned long long) element, (unsigned long long) lo,
+      (unsigned long long) hi));
+    return true;
+  }
+
   if ((insn & 0xbffffc00) == 0x88dffc00 ||
       (insn & 0xbffffc00) == 0x889ffc00) {
     Bit32u rt = insn & 0x1f;
