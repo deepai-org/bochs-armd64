@@ -12105,10 +12105,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RDX = BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32;
     }
     else if (ECX == 2) {
-      RAX = BX_POLY_IMPORT_FUNC_X86_SLOT0;
-      RBX = BX_POLY_IMPORT_FUNC_X86_SLOT7 - BX_POLY_IMPORT_FUNC_X86_SLOT0 + 1;
+      RAX = 0;
+      RBX = 0;
       RCX = 0;
-      RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
+      RDX = 0;
     }
     else if (ECX == 3) {
       RAX = BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_F32_U32;
@@ -12125,10 +12125,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
         BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32);
     }
     else if (ECX == 5) {
-      RAX = BX_POLY_IMPORT_CALL_COUNT;
-      RBX = (Bit32u) (BX_POLY_IMPORT_CALL_BASE & 0xffffffff);
-      RCX = (Bit32u) (BX_POLY_IMPORT_CALL_BASE >> 32);
-      RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE;
+      RAX = 0;
+      RBX = 0;
+      RCX = 0;
+      RDX = 0;
     }
     else if (ECX == 6) {
       RAX = BX_POLY_AARCH64_CTRL_SWITCH_MODE;
