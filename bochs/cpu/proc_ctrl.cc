@@ -379,6 +379,12 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 = 3;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS = 4;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 = 5;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 = 6;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE = 3;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_I128 = 4;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 = 5;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
@@ -760,24 +766,70 @@ struct bx_poly_return_cookie_frame_t {
 
 struct bx_poly_abi_signature_slot_t {
   Bit32u kind;
+  Bit32u register_map;
 };
+
+static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
+    Bit32u *register_map)
+{
+  switch (kind) {
+  case BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_EXCHANGE;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_I128;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32;
+    return true;
+  default:
+    return false;
+  }
+}
+
+static bool bx_poly_set_abi_signature_slot(
+    bx_poly_abi_signature_slot_t *slot, Bit32u kind)
+{
+  Bit32u register_map = 0;
+  if (!bx_poly_register_map_for_abi_signature_kind(kind, &register_map))
+    return false;
+  slot->kind = kind;
+  slot->register_map = register_map;
+  return true;
+}
 
 static void bx_poly_reset_abi_signature_slots(
     bx_poly_abi_signature_slot_t *slots)
 {
-  slots[0].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
+  bx_poly_set_abi_signature_slot(&slots[0],
+    BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE);
   for (unsigned n = 1; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++)
-    slots[n].kind = BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
-  slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS].kind =
-    BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS;
-  slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128].kind =
-    BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128;
-  slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS].kind =
-    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS;
-  slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_I128].kind =
-    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128;
-  slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32].kind =
-    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32;
+    bx_poly_set_abi_signature_slot(&slots[n],
+      BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS],
+    BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128],
+    BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS],
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_I128],
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32],
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32);
 }
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -817,14 +869,22 @@ static bx_poly_return_cookie_frame_t
 static unsigned bx_poly_return_cookie_top = 0;
 static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   BX_POLY_ABI_SIGNATURE_SLOT_COUNT] = {
-  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE },
-  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE }
+  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE,
+    BX_POLY_ABI_REGISTER_MAP_EXCHANGE },
+  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS,
+    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE },
+  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128,
+    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS,
+    BX_POLY_ABI_REGISTER_MAP_NATIVE },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128,
+    BX_POLY_ABI_REGISTER_MAP_NATIVE_I128 },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32,
+    BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 },
+  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE,
+    BX_POLY_ABI_REGISTER_MAP_EXCHANGE },
+  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE,
+    BX_POLY_ABI_REGISTER_MAP_EXCHANGE }
 };
 static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
 static unsigned bx_poly_cross_return_top = 0;
@@ -3123,7 +3183,8 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   for (unsigned n = 0; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++) {
     write_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET + n * 8,
-      bx_poly_abi_signature_slots[n].kind);
+      (Bit64u) bx_poly_abi_signature_slots[n].kind |
+      ((Bit64u) bx_poly_abi_signature_slots[n].register_map << 32));
   }
 
   unsigned cross_top = bx_poly_cross_return_top;
@@ -3411,15 +3472,20 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   }
   for (unsigned n = 0; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++) {
-    Bit64u kind = read_virtual_qword(seg,
+    Bit64u slot_value = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET + n * 8);
-    if (kind > 0xffffffff ||
-        !bx_poly_valid_abi_signature_kind((Bit32u) kind)) {
-      BX_INFO(("poly_state_import: reject ABI signature slot=%u kind=%llu",
-        n, (unsigned long long) kind));
+    Bit32u kind = (Bit32u) slot_value;
+    Bit32u register_map = (Bit32u) (slot_value >> 32);
+    Bit32u expected_register_map = 0;
+    if (!bx_poly_register_map_for_abi_signature_kind(kind,
+          &expected_register_map) ||
+        register_map != expected_register_map) {
+      BX_INFO(("poly_state_import: reject ABI signature slot=%u kind=%u map=%u expected=%u",
+        n, kind, register_map, expected_register_map));
       return false;
     }
-    abi_signature_slots[n].kind = (Bit32u) kind;
+    abi_signature_slots[n].kind = kind;
+    abi_signature_slots[n].register_map = register_map;
   }
   if (!reserved_qwords_are_zero(
         BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET +
@@ -7796,7 +7862,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       RIP = next_rip;
       return true;
     }
-    bx_poly_abi_signature_slots[(Bit32u) slot].kind = (Bit32u) kind;
+    bx_poly_set_abi_signature_slot(
+      &bx_poly_abi_signature_slots[(Bit32u) slot], (Bit32u) kind);
     write_poly_aarch64_reg(0, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -9085,7 +9152,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       RIP = next_rip;
       return true;
     }
-    bx_poly_abi_signature_slots[(Bit32u) slot].kind = (Bit32u) kind;
+    bx_poly_set_abi_signature_slot(
+      &bx_poly_abi_signature_slots[(Bit32u) slot], (Bit32u) kind);
     write_poly_riscv_reg(10, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -12164,7 +12232,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             slot, kind));
           return true;
         }
-        bx_poly_abi_signature_slots[slot].kind = kind;
+        bx_poly_set_abi_signature_slot(&bx_poly_abi_signature_slots[slot],
+          kind);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
         RAX = 0;
         RIP = next_rip;
