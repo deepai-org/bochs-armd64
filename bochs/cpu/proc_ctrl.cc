@@ -12330,7 +12330,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     RCX = BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT |
           (BX_POLY_ABI_BRIDGE_FP_ARG_COUNT << 8) |
           (BX_POLY_ABI_BRIDGE_STACK_ALIGN << 16);
-    RDX = (Bit32u) BX_POLY_IMPORT_CALL_STRIDE << 16;
+    RDX = 0;
     BX_NEXT_INSTR(i);
     return;
   }
