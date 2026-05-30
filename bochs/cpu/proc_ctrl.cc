@@ -9165,7 +9165,9 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = f32_min(left32_bits, right32_bits, &status);
+      result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, false,
+        &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x14 && rm == 1) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -9174,7 +9176,9 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = f32_max(left32_bits, right32_bits, &status);
+      result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, false,
+        &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x01) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -9234,7 +9238,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = f64_min(left_bits, right_bits, &status);
+      result_bits = f64_minmax(left_bits, right_bits, 0, 1, false, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x15 && rm == 1) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -9242,7 +9247,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = f64_max(left_bits, right_bits, &status);
+      result_bits = f64_minmax(left_bits, right_bits, 1, 1, false, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x2c && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -9486,20 +9492,21 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x50 || funct7 == 0x51) {
       bool fp32_cmp = funct7 == 0x50;
       Bit64u result = 0;
+      softfloat_status_t status = bx_poly_softfloat_status();
       if (fp32_cmp) {
         if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
             !read_poly_riscv_fp32_reg(rs2, &right32_bits))
           return false;
-        float left = bx_poly_fp32_from_bits(left32_bits);
-        float right = bx_poly_fp32_from_bits(right32_bits);
-        if (left != left || right != right)
-          result = 0;
-        else if (rm == 0)
-          result = left <= right;
+        int relation = (rm == 2) ?
+          f32_compare(left32_bits, right32_bits, true, &status) :
+          f32_compare(left32_bits, right32_bits, false, &status);
+        if (rm == 0)
+          result = relation == softfloat_relation_less ||
+            relation == softfloat_relation_equal;
         else if (rm == 1)
-          result = left < right;
+          result = relation == softfloat_relation_less;
         else if (rm == 2)
-          result = left == right;
+          result = relation == softfloat_relation_equal;
         else
           return false;
       }
@@ -9507,19 +9514,20 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
             !read_poly_riscv_fp64_reg(rs2, &right_bits))
           return false;
-        double left = bx_poly_fp64_from_bits(left_bits);
-        double right = bx_poly_fp64_from_bits(right_bits);
-        if (left != left || right != right)
-          result = 0;
-        else if (rm == 0)
-          result = left <= right;
+        int relation = (rm == 2) ?
+          f64_compare(left_bits, right_bits, true, &status) :
+          f64_compare(left_bits, right_bits, false, &status);
+        if (rm == 0)
+          result = relation == softfloat_relation_less ||
+            relation == softfloat_relation_equal;
         else if (rm == 1)
-          result = left < right;
+          result = relation == softfloat_relation_less;
         else if (rm == 2)
-          result = left == right;
+          result = relation == softfloat_relation_equal;
         else
           return false;
       }
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
       if (!write_poly_riscv_reg(rd, result))
         return false;
       RIP = next_rip;
