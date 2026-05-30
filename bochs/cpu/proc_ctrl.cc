@@ -4826,12 +4826,28 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0xffffffe0) == 0xd53b00e0) {
     Bit32u rd = insn & 0x1f;
-    const Bit64u dczid_el0_dzp = 0x10;
-    if (!write_poly_aarch64_reg(rd, dczid_el0_dzp))
+    const Bit64u dczid_el0_64_byte_block = 4;
+    if (!write_poly_aarch64_reg(rd, dczid_el0_64_byte_block))
       return false;
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,dczid_el0 value=%llx",
-      rd, (unsigned long long) dczid_el0_dzp));
+      rd, (unsigned long long) dczid_el0_64_byte_block));
+    return true;
+  }
+
+  if ((insn & 0xffffffe0) == 0xd50b7420) {
+    Bit32u rt = insn & 0x1f;
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rt, &value))
+      return false;
+    const Bit64u block_bytes = 64;
+    bx_address addr = (bx_address) (value & ~(block_bytes - 1));
+    for (Bit32u offset = 0; offset < block_bytes; offset += 8)
+      write_virtual_qword(BX_SEG_REG_DS, addr + offset, 0);
+    bx_poly_invalidate_reservations_for_store(addr, block_bytes);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 dc zva,x%u addr=%llx",
+      rt, (unsigned long long) addr));
     return true;
   }
 
