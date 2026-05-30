@@ -5233,6 +5233,66 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   }
 
   {
+    Bit32u simd_reduce_base =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | 0x40000000 |
+        0x20000000 | 0x00c00000 | 0x00010000);
+    const char *op_name = 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u size = (insn >> 22) & 0x3;
+    bool q = (insn & 0x40000000) != 0;
+    bool unsigned_compare = (insn & 0x20000000) != 0;
+    bool minimum = (insn & 0x00010000) != 0;
+    Bit32u element_bits = 8U << size;
+    Bit32u lanes = (q ? 128 : 64) / element_bits;
+    Bit64u lo = 0, hi = 0;
+    Bit64u best_value = 0;
+
+    if (simd_reduce_base == 0x0e30a800) {
+      if (size > 2 || (size == 2 && !q))
+        return false;
+      if (minimum)
+        op_name = unsigned_compare ? "uminv" : "sminv";
+      else
+        op_name = unsigned_compare ? "umaxv" : "smaxv";
+    }
+
+    if (op_name != 0) {
+      if (!read_poly_aarch64_fp128_reg(rn, &lo, &hi))
+        return false;
+
+      for (Bit32u lane = 0; lane < lanes; lane++) {
+        Bit64u value = bx_poly_get_vector_element(lo, hi, element_bits, lane);
+        bool take = lane == 0;
+
+        if (!take) {
+          if (unsigned_compare) {
+            take = minimum ? value < best_value : value > best_value;
+          }
+          else {
+            Bit64s signed_value = bx_poly_sign_extend64(value, element_bits);
+            Bit64s signed_best =
+              bx_poly_sign_extend64(best_value, element_bits);
+            take = minimum ? signed_value < signed_best :
+              signed_value > signed_best;
+          }
+        }
+
+        if (take)
+          best_value = value;
+      }
+
+      if (!write_poly_aarch64_fp128_reg(rd,
+          best_value & bx_poly_low_mask(element_bits), 0))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s %u-bit v%u,v%u result=%llu",
+        op_name, element_bits, rd, rn, (unsigned long long) best_value));
+      return true;
+    }
+  }
+
+  {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rm = (insn >> 16) & 0x1f;
