@@ -58,6 +58,8 @@ enum {
   BX_POLY_TRAP_ILLEGAL = 4
 };
 
+static const unsigned BX_POLY_TRAP_SAVED_XMM_COUNT = 16;
+
 struct bx_poly_trap_packet {
   Bit32u reason;
   Bit32u mode;
@@ -87,8 +89,8 @@ struct bx_poly_trap_saved_regs {
   Bit64u r14;
   Bit64u r15;
   Bit64u rsp;
-  Bit64u xmm_lo[8];
-  Bit64u xmm_hi[8];
+  Bit64u xmm_lo[BX_POLY_TRAP_SAVED_XMM_COUNT];
+  Bit64u xmm_hi[BX_POLY_TRAP_SAVED_XMM_COUNT];
   bool aarch64_state_valid;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
@@ -126,7 +128,7 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   regs->r14 = 0;
   regs->r15 = 0;
   regs->rsp = 0;
-  for (unsigned n = 0; n < 8; n++) {
+  for (unsigned n = 0; n < BX_POLY_TRAP_SAVED_XMM_COUNT; n++) {
     regs->xmm_lo[n] = 0;
     regs->xmm_hi[n] = 0;
   }
@@ -11256,7 +11258,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   bx_poly_trap_saved_regs.r14 = R14;
   bx_poly_trap_saved_regs.r15 = R15;
   bx_poly_trap_saved_regs.rsp = RSP;
-  for (unsigned n = 0; n < 8; n++) {
+  for (unsigned n = 0; n < BX_POLY_TRAP_SAVED_XMM_COUNT; n++) {
     bx_poly_trap_saved_regs.xmm_lo[n] = BX_READ_XMM_REG_LO_QWORD(n);
     bx_poly_trap_saved_regs.xmm_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
   }
@@ -11433,7 +11435,7 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     R15 = bx_poly_trap_saved_regs.r15;
     RSP = bx_poly_trap_saved_regs.rsp;
     RAX = result;
-    for (unsigned n = 0; n < 8; n++) {
+    for (unsigned n = 0; n < BX_POLY_TRAP_SAVED_XMM_COUNT; n++) {
       BX_WRITE_XMM_REG_LO_QWORD(n, bx_poly_trap_saved_regs.xmm_lo[n]);
       BX_WRITE_XMM_REG_HI_QWORD(n, bx_poly_trap_saved_regs.xmm_hi[n]);
     }
