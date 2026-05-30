@@ -292,11 +292,14 @@ static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET =
   BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET + 8;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET =
   BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET + 16;
+static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_BYTES = 0x120;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES = 0x20;
 static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET = 0xea0;
 static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_BYTES = 0x40;
 static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET = 0xee0;
 static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_BYTES = 0x40;
+static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_OFFSET = 0xf20;
+static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_BYTES = 0x0e0;
 static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
 static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
@@ -3180,6 +3183,19 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   }
 
+  auto reserved_qwords_are_zero =
+    [&](Bit32u offset, Bit32u bytes, const char *label) -> bool {
+      for (Bit32u n = 0; n < bytes; n += 8) {
+        Bit64u value = read_virtual_qword(seg, base + offset + n);
+        if (value != 0) {
+          BX_INFO(("poly_state_import: reject reserved %s offset=%x value=%llx",
+            label, offset + n, (unsigned long long) value));
+          return false;
+        }
+      }
+      return true;
+    };
+
   Bit64u aarch64_gpr[32], aarch64_fp_lo[32], aarch64_fp_hi[32];
   Bit64u riscv_gpr[32], riscv_fp_lo[32], riscv_fp_hi[32];
   bx_poly_abi_signature_slot_t abi_signature_slots[
@@ -3198,7 +3214,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   }
   Bit64u tls_active_mode = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 8);
-  if (!bx_poly_valid_frontend_mode((Bit32u) tls_active_mode)) {
+  if (tls_active_mode > 0xffffffff ||
+      !bx_poly_valid_frontend_mode((Bit32u) tls_active_mode)) {
     BX_INFO(("poly_state_import: reject TLS active mode=%llu",
       (unsigned long long) tls_active_mode));
     return false;
@@ -3221,6 +3238,19 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       (unsigned long long) imported_landing_supported));
     return false;
   }
+  if (!reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 48, 16, "trap") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 32, 32, "transition") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 32, 32, "frontend TLS") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 16, 48,
+        "landing policy") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_RESERVED_OFFSET,
+        BX_POLY_STATE_XSAVE_RESERVED_BYTES, "top-level"))
+    return false;
   Bit64u imported_trap_vector_mode = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48);
   if (imported_trap_vector_mode > 0xffffffff ||
@@ -3303,6 +3333,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       (unsigned long long) imported_riscv_reservation_size));
     return false;
   }
+  if (!reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 40, 88,
+        "aarch64 status") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET + 24, 104,
+        "riscv status"))
+    return false;
 
   Bit64u import_top64 = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET);
@@ -3323,7 +3360,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     Bit64u mode_alias = read_virtual_qword(seg, frame_base);
     bx_poly_import_x86_return_frame_t *frame = &import_return_frames[n];
     frame->mode = (Bit32u) mode_alias;
-    frame->alias_valid = ((mode_alias >> 32) & 1) != 0;
+    Bit64u alias_valid = mode_alias >> 32;
+    if (alias_valid > 1) {
+      BX_INFO(("poly_state_import: reject import return frame %u alias_valid=%llu",
+        n, (unsigned long long) alias_valid));
+      return false;
+    }
+    frame->alias_valid = alias_valid != 0;
     frame->rip = read_virtual_qword(seg, frame_base + 8);
     frame->rsp = read_virtual_qword(seg, frame_base + 16);
     frame->import_id = read_virtual_qword(seg, frame_base + 24);
@@ -3340,6 +3383,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     for (unsigned alias = 0; alias < 6; alias++)
       frame->alias[alias] =
         read_virtual_qword(seg, frame_base + 40 + alias * 8);
+    if (!reserved_qwords_are_zero(
+          frame_base + 88 - base, 40, "import return frame"))
+      return false;
   }
 
   Bit64u signature_slot_count = read_virtual_qword(seg,
@@ -3367,6 +3413,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     }
     abi_signature_slots[n].kind = (Bit32u) kind;
   }
+  if (!reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET +
+        BX_POLY_ABI_SIGNATURE_SLOT_COUNT * 8,
+        BX_POLY_STATE_XSAVE_ABI_SIGNATURE_BYTES - 16 -
+        BX_POLY_ABI_SIGNATURE_SLOT_COUNT * 8,
+        "ABI signature"))
+    return false;
 
   Bit64u cross_top64 = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET);
@@ -3391,6 +3444,11 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     Bit64u abi_flags = read_virtual_qword(seg, frame_base + 24);
     frame->caller_mode = (Bit32u) modes;
     frame->callee_mode = (Bit32u) (modes >> 32);
+    if ((abi_flags >> 32) != 0) {
+      BX_INFO(("poly_state_import: reject cross return frame %u reserved=%llx",
+        n, (unsigned long long) (abi_flags >> 32)));
+      return false;
+    }
     frame->bridge_kind = (Bit32u) (Bit16u) abi_flags;
     frame->flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
     if (!bx_poly_valid_frontend_mode(frame->caller_mode) ||
@@ -3401,6 +3459,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       return false;
     }
   }
+  if (!reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET +
+        BX_POLY_CROSS_RETURN_DEPTH * BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES,
+        BX_POLY_STATE_XSAVE_CROSS_RETURN_BYTES - 16 -
+        BX_POLY_CROSS_RETURN_DEPTH *
+          BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES,
+        "cross return"))
+    return false;
 
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
@@ -3435,11 +3501,20 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_interrupted_raw_rip = 0;
   Bit64u return_pc =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET);
+  Bit64u transition_modes = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8);
+  Bit64u transition_abi_flags = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16);
+  Bit64u transition_cookie = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
   if (return_pc != 0) {
-    Bit64u modes = read_virtual_qword(seg,
-      base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8);
-    Bit64u abi_flags = read_virtual_qword(seg,
-      base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16);
+    Bit64u modes = transition_modes;
+    Bit64u abi_flags = transition_abi_flags;
+    if ((abi_flags >> 32) != 0) {
+      BX_INFO(("poly_state_import: reject active transition reserved=%llx",
+        (unsigned long long) (abi_flags >> 32)));
+      return false;
+    }
     Bit32u flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
     Bit32u caller_mode = (Bit32u) modes;
     Bit32u target_mode = (Bit32u) (modes >> 32);
@@ -3466,8 +3541,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       }
       bx_poly_cross_return_frame_t *frame = &bx_poly_cross_return_stack[0];
       frame->return_rip = return_pc;
-      frame->return_rsp = read_virtual_qword(seg,
-        base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
+      frame->return_rsp = transition_cookie;
       frame->caller_mode = caller_mode;
       frame->callee_mode = target_mode;
       frame->bridge_kind = bridge_kind;
@@ -3482,8 +3556,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
           caller_mode, target_mode, bridge_kind));
         return false;
       }
-      Bit64u return_rsp = read_virtual_qword(seg,
-        base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
+      Bit64u return_rsp = transition_cookie;
       const bx_poly_cross_return_frame_t *top_frame =
         &cross_return_frames[cross_top - 1];
       if (top_frame->return_rip != return_pc ||
@@ -3496,6 +3569,11 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         return false;
       }
     }
+  }
+  else if (transition_modes != 0 || transition_abi_flags != 0 ||
+           transition_cookie != 0) {
+    BX_INFO(("poly_state_import: reject inactive transition metadata"));
+    return false;
   }
   if (!bx_poly_interrupted_raw_valid && cross_top != 0) {
     bx_poly_cross_return_top = cross_top;
