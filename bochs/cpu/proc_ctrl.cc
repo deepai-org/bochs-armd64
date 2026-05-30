@@ -8848,6 +8848,22 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "srai";
       result = (Bit64u) ((Bit64s) base >> shamt);
     }
+    else if (funct3 == 0x1 && shift_top == 0x0a) {
+      op_name = "bseti";
+      result = base | (BX_CONST64(1) << shamt);
+    }
+    else if (funct3 == 0x1 && shift_top == 0x12) {
+      op_name = "bclri";
+      result = base & ~(BX_CONST64(1) << shamt);
+    }
+    else if (funct3 == 0x1 && shift_top == 0x1a) {
+      op_name = "binvi";
+      result = base ^ (BX_CONST64(1) << shamt);
+    }
+    else if (funct3 == 0x5 && shift_top == 0x12) {
+      op_name = "bexti";
+      result = (base >> shamt) & 1;
+    }
     else if (funct3 == 0x1 && imm_raw == 0x600) {
       op_name = "clz";
       result = bx_poly_count_leading_zeroes(base, 64);
@@ -9091,6 +9107,22 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x30 && funct3 == 0x5) {
       op_name = "ror";
       result = bx_poly_rotate_right(left, 64, (Bit32u) right);
+    }
+    else if (funct7 == 0x14 && funct3 == 0x1) {
+      op_name = "bset";
+      result = left | (BX_CONST64(1) << (right & 0x3f));
+    }
+    else if (funct7 == 0x24 && funct3 == 0x1) {
+      op_name = "bclr";
+      result = left & ~(BX_CONST64(1) << (right & 0x3f));
+    }
+    else if (funct7 == 0x34 && funct3 == 0x1) {
+      op_name = "binv";
+      result = left ^ (BX_CONST64(1) << (right & 0x3f));
+    }
+    else if (funct7 == 0x24 && funct3 == 0x5) {
+      op_name = "bext";
+      result = (left >> (right & 0x3f)) & 1;
     }
     else if (funct7 == 0x10 && funct3 == 0x2) {
       op_name = "sh1add";
