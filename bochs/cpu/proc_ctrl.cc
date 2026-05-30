@@ -1892,6 +1892,16 @@ static bool bx_poly_valid_cross_bridge_kind(Bit32u kind)
     kind == BX_POLY_CROSS_BRIDGE_VEC128_U32;
 }
 
+static bool bx_poly_valid_cross_return_shape(Bit32u caller_mode,
+  Bit32u callee_mode, Bit32u bridge_kind)
+{
+  if (!bx_poly_is_raw_mode(caller_mode) || !bx_poly_is_raw_mode(callee_mode) ||
+      caller_mode == callee_mode)
+    return false;
+
+  return bx_poly_valid_cross_bridge_kind(bridge_kind);
+}
+
 static bool bx_poly_ranges_overlap(bx_address left_addr, Bit32u left_size,
   bx_address right_addr, Bit32u right_size)
 {
@@ -3380,9 +3390,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     }
     frame->bridge_kind = (Bit32u) (Bit16u) abi_flags;
     frame->flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
-    if (!bx_poly_valid_frontend_mode(frame->caller_mode) ||
-        !bx_poly_valid_frontend_mode(frame->callee_mode) ||
-        !bx_poly_valid_cross_bridge_kind(frame->bridge_kind)) {
+    if (!bx_poly_valid_cross_return_shape(frame->caller_mode,
+          frame->callee_mode, frame->bridge_kind)) {
       BX_INFO(("poly_state_import: reject cross return frame %u caller=%u callee=%u bridge=%u",
         n, frame->caller_mode, frame->callee_mode, frame->bridge_kind));
       return false;
@@ -3475,9 +3484,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       bx_poly_interrupted_raw_rip = return_pc;
     }
     else if (cross_top == 0) {
-      if (!bx_poly_valid_frontend_mode(caller_mode) ||
-          !bx_poly_valid_frontend_mode(target_mode) ||
-          !bx_poly_valid_cross_bridge_kind(bridge_kind)) {
+      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
+            bridge_kind)) {
         BX_INFO(("poly_state_import: reject active transition caller=%u target=%u bridge=%u",
           caller_mode, target_mode, bridge_kind));
         return false;
@@ -3492,9 +3500,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       bx_poly_cross_return_top = 1;
     }
     else {
-      if (!bx_poly_valid_frontend_mode(caller_mode) ||
-          !bx_poly_valid_frontend_mode(target_mode) ||
-          !bx_poly_valid_cross_bridge_kind(bridge_kind)) {
+      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
+            bridge_kind)) {
         BX_INFO(("poly_state_import: reject active transition summary caller=%u target=%u bridge=%u",
           caller_mode, target_mode, bridge_kind));
         return false;
