@@ -4859,11 +4859,19 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0xffffffe0) == 0xd5380600 || // id_aa64isar0_el1
       (insn & 0xffffffe0) == 0xd5380620 || // id_aa64isar1_el1
+      (insn & 0xffffffe0) == 0xd5380640 || // id_aa64isar2_el1
       (insn & 0xffffffe0) == 0xd5380400 || // id_aa64pfr0_el1
       (insn & 0xffffffe0) == 0xd5380420 || // id_aa64pfr1_el1
+      (insn & 0xffffffe0) == 0xd5380440 || // id_aa64pfr2_el1
+      (insn & 0xffffffe0) == 0xd5380480 || // id_aa64zfr0_el1
+      (insn & 0xffffffe0) == 0xd53804a0 || // id_aa64smfr0_el1
       (insn & 0xffffffe0) == 0xd5380700 || // id_aa64mmfr0_el1
       (insn & 0xffffffe0) == 0xd5380720 || // id_aa64mmfr1_el1
-      (insn & 0xffffffe0) == 0xd5380500) { // id_aa64dfr0_el1
+      (insn & 0xffffffe0) == 0xd5380740 || // id_aa64mmfr2_el1
+      (insn & 0xffffffe0) == 0xd5380760 || // id_aa64mmfr3_el1
+      (insn & 0xffffffe0) == 0xd5380780 || // id_aa64mmfr4_el1
+      (insn & 0xffffffe0) == 0xd5380500 || // id_aa64dfr0_el1
+      (insn & 0xffffffe0) == 0xd5380520) { // id_aa64dfr1_el1
     Bit32u rd = insn & 0x1f;
     if (!write_poly_aarch64_reg(rd, 0))
       return false;
