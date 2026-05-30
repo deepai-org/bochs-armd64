@@ -1192,6 +1192,22 @@ static Bit64u bx_poly_low_mask(unsigned bits)
   return bits >= 64 ? ~BX_CONST64(0) : ((BX_CONST64(1) << bits) - 1);
 }
 
+static Bit64u bx_poly_get_vector_element(Bit64u lo, Bit64u hi,
+    Bit32u element_bits, Bit32u lane)
+{
+  Bit32u bit_offset = lane * element_bits;
+  Bit64u source = bit_offset < 64 ? lo : hi;
+  return (source >> (bit_offset & 63)) & bx_poly_low_mask(element_bits);
+}
+
+static void bx_poly_set_vector_element(Bit64u *lo, Bit64u *hi,
+    Bit32u element_bits, Bit32u lane, Bit64u value)
+{
+  Bit32u bit_offset = lane * element_bits;
+  Bit64u *target = bit_offset < 64 ? lo : hi;
+  *target |= (value & bx_poly_low_mask(element_bits)) << (bit_offset & 63);
+}
+
 static Bit64s bx_poly_sign_extend64(Bit64u value, unsigned bits)
 {
   Bit64u mask = bx_poly_low_mask(bits);
@@ -6174,6 +6190,85 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       rd, bytes, rn, rm, imm, (unsigned long long) result_lo,
       (unsigned long long) result_hi));
     return true;
+  }
+
+  {
+    Bit32u simd_permute_base =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) |
+        (0x3 << 22) | 0x40000000);
+    const char *op_name = 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u size = (insn >> 22) & 0x3;
+    bool q = (insn & 0x40000000) != 0;
+    Bit32u element_bits = 8U << size;
+    Bit32u lanes = (q ? 128 : 64) / element_bits;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if (simd_permute_base == 0x0e001800)
+      op_name = "uzp1";
+    else if (simd_permute_base == 0x0e005800)
+      op_name = "uzp2";
+    else if (simd_permute_base == 0x0e002800)
+      op_name = "trn1";
+    else if (simd_permute_base == 0x0e006800)
+      op_name = "trn2";
+    else if (simd_permute_base == 0x0e003800)
+      op_name = "zip1";
+    else if (simd_permute_base == 0x0e007800)
+      op_name = "zip2";
+
+    if (op_name != 0) {
+      if (!q && size == 3)
+        return false;
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+
+      for (Bit32u lane = 0; lane < lanes; lane++) {
+        bool from_right = false;
+        Bit32u source_lane = 0;
+        Bit64u value = 0;
+
+        if (simd_permute_base == 0x0e001800 ||
+            simd_permute_base == 0x0e005800) {
+          Bit32u source_index = ((lane & (lanes / 2 - 1)) * 2) +
+            (simd_permute_base == 0x0e005800 ? 1 : 0);
+          from_right = lane >= lanes / 2;
+          source_lane = source_index;
+        }
+        else if (simd_permute_base == 0x0e002800 ||
+            simd_permute_base == 0x0e006800) {
+          from_right = (lane & 1) != 0;
+          source_lane = ((lane >> 1) * 2) +
+            (simd_permute_base == 0x0e006800 ? 1 : 0);
+        }
+        else {
+          Bit32u base_lane = simd_permute_base == 0x0e007800 ?
+            lanes / 2 : 0;
+          from_right = (lane & 1) != 0;
+          source_lane = base_lane + (lane >> 1);
+        }
+
+        value = from_right ?
+          bx_poly_get_vector_element(right_lo, right_hi, element_bits,
+            source_lane) :
+          bx_poly_get_vector_element(left_lo, left_hi, element_bits,
+            source_lane);
+        bx_poly_set_vector_element(&result_lo, &result_hi, element_bits,
+          lane, value);
+      }
+
+      if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%u-bit,v%u,v%u lo=%llu hi=%llu",
+        op_name, rd, element_bits, rn, rm,
+        (unsigned long long) result_lo, (unsigned long long) result_hi));
+      return true;
+    }
   }
 
   {
