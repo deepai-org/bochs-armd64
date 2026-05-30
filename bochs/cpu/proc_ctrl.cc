@@ -6008,15 +6008,80 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rm = (insn >> 16) & 0x1f;
     Bit64u lo = 0, hi = 0;
 
-    if (rn != rm)
-      return false;
-    if (!read_poly_aarch64_fp128_reg(rn, &lo, &hi) ||
-        !write_poly_aarch64_fp128_reg(rd, lo, hi))
-      return false;
+    if (rn == rm) {
+      if (!read_poly_aarch64_fp128_reg(rn, &lo, &hi) ||
+          !write_poly_aarch64_fp128_reg(rd, lo, hi))
+        return false;
 
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 mov v%u.16b,v%u.16b", rd, rn));
-    return true;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 mov v%u.16b,v%u.16b", rd, rn));
+      return true;
+    }
+  }
+
+  {
+    Bit32u simd_logical_base =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) | 0x40000000);
+    const char *op_name = 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    bool q = (insn & 0x40000000) != 0;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if (simd_logical_base == 0x0e201c00) {
+      op_name = "and";
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+      result_lo = left_lo & right_lo;
+      result_hi = left_hi & right_hi;
+    }
+    else if (simd_logical_base == 0x0ea01c00) {
+      op_name = "orr";
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+      result_lo = left_lo | right_lo;
+      result_hi = left_hi | right_hi;
+    }
+    else if (simd_logical_base == 0x2e201c00) {
+      op_name = "eor";
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+      result_lo = left_lo ^ right_lo;
+      result_hi = left_hi ^ right_hi;
+    }
+    else if (simd_logical_base == 0x0e601c00) {
+      op_name = "bic";
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+      result_lo = left_lo & ~right_lo;
+      result_hi = left_hi & ~right_hi;
+    }
+    else if (simd_logical_base == 0x0ee01c00) {
+      op_name = "orn";
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+      result_lo = left_lo | ~right_lo;
+      result_hi = left_hi | ~right_hi;
+    }
+
+    if (op_name != 0) {
+      if (!q)
+        result_hi = 0;
+      if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%s,v%u,v%u lo=%llu hi=%llu",
+        op_name, rd, q ? "16b" : "8b", rn, rm,
+        (unsigned long long) result_lo, (unsigned long long) result_hi));
+      return true;
+    }
   }
 
   Bit32u simd_add_base =
