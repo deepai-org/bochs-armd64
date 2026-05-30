@@ -1068,31 +1068,32 @@ static Bit32u bx_poly_aarch64_expand_fp32_imm(Bit32u imm8)
   return sign | (exponent << 23) | fraction;
 }
 
+static Bit32u bx_poly_riscv_softfloat_rounding_mode(Bit32u rm)
+{
+  if (rm == 7)
+    rm = bx_poly_riscv_frm & 0x7;
+  switch (rm) {
+  case 0:
+    return softfloat_round_near_even;
+  case 1:
+    return softfloat_round_to_zero;
+  case 2:
+    return softfloat_round_min;
+  case 3:
+    return softfloat_round_max;
+  case 4:
+    return softfloat_round_near_maxMag;
+  default:
+    return 0xff;
+  }
+}
+
 static softfloat_status_t bx_poly_softfloat_status()
 {
   softfloat_status_t status = {};
-  Bit32u frm = (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) ?
-    (bx_poly_riscv_frm & 0x7) : 0;
-  switch (frm) {
-  case 0:
-    status.softfloat_roundingMode = softfloat_round_near_even;
-    break;
-  case 1:
-    status.softfloat_roundingMode = softfloat_round_to_zero;
-    break;
-  case 2:
-    status.softfloat_roundingMode = softfloat_round_min;
-    break;
-  case 3:
-    status.softfloat_roundingMode = softfloat_round_max;
-    break;
-  case 4:
-    status.softfloat_roundingMode = softfloat_round_near_maxMag;
-    break;
-  default:
-    status.softfloat_roundingMode = softfloat_round_near_even;
-    break;
-  }
+  Bit32u rm = (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) ?
+    bx_poly_riscv_softfloat_rounding_mode(7) : softfloat_round_near_even;
+  status.softfloat_roundingMode = (rm == 0xff) ? softfloat_round_near_even : rm;
   status.softfloat_exceptionMasks = softfloat_all_exceptions_mask;
   status.extF80_roundingPrecision = 80;
   return status;
@@ -1129,6 +1130,22 @@ static bool bx_poly_riscv_write_fp_csr(Bit32u csr, Bit32u value)
   default:
     return false;
   }
+}
+
+static void bx_poly_riscv_accumulate_softfloat_fflags(
+  const softfloat_status_t *status)
+{
+  int flags = softfloat_getExceptionFlags(status);
+  if (flags & softfloat_flag_inexact)
+    bx_poly_riscv_fflags |= 0x01;
+  if (flags & softfloat_flag_underflow)
+    bx_poly_riscv_fflags |= 0x02;
+  if (flags & softfloat_flag_overflow)
+    bx_poly_riscv_fflags |= 0x04;
+  if (flags & softfloat_flag_divbyzero)
+    bx_poly_riscv_fflags |= 0x08;
+  if (flags & softfloat_flag_invalid)
+    bx_poly_riscv_fflags |= 0x10;
 }
 
 static Bit64u bx_poly_fp64_to_uint64_rtz(double value)
@@ -9248,7 +9265,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     }
     else if ((funct7 == 0x60 || funct7 == 0x61) &&
              (rs2 == 0 || rs2 == 1 || rs2 == 2 || rs2 == 3)) {
-      if (rm != 1)
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
         return false;
       bool source_fp32 = funct7 == 0x60;
       if (source_fp32) {
@@ -9257,21 +9275,40 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       }
       else if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
         return false;
-      double source_value = source_fp32 ?
-        (double) bx_poly_fp32_from_bits(left32_bits) : bx_poly_fp64_from_bits(left_bits);
       bool is_64 = rs2 >= 2;
       bool is_signed = (rs2 & 1) == 0;
       Bit64u result = 0;
-      if (is_64) {
-        result = is_signed ?
-          bx_poly_fp64_to_int64_rtz(source_value) :
-          bx_poly_fp64_to_uint64_rtz(source_value);
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
+      if (source_fp32) {
+        if (is_64) {
+          result = is_signed ?
+            (Bit64u) f32_to_i64(left32_bits, rounding_mode, true, &status) :
+            f32_to_ui64(left32_bits, rounding_mode, true, &status);
+        }
+        else {
+          result = is_signed ?
+            (Bit64u) (Bit64s) (Bit32s) f32_to_i32(left32_bits,
+              rounding_mode, true, &status) :
+            (Bit64u) (Bit64s) (Bit32s) f32_to_ui32(left32_bits,
+              rounding_mode, true, &status);
+        }
       }
       else {
-        result = is_signed ?
-          bx_poly_fp64_to_int32_rtz(source_value) :
-          (Bit64u) (Bit64s) (Bit32s) bx_poly_fp64_to_uint32_rtz(source_value);
+        if (is_64) {
+          result = is_signed ?
+            (Bit64u) f64_to_i64(left_bits, rounding_mode, true, &status) :
+            f64_to_ui64(left_bits, rounding_mode, true, &status);
+        }
+        else {
+          result = is_signed ?
+            (Bit64u) (Bit64s) (Bit32s) f64_to_i32(left_bits,
+              rounding_mode, true, &status) :
+            (Bit64u) (Bit64s) (Bit32s) f64_to_ui32(left_bits,
+              rounding_mode, true, &status);
+        }
       }
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
       if (!write_poly_riscv_reg(rd, result))
         return false;
       RIP = next_rip;
