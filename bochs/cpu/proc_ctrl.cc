@@ -12159,13 +12159,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 2) {
     if (ECX == 0) {
       RAX = BX_POLY_AARCH64_CTRL_X86_ESCAPE;
-      RBX = BX_POLY_AARCH64_CTRL_RISCV_SWITCH;
+      RBX = 0;
       RCX = BX_POLY_RISCV_CTRL_X86_ESCAPE;
-      RDX = BX_POLY_RISCV_CTRL_AARCH64_SWITCH;
+      RDX = 0;
     }
     else if (ECX == 1) {
-      RAX = BX_POLY_AARCH64_CTRL_RISCV_CALL;
-      RBX = BX_POLY_RISCV_CTRL_AARCH64_CALL;
+      RAX = 0;
+      RBX = 0;
       RCX = 0;
       RDX = 0;
     }
