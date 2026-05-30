@@ -386,6 +386,7 @@ static const Bit32u BX_POLY_X86_CTRL_PENTER_RISCV = 0x02;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
 static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
+static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_MODE = 0x2d;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
@@ -11715,7 +11716,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (bx_address) RBX, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
           (Bit32u) R12);
-      if (op == 0x2d) {
+      if (op == BX_POLY_X86_CTRL_PCALL_SIG_MODE) {
         Bit32u frontend_id = (Bit32u) R15;
         Bit32u target_mode = BX_POLY_MODE_X86;
         if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
@@ -12119,7 +12120,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 5) {
       RAX = BX_POLY_X86_CTRL_PENTER_MODE;
       RBX = BX_POLY_X86_CTRL_PSWITCH_MODE;
-      RCX = 0;
+      RCX = BX_POLY_X86_CTRL_PCALL_SIG_MODE;
       RDX = 0;
     }
     else if (ECX == 6) {
