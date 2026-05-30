@@ -153,10 +153,7 @@ static inline Bit32u BX_POLY_RISCV_CTRL(Bit32u subop)
 
 static const Bit32u BX_POLY_AARCH64_CTRL_SUBOP_CALL_SIG_IMM_BASE = 0x60;
 static const Bit32u BX_POLY_AARCH64_CTRL_X86_ESCAPE = BX_POLY_AARCH64_CTRL(0x70);
-static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_SWITCH = BX_POLY_AARCH64_CTRL(0x71);
-static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL = BX_POLY_AARCH64_CTRL(0x72);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_RETURN = BX_POLY_AARCH64_CTRL(0x76);
-static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32 = BX_POLY_AARCH64_CTRL(0x77);
 static const Bit32u BX_POLY_AARCH64_CTRL_SWITCH_MODE = BX_POLY_AARCH64_CTRL(0x78);
 static const Bit32u BX_POLY_AARCH64_CTRL_CALL_MODE = BX_POLY_AARCH64_CTRL(0x79);
 static const Bit32u BX_POLY_AARCH64_CTRL_CALL_SIG_MODE = BX_POLY_AARCH64_CTRL(0x7a);
@@ -175,10 +172,7 @@ static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_SET = BX_POLY_AARCH64_CTRL(0x
 static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_GET = BX_POLY_AARCH64_CTRL(0x6f);
 static const Bit32u BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE = 16;
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
-static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
-static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_RETURN = BX_POLY_RISCV_CTRL(6);
-static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32 = BX_POLY_RISCV_CTRL(7);
 static const Bit32u BX_POLY_RISCV_CTRL_SWITCH_MODE = BX_POLY_RISCV_CTRL(8);
 static const Bit32u BX_POLY_RISCV_CTRL_CALL_MODE = BX_POLY_RISCV_CTRL(9);
 static const Bit32u BX_POLY_RISCV_CTRL_CALL_SIG_MODE = BX_POLY_RISCV_CTRL(10);
@@ -7667,22 +7661,6 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if (insn == BX_POLY_AARCH64_CTRL_RISCV_SWITCH) {
-    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, next_rip,
-          BX_POLY_MODE_RAW_RISCV, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
-          "aarch64-switch"))
-      return false;
-    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
-    bx_poly_current_mode = BX_POLY_MODE_RAW_RISCV;
-    bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    bx_poly_mode_switch_count++;
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: aarch64 polyctrl switch to riscv"));
-    return true;
-  }
-
   if (insn == BX_POLY_AARCH64_CTRL_SWITCH_MODE) {
     Bit64u target = 0;
     Bit64u frontend = 0;
@@ -7831,28 +7809,6 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
       (bx_address) target, (bx_address) return_rip,
       bridge_kind);
-  }
-
-  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_aarch64_reg(16, &target) ||
-        !read_poly_aarch64_reg(17, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
-      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
-  }
-
-  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_aarch64_reg(16, &target) ||
-        !read_poly_aarch64_reg(17, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
-      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_VEC128_U32);
   }
 
   if ((insn & 0xff000010) == 0x54000000) {
@@ -8962,22 +8918,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if (insn == BX_POLY_RISCV_CTRL_AARCH64_SWITCH) {
-    if (!bx_poly_require_landing_target(BX_SEG_REG_CS, next_rip,
-          BX_POLY_MODE_RAW_AARCH64, BX_POLY_LANDING_POLICY_REQUIRE_SWITCH,
-          "riscv-switch"))
-      return false;
-    bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
-    bx_poly_current_mode = BX_POLY_MODE_RAW_AARCH64;
-    bx_poly_prepare_tls_for_mode(bx_poly_current_mode);
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
-    bx_poly_mode_switch_count++;
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: riscv polyctrl switch to aarch64"));
-    return true;
-  }
-
   if (insn == BX_POLY_RISCV_CTRL_SWITCH_MODE) {
     Bit64u target = 0;
     Bit64u frontend = 0;
@@ -9126,28 +9066,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
       bridge_kind);
-  }
-
-  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_riscv_reg(5, &target) ||
-        !read_poly_riscv_reg(6, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
-      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_DEFAULT);
-  }
-
-  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_riscv_reg(5, &target) ||
-        !read_poly_riscv_reg(6, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
-      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_VEC128_U32);
   }
 
   if ((insn & 0x0000007f) == 0x0000002f) {
