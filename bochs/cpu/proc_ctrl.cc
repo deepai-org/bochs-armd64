@@ -1988,6 +1988,20 @@ static bool bx_poly_is_raw_mode(Bit32u mode)
   return mode == BX_POLY_MODE_RAW_AARCH64 || mode == BX_POLY_MODE_RAW_RISCV;
 }
 
+static bool bx_poly_valid_trap_reason(Bit32u reason)
+{
+  return reason <= BX_POLY_TRAP_ILLEGAL;
+}
+
+static bool bx_poly_valid_trap_source_mode(Bit32u reason, Bit32u mode)
+{
+  if (!bx_poly_valid_frontend_mode(mode))
+    return false;
+  if (reason == BX_POLY_TRAP_NONE)
+    return true;
+  return bx_poly_is_raw_mode(mode);
+}
+
 static bool bx_poly_ranges_overlap(bx_address left_addr, Bit32u left_size,
   bx_address right_addr, Bit32u right_size)
 {
@@ -3177,6 +3191,25 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       (unsigned long long) imported_landing_policy));
     return false;
   }
+  Bit64u imported_trap_vector_mode = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48);
+  if (imported_trap_vector_mode > 0xffffffff ||
+      !bx_poly_valid_frontend_mode((Bit32u) imported_trap_vector_mode)) {
+    BX_INFO(("poly_state_import: reject trap vector mode=%llu",
+      (unsigned long long) imported_trap_vector_mode));
+    return false;
+  }
+  Bit64u imported_trap0 =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET);
+  Bit32u imported_trap_reason = (Bit32u) imported_trap0;
+  Bit32u imported_trap_mode = (Bit32u) (imported_trap0 >> 32);
+  if (!bx_poly_valid_trap_reason(imported_trap_reason) ||
+      !bx_poly_valid_trap_source_mode(imported_trap_reason,
+        imported_trap_mode)) {
+    BX_INFO(("poly_state_import: reject trap reason=%u mode=%u",
+      imported_trap_reason, imported_trap_mode));
+    return false;
+  }
   for (unsigned n = 0; n < 32; n++) {
     aarch64_gpr[n] = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + n * 8);
@@ -3292,17 +3325,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_landing_policy_flags = imported_landing_policy;
   bx_poly_trap_vector =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
-  bx_poly_trap_vector_mode = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48);
-  if (!bx_poly_valid_frontend_mode(bx_poly_trap_vector_mode))
-    bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
+  bx_poly_trap_vector_mode = (Bit32u) imported_trap_vector_mode;
   bx_poly_monitor_packet_addr =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56);
 
-  Bit64u trap0 =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET);
-  bx_poly_last_trap.reason = (Bit32u) trap0;
-  bx_poly_last_trap.mode = (Bit32u) (trap0 >> 32);
+  bx_poly_last_trap.reason = imported_trap_reason;
+  bx_poly_last_trap.mode = imported_trap_mode;
   bx_poly_last_trap.number = (Bit32u)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 8);
   bx_poly_last_trap.selector = (Bit32u)
