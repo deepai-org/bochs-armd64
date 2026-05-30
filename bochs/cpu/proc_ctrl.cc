@@ -9124,6 +9124,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "bext";
       result = (left >> (right & 0x3f)) & 1;
     }
+    else if (funct7 == 0x07 && funct3 == 0x5) {
+      op_name = "czero.eqz";
+      result = right == 0 ? 0 : left;
+    }
+    else if (funct7 == 0x07 && funct3 == 0x7) {
+      op_name = "czero.nez";
+      result = right != 0 ? 0 : left;
+    }
     else if (funct7 == 0x10 && funct3 == 0x2) {
       op_name = "sh1add";
       result = (left << 1) + right;
