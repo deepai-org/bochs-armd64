@@ -5441,7 +5441,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = f32_min(left32_bits, right32_bits, &status);
+      result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, false,
+        &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e206800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5450,7 +5451,28 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = f32_max(left32_bits, right32_bits, &status);
+      result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, false,
+        &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e205800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmin.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right32_bits))
+        return false;
+      result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, true,
+        &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e204800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmax.s";
+      fp32_op = true;
+      if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
+          !read_poly_aarch64_fp32_reg(rm, &right32_bits))
+        return false;
+      result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, true,
+        &status);
     }
     else if ((insn & 0xfffffc00) == 0x1e214000) {
       op_name = "fneg.s";
@@ -5531,7 +5553,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = f64_min(left_bits, right_bits, &status);
+      result_bits = f64_minmax(left_bits, right_bits, 0, 1, false, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e606800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5539,7 +5561,23 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = f64_max(left_bits, right_bits, &status);
+      result_bits = f64_minmax(left_bits, right_bits, 1, 1, false, &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e605800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmin.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      result_bits = f64_minmax(left_bits, right_bits, 0, 1, true, &status);
+    }
+    else if ((insn & 0xffe0fc00) == 0x1e604800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
+      op_name = "fmax.d";
+      if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
+          !read_poly_aarch64_fp64_reg(rm, &right_bits))
+        return false;
+      result_bits = f64_minmax(left_bits, right_bits, 1, 1, true, &status);
     }
     else if ((insn & 0xfffffc00) == 0x1e614000) {
       op_name = "fneg.d";
