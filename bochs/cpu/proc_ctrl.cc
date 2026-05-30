@@ -858,6 +858,7 @@ static Bit32u bx_poly_riscv_reservation_size = 0;
 static bx_address bx_poly_monitor_packet_addr = 0;
 
 enum {
+  BX_POLY_AARCH64_NZCV_MASK = 0xf,
   BX_POLY_AARCH64_FPCR_RMODE_MASK = 3u << 22,
   BX_POLY_AARCH64_FPSR_IOC = 1u << 0,
   BX_POLY_AARCH64_FPSR_DZC = 1u << 1,
@@ -874,6 +875,16 @@ enum {
   BX_POLY_RISCV_FCSR_MASK =
     BX_POLY_RISCV_FFLAGS_MASK | (BX_POLY_RISCV_FRM_MASK << 5)
 };
+
+static bool bx_poly_valid_aarch64_reservation_size(Bit64u size)
+{
+  return size == 0 || size == 1 || size == 2 || size == 4 || size == 8;
+}
+
+static bool bx_poly_valid_riscv_reservation_size(Bit64u size)
+{
+  return size == 0 || size == 4 || size == 8;
+}
 
 struct bx_poly_reg_state_t {
   bool valid;
@@ -3245,6 +3256,54 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   }
   riscv_gpr[4] = imported_riscv_tls_base;
 
+  Bit64u imported_aarch64_nzcv = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET);
+  Bit64u imported_aarch64_fpcr = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8);
+  Bit64u imported_aarch64_fpsr = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 16);
+  Bit64u imported_aarch64_reservation_addr = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 24);
+  Bit64u imported_aarch64_reservation_size = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 32);
+  Bit64u imported_riscv_fcsr64 = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET);
+  Bit64u imported_riscv_reservation_addr = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET + 8);
+  Bit64u imported_riscv_reservation_size = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET + 16);
+  if ((imported_aarch64_nzcv & ~((Bit64u) BX_POLY_AARCH64_NZCV_MASK)) != 0 ||
+      (imported_aarch64_fpcr & ~((Bit64u) BX_POLY_AARCH64_FPCR_RMODE_MASK)) != 0 ||
+      (imported_aarch64_fpsr & ~((Bit64u) BX_POLY_AARCH64_FPSR_MASK)) != 0) {
+    BX_INFO(("poly_state_import: reject aarch64 status nzcv=%llx fpcr=%llx fpsr=%llx",
+      (unsigned long long) imported_aarch64_nzcv,
+      (unsigned long long) imported_aarch64_fpcr,
+      (unsigned long long) imported_aarch64_fpsr));
+    return false;
+  }
+  if (!bx_poly_valid_aarch64_reservation_size(
+        imported_aarch64_reservation_size) ||
+      (imported_aarch64_reservation_size == 0 &&
+       imported_aarch64_reservation_addr != 0)) {
+    BX_INFO(("poly_state_import: reject aarch64 reservation addr=%llx size=%llu",
+      (unsigned long long) imported_aarch64_reservation_addr,
+      (unsigned long long) imported_aarch64_reservation_size));
+    return false;
+  }
+  if ((imported_riscv_fcsr64 & ~((Bit64u) BX_POLY_RISCV_FCSR_MASK)) != 0) {
+    BX_INFO(("poly_state_import: reject riscv fcsr=%llx",
+      (unsigned long long) imported_riscv_fcsr64));
+    return false;
+  }
+  if (!bx_poly_valid_riscv_reservation_size(imported_riscv_reservation_size) ||
+      (imported_riscv_reservation_size == 0 &&
+       imported_riscv_reservation_addr != 0)) {
+    BX_INFO(("poly_state_import: reject riscv reservation addr=%llx size=%llu",
+      (unsigned long long) imported_riscv_reservation_addr,
+      (unsigned long long) imported_riscv_reservation_size));
+    return false;
+  }
+
   Bit64u import_top64 = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET);
   Bit64u import_depth = read_virtual_qword(seg,
@@ -3488,28 +3547,19 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       RSP = riscv_gpr[2];
   }
 
-  bx_poly_aarch64_nzcv = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET);
-  bx_poly_aarch64_fpcr = (Bit32u) read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8) &
-    BX_POLY_AARCH64_FPCR_RMODE_MASK;
-  bx_poly_aarch64_fpsr = (Bit32u) read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 16) &
-    BX_POLY_AARCH64_FPSR_MASK;
+  bx_poly_aarch64_nzcv = (Bit32u) imported_aarch64_nzcv;
+  bx_poly_aarch64_fpcr = (Bit32u) imported_aarch64_fpcr;
+  bx_poly_aarch64_fpsr = (Bit32u) imported_aarch64_fpsr;
   bx_poly_aarch64_reservation_addr =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 24);
-  bx_poly_aarch64_reservation_size = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 32);
+    (bx_address) imported_aarch64_reservation_addr;
+  bx_poly_aarch64_reservation_size =
+    (Bit32u) imported_aarch64_reservation_size;
   bx_poly_aarch64_reservation_valid = bx_poly_aarch64_reservation_size != 0;
-  Bit32u imported_riscv_fcsr = (Bit32u) read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET) &
-    BX_POLY_RISCV_FCSR_MASK;
+  Bit32u imported_riscv_fcsr = (Bit32u) imported_riscv_fcsr64;
   bx_poly_riscv_fflags = imported_riscv_fcsr & BX_POLY_RISCV_FFLAGS_MASK;
   bx_poly_riscv_frm = (imported_riscv_fcsr >> 5) & BX_POLY_RISCV_FRM_MASK;
-  bx_poly_riscv_reservation_addr =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET + 8);
-  bx_poly_riscv_reservation_size = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET + 16);
+  bx_poly_riscv_reservation_addr = (bx_address) imported_riscv_reservation_addr;
+  bx_poly_riscv_reservation_size = (Bit32u) imported_riscv_reservation_size;
   bx_poly_riscv_reservation_valid = bx_poly_riscv_reservation_size != 0;
 
   bx_poly_import_x86_return_top = import_top;
