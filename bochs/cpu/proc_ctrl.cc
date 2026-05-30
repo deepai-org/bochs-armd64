@@ -450,21 +450,15 @@ static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS = BX_CONST64(1) << 0;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 = BX_CONST64(1) << 1;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128 = BX_CONST64(1) << 2;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_FROM_MEMORY = BX_CONST64(1) << 3;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_FROM_GPR0 = BX_CONST64(1) << 4;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64 = BX_CONST64(1) << 5;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR32 = BX_CONST64(1) << 6;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128 = BX_CONST64(1) << 7;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64 = BX_CONST64(1) << 10;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32 = BX_CONST64(1) << 11;
 static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = 233;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
-static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
 // Keep suspended x86 helper frames and active foreign frames from colliding
 // when libc helpers use deep stack frames beneath the x86 return cookie.
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x4000);
