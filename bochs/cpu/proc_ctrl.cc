@@ -8903,6 +8903,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u imm_raw = (insn >> 20) & 0xfff;
     Bit64u base = 0;
     Bit32u result32 = 0;
+    Bit64u result64 = 0;
+    bool result64_valid = false;
     const char *op_name = 0;
 
     if (!read_poly_riscv_reg(rs1, &base))
@@ -8936,10 +8938,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "cpopw";
       result32 = bx_poly_count_ones64((Bit32u) base);
     }
+    else if (funct3 == 0x1 && funct7 == 0x04) {
+      op_name = "slli.uw";
+      result64 = ((Bit64u) (Bit32u) base) << shamt;
+      result64_valid = true;
+    }
 
     if (op_name == 0)
       return false;
-    Bit64u result = (Bit64u) bx_poly_sign_extend(result32, 32);
+    Bit64u result = result64_valid ?
+      result64 : (Bit64u) bx_poly_sign_extend(result32, 32);
     if (!write_poly_riscv_reg(rd, result))
       return false;
     RIP = next_rip;
@@ -9084,6 +9092,18 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       op_name = "ror";
       result = bx_poly_rotate_right(left, 64, (Bit32u) right);
     }
+    else if (funct7 == 0x10 && funct3 == 0x2) {
+      op_name = "sh1add";
+      result = (left << 1) + right;
+    }
+    else if (funct7 == 0x10 && funct3 == 0x4) {
+      op_name = "sh2add";
+      result = (left << 2) + right;
+    }
+    else if (funct7 == 0x10 && funct3 == 0x6) {
+      op_name = "sh3add";
+      result = (left << 3) + right;
+    }
 
     if (op_name != 0) {
       if (!write_poly_riscv_reg(rd, result))
@@ -9103,6 +9123,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u left = 0;
     Bit64u right = 0;
     Bit32u result32 = 0;
+    Bit64u result64 = 0;
+    bool result64_valid = false;
     const char *op_name = 0;
 
     if (!read_poly_riscv_reg(rs1, &left) || !read_poly_riscv_reg(rs2, &right))
@@ -9176,10 +9198,31 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       result32 = (Bit32u) bx_poly_rotate_right((Bit32u) left, 32,
         (Bit32u) right);
     }
+    else if (funct7 == 0x04 && funct3 == 0x0) {
+      op_name = "add.uw";
+      result64 = (Bit64u) (Bit32u) left + right;
+      result64_valid = true;
+    }
+    else if (funct7 == 0x10 && funct3 == 0x2) {
+      op_name = "sh1add.uw";
+      result64 = (((Bit64u) (Bit32u) left) << 1) + right;
+      result64_valid = true;
+    }
+    else if (funct7 == 0x10 && funct3 == 0x4) {
+      op_name = "sh2add.uw";
+      result64 = (((Bit64u) (Bit32u) left) << 2) + right;
+      result64_valid = true;
+    }
+    else if (funct7 == 0x10 && funct3 == 0x6) {
+      op_name = "sh3add.uw";
+      result64 = (((Bit64u) (Bit32u) left) << 3) + right;
+      result64_valid = true;
+    }
 
     if (op_name == 0)
       return false;
-    Bit64u result = (Bit64u) bx_poly_sign_extend(result32, 32);
+    Bit64u result = result64_valid ?
+      result64 : (Bit64u) bx_poly_sign_extend(result32, 32);
     if (!write_poly_riscv_reg(rd, result))
       return false;
     RIP = next_rip;
