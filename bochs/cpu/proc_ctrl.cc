@@ -411,17 +411,17 @@ static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000)
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS = BX_CONST64(1) << 0;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 = BX_CONST64(1) << 1;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128 = BX_CONST64(1) << 2;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 = BX_CONST64(1) << 1;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128 = BX_CONST64(1) << 2;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_FROM_MEMORY = BX_CONST64(1) << 3;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_FROM_GPR0 = BX_CONST64(1) << 4;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64 = BX_CONST64(1) << 5;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32 = BX_CONST64(1) << 6;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128 = BX_CONST64(1) << 7;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64 = BX_CONST64(1) << 5;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR32 = BX_CONST64(1) << 6;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128 = BX_CONST64(1) << 7;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_VEC128_FROM_GPR_PAIRS = BX_CONST64(1) << 8;
 static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_AARCH64_SRET_X8 = BX_CONST64(1) << 9;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP64 = BX_CONST64(1) << 10;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP32 = BX_CONST64(1) << 11;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64 = BX_CONST64(1) << 10;
+static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32 = BX_CONST64(1) << 11;
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 233;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 static const Bit32u BX_POLY_IMPORT_X86_STACK_ARG_QWORDS_MAX = 8;
@@ -4230,19 +4230,19 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   Bit64u import_id = frame.import_id;
   const Bit64u return_flags = frame.return_flags;
   const bool returns_i128 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_I128) != 0;
   const bool returns_fp128 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128) != 0;
   const bool returns_fp64 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP64) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64) != 0;
   const bool returns_fp32 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FP32) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32) != 0;
   const bool returns_fpair64 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR64) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64) != 0;
   const bool returns_fpair32 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_FPAIR32) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR32) != 0;
   const bool returns_vec128 =
-    (return_flags & BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128) != 0;
+    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128) != 0;
   const Bit64u result_rax = RAX;
   const Bit64u result_rdx = RDX;
   const Bit64u result_xmm0_lo = BX_READ_XMM_REG_LO_QWORD(0);
@@ -4425,9 +4425,9 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->return_flags =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ?
-      BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_I128 : 0;
+      BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 : 0;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
-    frame->return_flags |= BX_POLY_IMPORT_X86_DESCRIPTOR_RETURN_VEC128;
+    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
   frame->alias[1] = RSI;
