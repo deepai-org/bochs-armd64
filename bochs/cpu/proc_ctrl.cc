@@ -380,6 +380,12 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE = 3;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_I128 = 4;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 = 5;
+static const Bit32u BX_POLY_X86_CTRL_PENTER_X86 = 0x00;
+static const Bit32u BX_POLY_X86_CTRL_PENTER_AARCH64 = 0x01;
+static const Bit32u BX_POLY_X86_CTRL_PENTER_RISCV = 0x02;
+static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
+static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
+static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_MODE = 0x2e;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
@@ -11517,15 +11523,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (opcode0 == 0x0f && opcode1 == 0x3a && opcode2 == 0xfc) {
     Bit8u op = opcode3;
     bx_address next_rip = PREV_RIP + 4;
-      if (op == 0x00 || op == 0x01 || op == 0x02 || op == 0x03) {
+      if (op == BX_POLY_X86_CTRL_PENTER_X86 ||
+          op == BX_POLY_X86_CTRL_PENTER_AARCH64 ||
+          op == BX_POLY_X86_CTRL_PENTER_RISCV ||
+          op == BX_POLY_X86_CTRL_PENTER_MODE) {
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (op == 0x00) {
+        if (op == BX_POLY_X86_CTRL_PENTER_X86) {
           target_mode = BX_POLY_MODE_X86;
         }
-        else if (op == 0x01) {
+        else if (op == BX_POLY_X86_CTRL_PENTER_AARCH64) {
           target_mode = BX_POLY_MODE_RAW_AARCH64;
         }
-        else if (op == 0x02) {
+        else if (op == BX_POLY_X86_CTRL_PENTER_RISCV) {
           target_mode = BX_POLY_MODE_RAW_RISCV;
         }
         else {
@@ -11554,7 +11563,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           op, target_mode));
         return true;
       }
-      if (op == 0x04) {
+      if (op == BX_POLY_X86_CTRL_PSWITCH_MODE) {
         Bit32u frontend_id = (Bit32u) R15;
         Bit32u target_mode = BX_POLY_MODE_X86;
         bx_address target_rip = (bx_address) RBX;
@@ -11581,7 +11590,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           frontend_id, target_mode, (unsigned long long) target_rip));
         return true;
       }
-      if (op == 0x05) {
+      if (op == BX_POLY_X86_CTRL_LANDING) {
         RIP = next_rip;
         BX_DEBUG(("poly_op: x86 landing pad"));
         return true;
@@ -12108,8 +12117,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
         BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32);
     }
     else if (ECX == 5) {
-      RAX = 0;
-      RBX = 0;
+      RAX = BX_POLY_X86_CTRL_PENTER_MODE;
+      RBX = BX_POLY_X86_CTRL_PSWITCH_MODE;
       RCX = 0;
       RDX = 0;
     }
@@ -12138,7 +12147,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RDX = 0;
     }
     else if (ECX == 9) {
-      RAX = 0x05;
+      RAX = BX_POLY_X86_CTRL_LANDING;
       RBX = BX_POLY_AARCH64_CTRL_LANDING;
       RCX = BX_POLY_RISCV_CTRL_LANDING;
       RDX = 0;
