@@ -1234,25 +1234,31 @@ static Bit64u bx_poly_riscv_fclass64(Bit64u bits)
   return sign ? 0x2 : 0x40;
 }
 
-static void bx_poly_aarch64_set_fp64_compare_nzcv(double left, double right)
+static void bx_poly_aarch64_set_fp64_compare_nzcv(Bit64u left_bits,
+  Bit64u right_bits, bool signal_all_nans)
 {
-  if (left != left || right != right)
+  softfloat_status_t status = bx_poly_softfloat_status();
+  int relation = f64_compare(left_bits, right_bits, !signal_all_nans, &status);
+  if (relation == softfloat_relation_unordered)
     bx_poly_aarch64_nzcv = 0x3;
-  else if (left < right)
+  else if (relation == softfloat_relation_less)
     bx_poly_aarch64_nzcv = 0x8;
-  else if (left > right)
+  else if (relation == softfloat_relation_greater)
     bx_poly_aarch64_nzcv = 0x2;
   else
     bx_poly_aarch64_nzcv = 0x6;
 }
 
-static void bx_poly_aarch64_set_fp32_compare_nzcv(float left, float right)
+static void bx_poly_aarch64_set_fp32_compare_nzcv(Bit32u left_bits,
+  Bit32u right_bits, bool signal_all_nans)
 {
-  if (left != left || right != right)
+  softfloat_status_t status = bx_poly_softfloat_status();
+  int relation = f32_compare(left_bits, right_bits, !signal_all_nans, &status);
+  if (relation == softfloat_relation_unordered)
     bx_poly_aarch64_nzcv = 0x3;
-  else if (left < right)
+  else if (relation == softfloat_relation_less)
     bx_poly_aarch64_nzcv = 0x8;
-  else if (left > right)
+  else if (relation == softfloat_relation_greater)
     bx_poly_aarch64_nzcv = 0x2;
   else
     bx_poly_aarch64_nzcv = 0x6;
@@ -5393,36 +5399,40 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bool fp32_op = false;
 
     if ((insn & 0xffe0fc00) == 0x1e202800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fadd.s";
       fp32_op = true;
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) + bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_add(left32_bits, right32_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e203800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fsub.s";
       fp32_op = true;
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) - bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_sub(left32_bits, right32_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e200800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fmul.s";
       fp32_op = true;
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) * bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_mul(left32_bits, right32_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e201800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fdiv.s";
       fp32_op = true;
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_div(left32_bits, right32_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e207800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5476,39 +5486,44 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
     }
     else if ((insn & 0xfffffc00) == 0x1e624000) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fcvt.s.d";
       fp32_op = true;
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits((float) bx_poly_fp64_from_bits(left_bits));
+      result32_bits = f64_to_f32(left_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e602800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fadd.d";
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) + bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_add(left_bits, right_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e603800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fsub.d";
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) - bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_sub(left_bits, right_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e600800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fmul.d";
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) * bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_mul(left_bits, right_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e601800) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fdiv.d";
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_div(left_bits, right_bits, &status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e607800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5555,10 +5570,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
     }
     else if ((insn & 0xfffffc00) == 0x1e22c000) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fcvt.d.s";
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
+      result_bits = f32_to_f64(left32_bits, &status);
     }
     else if ((insn & 0xfffffc00) == 0x5e21d800 ||
              (insn & 0xfffffc00) == 0x7e21d800 ||
@@ -5568,20 +5584,21 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bool is_unsigned = (op & 0x20000000) != 0;
       fp32_op = (op & 0x00400000) == 0;
       op_name = is_unsigned ? "ucvtf" : "scvtf";
+      softfloat_status_t status = bx_poly_softfloat_status();
 
       if (fp32_op) {
         if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
           return false;
         result32_bits = is_unsigned ?
-          bx_poly_fp32_to_bits((float) (Bit32u) left32_bits) :
-          bx_poly_fp32_to_bits((float) (Bit32s) left32_bits);
+          ui32_to_f32(left32_bits, &status) :
+          i32_to_f32((Bit32s) left32_bits, &status);
       }
       else {
         if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
           return false;
         result_bits = is_unsigned ?
-          bx_poly_fp64_to_bits((double) left_bits) :
-          bx_poly_fp64_to_bits((double) (Bit64s) left_bits);
+          ui64_to_f64(left_bits, &status) :
+          i64_to_f64((Bit64s) left_bits, &status);
       }
     }
     else if ((insn & 0xfffffc00) == 0x5ea1b800 ||
@@ -5596,18 +5613,18 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (fp32_op) {
         if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
           return false;
-        double source_value = (double) bx_poly_fp32_from_bits(left32_bits);
+        softfloat_status_t status = bx_poly_softfloat_status();
         result32_bits = is_unsigned ?
-          bx_poly_fp64_to_uint32_rtz(source_value) :
-          (Bit32u) bx_poly_fp64_to_int32_rtz(source_value);
+          f32_to_ui32_r_minMag(left32_bits, true, true, &status) :
+          (Bit32u) f32_to_i32_r_minMag(left32_bits, true, true, &status);
       }
       else {
         if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
           return false;
-        double source_value = bx_poly_fp64_from_bits(left_bits);
+        softfloat_status_t status = bx_poly_softfloat_status();
         result_bits = is_unsigned ?
-          bx_poly_fp64_to_uint64_rtz(source_value) :
-          bx_poly_fp64_to_int64_rtz(source_value);
+          f64_to_ui64_r_minMag(left_bits, true, true, &status) :
+          (Bit64u) f64_to_i64_r_minMag(left_bits, true, true, &status);
       }
     }
 
@@ -5712,17 +5729,22 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
     if (!read_poly_aarch64_reg(rn, &value))
       return false;
+    softfloat_status_t status = bx_poly_softfloat_status();
     if (output_double) {
       Bit64u result_bits = is_unsigned ?
-        bx_poly_fp64_to_bits(input_64 ? (double) value : (double) (Bit32u) value) :
-        bx_poly_fp64_to_bits(input_64 ? (double) (Bit64s) value : (double) (Bit32s) (Bit32u) value);
+        (input_64 ? ui64_to_f64(value, &status) :
+          ui32_to_f64((Bit32u) value)) :
+        (input_64 ? i64_to_f64((Bit64s) value, &status) :
+          i32_to_f64((Bit32s) (Bit32u) value));
       if (!write_poly_aarch64_fp64_reg(rd, result_bits))
         return false;
     }
     else {
       Bit32u result_bits = is_unsigned ?
-        bx_poly_fp32_to_bits(input_64 ? (float) value : (float) (Bit32u) value) :
-        bx_poly_fp32_to_bits(input_64 ? (float) (Bit64s) value : (float) (Bit32s) (Bit32u) value);
+        (input_64 ? ui64_to_f32(value, &status) :
+          ui32_to_f32((Bit32u) value, &status)) :
+        (input_64 ? i64_to_f32((Bit64s) value, &status) :
+          i32_to_f32((Bit32s) (Bit32u) value, &status));
       if (!write_poly_aarch64_fp32_reg(rd, result_bits))
         return false;
     }
@@ -5742,6 +5764,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rm = (insn >> 16) & 0x1f;
     bool fp32_op = (insn & 0xffe0fc1f) == 0x1e202000 ||
       (insn & 0xffe0fc1f) == 0x1e202010;
+    bool signal_all_nans = (insn & 0x10) != 0;
 
     if (fp32_op) {
       Bit32u left_bits = 0;
@@ -5749,8 +5772,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp32_reg(rm, &right_bits))
         return false;
-      bx_poly_aarch64_set_fp32_compare_nzcv(
-        bx_poly_fp32_from_bits(left_bits), bx_poly_fp32_from_bits(right_bits));
+      bx_poly_aarch64_set_fp32_compare_nzcv(left_bits, right_bits,
+        signal_all_nans);
     }
     else {
       Bit64u left_bits = 0;
@@ -5758,8 +5781,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits) ||
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
-      bx_poly_aarch64_set_fp64_compare_nzcv(
-        bx_poly_fp64_from_bits(left_bits), bx_poly_fp64_from_bits(right_bits));
+      bx_poly_aarch64_set_fp64_compare_nzcv(left_bits, right_bits,
+        signal_all_nans);
     }
 
     RIP = next_rip;
@@ -5795,16 +5818,29 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
     else if (!read_poly_aarch64_fp64_reg(rn, &fp_bits))
       return false;
-    double source_value = source_fp32 ?
-      (double) bx_poly_fp32_from_bits(fp32_bits) : bx_poly_fp64_from_bits(fp_bits);
-    if (is_64)
-      result = is_signed ?
-        bx_poly_fp64_to_int64_rtz(source_value) :
-        bx_poly_fp64_to_uint64_rtz(source_value);
-    else
-      result = is_signed ?
-        (Bit32u) bx_poly_fp64_to_int32_rtz(source_value) :
-        bx_poly_fp64_to_uint32_rtz(source_value);
+    softfloat_status_t status = bx_poly_softfloat_status();
+    if (source_fp32) {
+      if (is_64)
+        result = is_signed ?
+          (Bit64u) f32_to_i64_r_minMag(fp32_bits, true, true, &status) :
+          f32_to_ui64_r_minMag(fp32_bits, true, true, &status);
+      else
+        result = is_signed ?
+          (Bit64u) (Bit32u) f32_to_i32_r_minMag(fp32_bits, true, true,
+            &status) :
+          f32_to_ui32_r_minMag(fp32_bits, true, true, &status);
+    }
+    else {
+      if (is_64)
+        result = is_signed ?
+          (Bit64u) f64_to_i64_r_minMag(fp_bits, true, true, &status) :
+          f64_to_ui64_r_minMag(fp_bits, true, true, &status);
+      else
+        result = is_signed ?
+          (Bit64u) (Bit32u) f64_to_i32_r_minMag(fp_bits, true, true,
+            &status) :
+          f64_to_ui32_r_minMag(fp_bits, true, true, &status);
+    }
     if (!write_poly_aarch64_reg(rd, result))
       return false;
     RIP = next_rip;
@@ -5822,20 +5858,19 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u rn = (insn >> 5) & 0x1f;
     bool fp32_op = (insn & 0xffe0fc1f) == 0x1e202008 ||
       (insn & 0xffe0fc1f) == 0x1e202018;
+    bool signal_all_nans = (insn & 0x10) != 0;
 
     if (fp32_op) {
       Bit32u left_bits = 0;
       if (!read_poly_aarch64_fp32_reg(rn, &left_bits))
         return false;
-      bx_poly_aarch64_set_fp32_compare_nzcv(
-        bx_poly_fp32_from_bits(left_bits), 0.0f);
+      bx_poly_aarch64_set_fp32_compare_nzcv(left_bits, 0, signal_all_nans);
     }
     else {
       Bit64u left_bits = 0;
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
         return false;
-      bx_poly_aarch64_set_fp64_compare_nzcv(
-        bx_poly_fp64_from_bits(left_bits), 0.0);
+      bx_poly_aarch64_set_fp64_compare_nzcv(left_bits, 0, signal_all_nans);
     }
 
     RIP = next_rip;
