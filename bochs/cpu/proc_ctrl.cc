@@ -157,7 +157,6 @@ static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_SWITCH = BX_POLY_AARCH64_CTRL(0x7
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL = BX_POLY_AARCH64_CTRL(0x72);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_U32_F32 = BX_POLY_AARCH64_CTRL(0x73);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_COMPACT_F32_U32 = BX_POLY_AARCH64_CTRL(0x74);
-static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK = BX_POLY_AARCH64_CTRL(0x75);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_RETURN = BX_POLY_AARCH64_CTRL(0x76);
 static const Bit32u BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32 = BX_POLY_AARCH64_CTRL(0x77);
 static const Bit32u BX_POLY_AARCH64_CTRL_SWITCH_MODE = BX_POLY_AARCH64_CTRL(0x78);
@@ -180,7 +179,6 @@ static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL = BX_POLY_RISCV_CTRL(2);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_U32_F32 = BX_POLY_RISCV_CTRL(3);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_COMPACT_F32_U32 = BX_POLY_RISCV_CTRL(4);
-static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK = BX_POLY_RISCV_CTRL(5);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_RETURN = BX_POLY_RISCV_CTRL(6);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32 = BX_POLY_RISCV_CTRL(7);
 static const Bit32u BX_POLY_RISCV_CTRL_SWITCH_MODE = BX_POLY_RISCV_CTRL(8);
@@ -476,7 +474,6 @@ enum {
   BX_POLY_CROSS_BRIDGE_DEFAULT = 0,
   BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 = 1,
   BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 = 2,
-  BX_POLY_CROSS_BRIDGE_FP64_STACK = 3,
   BX_POLY_CROSS_BRIDGE_VEC128_U32 = 4
 };
 
@@ -4137,21 +4134,6 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
     for (Bit32u n = 1; mapped && n < 8; n++)
       mapped = write_poly_aarch64_reg(n, args[n]);
   }
-  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_FP64_STACK &&
-      caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
-      callee_mode == BX_POLY_MODE_RAW_RISCV) {
-    // AAPCS64 places FP overflow arguments in stack slots; RV64 psABI uses a0-a7 here.
-    for (Bit32u n = 0; mapped && n < 8; n++) {
-      mapped = write_poly_riscv_reg(10 + n,
-        read_virtual_qword(BX_SEG_REG_SS, RSP + n * 8));
-    }
-  }
-  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_FP64_STACK &&
-      caller_mode == BX_POLY_MODE_RAW_RISCV &&
-      callee_mode == BX_POLY_MODE_RAW_AARCH64) {
-    for (Bit32u n = 0; n < 8; n++)
-      write_virtual_qword(BX_SEG_REG_SS, RSP + n * 8, args[n]);
-  }
   else if (bridge_kind == BX_POLY_CROSS_BRIDGE_VEC128_U32 &&
       caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
       callee_mode == BX_POLY_MODE_RAW_RISCV) {
@@ -4295,8 +4277,7 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
     for (Bit32u n = 1; mapped && n < 8; n++)
       mapped = write_poly_riscv_reg(10 + n, args[n]);
   }
-  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_DEFAULT ||
-      bridge_kind == BX_POLY_CROSS_BRIDGE_FP64_STACK) {
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_DEFAULT) {
     for (Bit32u n = 0; mapped && n < 8; n++) {
       if (frame->caller_mode == BX_POLY_MODE_RAW_AARCH64)
         mapped = write_poly_aarch64_reg(n, args[n]);
@@ -7889,17 +7870,6 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bridge_kind);
   }
 
-  if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_FP64_STACK) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_aarch64_reg(16, &target) ||
-        !read_poly_aarch64_reg(17, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64,
-      BX_POLY_MODE_RAW_RISCV, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_FP64_STACK);
-  }
-
   if (insn == BX_POLY_AARCH64_CTRL_RISCV_CALL_VEC128_U32) {
     Bit64u target = 0;
     Bit64u return_rip = 0;
@@ -9178,17 +9148,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
       BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
       bridge_kind);
-  }
-
-  if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_FP64_STACK) {
-    Bit64u target = 0;
-    Bit64u return_rip = 0;
-    if (!read_poly_riscv_reg(5, &target) ||
-        !read_poly_riscv_reg(6, &return_rip))
-      return false;
-    return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV,
-      BX_POLY_MODE_RAW_AARCH64, (bx_address) target, (bx_address) return_rip,
-      BX_POLY_CROSS_BRIDGE_FP64_STACK);
   }
 
   if (insn == BX_POLY_RISCV_CTRL_AARCH64_CALL_VEC128_U32) {
