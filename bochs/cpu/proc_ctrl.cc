@@ -91,6 +91,8 @@ struct bx_poly_trap_saved_regs {
   Bit64u aarch64_fp[32];
   Bit64u aarch64_fp_hi[32];
   Bit32u aarch64_nzcv;
+  Bit32u aarch64_fpcr;
+  Bit32u aarch64_fpsr;
   bool riscv_state_valid;
   Bit64u riscv_x[32];
   bool riscv_x_valid[32];
@@ -123,6 +125,8 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   regs->aarch64_state_valid = false;
   regs->riscv_state_valid = false;
   regs->aarch64_nzcv = 0;
+  regs->aarch64_fpcr = 0;
+  regs->aarch64_fpsr = 0;
   regs->riscv_fflags = 0;
   regs->riscv_frm = 0;
   for (unsigned n = 0; n < 32; n++) {
@@ -837,6 +841,8 @@ static bool bx_poly_aarch64_x_valid[32];
 static Bit64u bx_poly_aarch64_fp[32];
 static Bit64u bx_poly_aarch64_fp_hi[32];
 static Bit32u bx_poly_aarch64_nzcv = 0;
+static Bit32u bx_poly_aarch64_fpcr = 0;
+static Bit32u bx_poly_aarch64_fpsr = 0;
 static bool bx_poly_aarch64_reservation_valid = false;
 static bx_address bx_poly_aarch64_reservation_addr = 0;
 static Bit32u bx_poly_aarch64_reservation_size = 0;
@@ -850,6 +856,20 @@ static bool bx_poly_riscv_reservation_valid = false;
 static bx_address bx_poly_riscv_reservation_addr = 0;
 static Bit32u bx_poly_riscv_reservation_size = 0;
 static bx_address bx_poly_monitor_packet_addr = 0;
+
+enum {
+  BX_POLY_AARCH64_FPCR_RMODE_MASK = 3u << 22,
+  BX_POLY_AARCH64_FPSR_IOC = 1u << 0,
+  BX_POLY_AARCH64_FPSR_DZC = 1u << 1,
+  BX_POLY_AARCH64_FPSR_OFC = 1u << 2,
+  BX_POLY_AARCH64_FPSR_UFC = 1u << 3,
+  BX_POLY_AARCH64_FPSR_IXC = 1u << 4,
+  BX_POLY_AARCH64_FPSR_IDC = 1u << 7,
+  BX_POLY_AARCH64_FPSR_MASK = BX_POLY_AARCH64_FPSR_IOC |
+    BX_POLY_AARCH64_FPSR_DZC | BX_POLY_AARCH64_FPSR_OFC |
+    BX_POLY_AARCH64_FPSR_UFC | BX_POLY_AARCH64_FPSR_IXC |
+    BX_POLY_AARCH64_FPSR_IDC
+};
 
 struct bx_poly_reg_state_t {
   bool valid;
@@ -895,6 +915,8 @@ struct bx_poly_reg_state_t {
   Bit64u aarch64_fp[32];
   Bit64u aarch64_fp_hi[32];
   Bit32u aarch64_nzcv;
+  Bit32u aarch64_fpcr;
+  Bit32u aarch64_fpsr;
   bool aarch64_reservation_valid;
   bx_address aarch64_reservation_addr;
   Bit32u aarch64_reservation_size;
@@ -1088,11 +1110,28 @@ static Bit32u bx_poly_riscv_softfloat_rounding_mode(Bit32u rm)
   }
 }
 
+static Bit32u bx_poly_aarch64_softfloat_rounding_mode()
+{
+  switch ((bx_poly_aarch64_fpcr >> 22) & 0x3) {
+  case 0:
+    return softfloat_round_near_even;
+  case 1:
+    return softfloat_round_max;
+  case 2:
+    return softfloat_round_min;
+  default:
+    return softfloat_round_minMag;
+  }
+}
+
 static softfloat_status_t bx_poly_softfloat_status()
 {
   softfloat_status_t status = {};
-  Bit32u rm = (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) ?
-    bx_poly_riscv_softfloat_rounding_mode(7) : softfloat_round_near_even;
+  Bit32u rm = softfloat_round_near_even;
+  if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV)
+    rm = bx_poly_riscv_softfloat_rounding_mode(7);
+  else if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64)
+    rm = bx_poly_aarch64_softfloat_rounding_mode();
   status.softfloat_roundingMode = (rm == 0xff) ? softfloat_round_near_even : rm;
   status.softfloat_exceptionMasks = softfloat_all_exceptions_mask;
   status.extF80_roundingPrecision = 80;
@@ -1146,6 +1185,24 @@ static void bx_poly_riscv_accumulate_softfloat_fflags(
     bx_poly_riscv_fflags |= 0x08;
   if (flags & softfloat_flag_invalid)
     bx_poly_riscv_fflags |= 0x10;
+}
+
+static void bx_poly_aarch64_accumulate_softfloat_fpsr(
+  const softfloat_status_t *status)
+{
+  int flags = softfloat_getExceptionFlags(status);
+  if (flags & softfloat_flag_invalid)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_IOC;
+  if (flags & softfloat_flag_divbyzero)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_DZC;
+  if (flags & softfloat_flag_overflow)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_OFC;
+  if (flags & softfloat_flag_underflow)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_UFC;
+  if (flags & softfloat_flag_inexact)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_IXC;
+  if (flags & softfloat_flag_denormal)
+    bx_poly_aarch64_fpsr |= BX_POLY_AARCH64_FPSR_IDC;
 }
 
 static Bit64u bx_poly_fp64_to_uint64_rtz(double value)
@@ -1239,6 +1296,7 @@ static void bx_poly_aarch64_set_fp64_compare_nzcv(Bit64u left_bits,
 {
   softfloat_status_t status = bx_poly_softfloat_status();
   int relation = f64_compare(left_bits, right_bits, !signal_all_nans, &status);
+  bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
   if (relation == softfloat_relation_unordered)
     bx_poly_aarch64_nzcv = 0x3;
   else if (relation == softfloat_relation_less)
@@ -1254,6 +1312,7 @@ static void bx_poly_aarch64_set_fp32_compare_nzcv(Bit32u left_bits,
 {
   softfloat_status_t status = bx_poly_softfloat_status();
   int relation = f32_compare(left_bits, right_bits, !signal_all_nans, &status);
+  bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
   if (relation == softfloat_relation_unordered)
     bx_poly_aarch64_nzcv = 0x3;
   else if (relation == softfloat_relation_less)
@@ -1818,6 +1877,8 @@ static void bx_poly_reset_aarch64_regs()
     bx_poly_aarch64_fp_hi[n] = 0;
   }
   bx_poly_aarch64_nzcv = 0;
+  bx_poly_aarch64_fpcr = 0;
+  bx_poly_aarch64_fpsr = 0;
   bx_poly_aarch64_reservation_valid = false;
   bx_poly_aarch64_reservation_addr = 0;
   bx_poly_aarch64_reservation_size = 0;
@@ -2165,6 +2226,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
     bx_poly_reg_states[victim].last_trap.args[n] = 0;
   bx_poly_clear_trap_saved_regs(&bx_poly_reg_states[victim].trap_saved_regs);
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
+  bx_poly_reg_states[victim].aarch64_fpcr = 0;
+  bx_poly_reg_states[victim].aarch64_fpsr = 0;
   bx_poly_reg_states[victim].aarch64_reservation_valid = false;
   bx_poly_reg_states[victim].aarch64_reservation_addr = 0;
   bx_poly_reg_states[victim].aarch64_reservation_size = 0;
@@ -2319,6 +2382,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].last_trap = bx_poly_last_trap;
   bx_poly_reg_states[slot].trap_saved_regs = bx_poly_trap_saved_regs;
   bx_poly_reg_states[slot].aarch64_nzcv = bx_poly_aarch64_nzcv;
+  bx_poly_reg_states[slot].aarch64_fpcr = bx_poly_aarch64_fpcr;
+  bx_poly_reg_states[slot].aarch64_fpsr = bx_poly_aarch64_fpsr;
   bx_poly_reg_states[slot].aarch64_reservation_valid = bx_poly_aarch64_reservation_valid;
   bx_poly_reg_states[slot].aarch64_reservation_addr = bx_poly_aarch64_reservation_addr;
   bx_poly_reg_states[slot].aarch64_reservation_size = bx_poly_aarch64_reservation_size;
@@ -2386,6 +2451,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_last_trap = bx_poly_reg_states[slot].last_trap;
   bx_poly_trap_saved_regs = bx_poly_reg_states[slot].trap_saved_regs;
   bx_poly_aarch64_nzcv = bx_poly_reg_states[slot].aarch64_nzcv;
+  bx_poly_aarch64_fpcr = bx_poly_reg_states[slot].aarch64_fpcr;
+  bx_poly_aarch64_fpsr = bx_poly_reg_states[slot].aarch64_fpsr;
   bx_poly_aarch64_reservation_valid = bx_poly_reg_states[slot].aarch64_reservation_valid;
   bx_poly_aarch64_reservation_addr = bx_poly_reg_states[slot].aarch64_reservation_addr;
   bx_poly_aarch64_reservation_size = bx_poly_reg_states[slot].aarch64_reservation_size;
@@ -2918,6 +2985,10 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
 
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET,
     bx_poly_aarch64_nzcv);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8,
+    bx_poly_aarch64_fpcr);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 16,
+    bx_poly_aarch64_fpsr);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 24,
     bx_poly_aarch64_reservation_addr);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 32,
@@ -3272,6 +3343,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
   bx_poly_aarch64_nzcv = (Bit32u)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET);
+  bx_poly_aarch64_fpcr = (Bit32u) read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8) &
+    BX_POLY_AARCH64_FPCR_RMODE_MASK;
+  bx_poly_aarch64_fpsr = (Bit32u) read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 16) &
+    BX_POLY_AARCH64_FPSR_MASK;
   bx_poly_aarch64_reservation_addr =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 24);
   bx_poly_aarch64_reservation_size = (Bit32u)
@@ -4563,6 +4640,50 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffffffe0) == 0xd53b4400) {
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, bx_poly_aarch64_fpcr))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,fpcr value=%x",
+      rd, bx_poly_aarch64_fpcr));
+    return true;
+  }
+
+  if ((insn & 0xffffffe0) == 0xd53b4420) {
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, bx_poly_aarch64_fpsr))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,fpsr value=%x",
+      rd, bx_poly_aarch64_fpsr));
+    return true;
+  }
+
+  if ((insn & 0xffffffe0) == 0xd51b4400) {
+    Bit32u rn = insn & 0x1f;
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    bx_poly_aarch64_fpcr = (Bit32u) value & BX_POLY_AARCH64_FPCR_RMODE_MASK;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 msr fpcr,x%u value=%x",
+      rn, bx_poly_aarch64_fpcr));
+    return true;
+  }
+
+  if ((insn & 0xffffffe0) == 0xd51b4420) {
+    Bit32u rn = insn & 0x1f;
+    Bit64u value = 0;
+    if (!read_poly_aarch64_reg(rn, &value))
+      return false;
+    bx_poly_aarch64_fpsr = (Bit32u) value & BX_POLY_AARCH64_FPSR_MASK;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 msr fpsr,x%u value=%x",
+      rn, bx_poly_aarch64_fpsr));
+    return true;
+  }
+
   {
     const char *barrier_name = bx_poly_aarch64_barrier_name(insn);
     if (barrier_name != 0) {
@@ -5406,6 +5527,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
       result32_bits = f32_add(left32_bits, right32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e203800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5415,6 +5537,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
       result32_bits = f32_sub(left32_bits, right32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e200800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5424,6 +5547,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
       result32_bits = f32_mul(left32_bits, right32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e201800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5433,6 +5557,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp32_reg(rm, &right32_bits))
         return false;
       result32_bits = f32_div(left32_bits, right32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e207800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5443,6 +5568,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, false,
         &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e206800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5453,6 +5579,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, false,
         &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e205800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5463,6 +5590,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, true,
         &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e204800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5473,6 +5601,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, true,
         &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xfffffc00) == 0x1e214000) {
       op_name = "fneg.s";
@@ -5495,6 +5624,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
         return false;
       result32_bits = f32_sqrt(left32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe01c00) == 0x1e201000) {
       op_name = "fmov.s.imm";
@@ -5514,6 +5644,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
         return false;
       result32_bits = f64_to_f32(left_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e602800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5522,6 +5653,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_add(left_bits, right_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e603800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5530,6 +5662,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_sub(left_bits, right_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e600800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5538,6 +5671,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_mul(left_bits, right_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e601800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5546,6 +5680,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_div(left_bits, right_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e607800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5554,6 +5689,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 0, 1, false, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e606800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5562,6 +5698,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 1, 1, false, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e605800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5570,6 +5707,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 0, 1, true, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe0fc00) == 0x1e604800) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -5578,6 +5716,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           !read_poly_aarch64_fp64_reg(rm, &right_bits))
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 1, 1, true, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xfffffc00) == 0x1e614000) {
       op_name = "fneg.d";
@@ -5597,6 +5736,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
         return false;
       result_bits = f64_sqrt(left_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xffe01c00) == 0x1e601000) {
       op_name = "fmov.d.imm";
@@ -5613,6 +5753,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!read_poly_aarch64_fp32_reg(rn, &left32_bits))
         return false;
       result_bits = f32_to_f64(left32_bits, &status);
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
     else if ((insn & 0xfffffc00) == 0x5e21d800 ||
              (insn & 0xfffffc00) == 0x7e21d800 ||
@@ -5630,6 +5771,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         result32_bits = is_unsigned ?
           ui32_to_f32(left32_bits, &status) :
           i32_to_f32((Bit32s) left32_bits, &status);
+        bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
       }
       else {
         if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
@@ -5637,6 +5779,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         result_bits = is_unsigned ?
           ui64_to_f64(left_bits, &status) :
           i64_to_f64((Bit64s) left_bits, &status);
+        bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
       }
     }
     else if ((insn & 0xfffffc00) == 0x5ea1b800 ||
@@ -5655,6 +5798,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         result32_bits = is_unsigned ?
           f32_to_ui32_r_minMag(left32_bits, true, true, &status) :
           (Bit32u) f32_to_i32_r_minMag(left32_bits, true, true, &status);
+        bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
       }
       else {
         if (!read_poly_aarch64_fp64_reg(rn, &left_bits))
@@ -5663,6 +5807,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         result_bits = is_unsigned ?
           f64_to_ui64_r_minMag(left_bits, true, true, &status) :
           (Bit64u) f64_to_i64_r_minMag(left_bits, true, true, &status);
+        bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
       }
     }
 
@@ -5786,6 +5931,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       if (!write_poly_aarch64_fp32_reg(rd, result_bits))
         return false;
     }
+    bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s %c%u,%c%u value=%llu",
       is_unsigned ? "ucvtf" : "scvtf",
@@ -5881,6 +6027,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
     if (!write_poly_aarch64_reg(rd, result))
       return false;
+    bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u,%c%u result=%llu",
       is_signed ? "fcvtzs" : "fcvtzu", is_64 ? "x" : "w", rd,
@@ -11037,6 +11184,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   if (trap_mode == BX_POLY_MODE_RAW_AARCH64) {
     bx_poly_trap_saved_regs.aarch64_state_valid = true;
     bx_poly_trap_saved_regs.aarch64_nzcv = bx_poly_aarch64_nzcv;
+    bx_poly_trap_saved_regs.aarch64_fpcr = bx_poly_aarch64_fpcr;
+    bx_poly_trap_saved_regs.aarch64_fpsr = bx_poly_aarch64_fpsr;
     for (unsigned n = 0; n < 31; n++) {
       bx_poly_trap_saved_regs.aarch64_x_valid[n] =
         read_poly_aarch64_reg(n, &bx_poly_trap_saved_regs.aarch64_x[n]);
@@ -11213,6 +11362,8 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
           bx_poly_trap_saved_regs.aarch64_fp_hi[n]);
       }
       bx_poly_aarch64_nzcv = bx_poly_trap_saved_regs.aarch64_nzcv;
+      bx_poly_aarch64_fpcr = bx_poly_trap_saved_regs.aarch64_fpcr;
+      bx_poly_aarch64_fpsr = bx_poly_trap_saved_regs.aarch64_fpsr;
     }
     else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
              bx_poly_trap_saved_regs.riscv_state_valid) {
