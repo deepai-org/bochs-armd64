@@ -6200,6 +6200,85 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  {
+    Bit32u simd_compare_base =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) | 0x40000000);
+    Bit32u simd_compare_op = simd_compare_base & ~(Bit32u) 0x00c00000;
+    const char *op_name = 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    bool q = (insn & 0x40000000) != 0;
+    bool signed_greater = false;
+    bool unsigned_greater = false;
+    bool equal = false;
+    bool test_bits = false;
+    Bit32u element_bits = 8;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if ((simd_compare_op & 0xdfffffff) == 0x0e203400) {
+      op_name = (simd_compare_base & 0x20000000) ? "cmhi" : "cmgt";
+      unsigned_greater = (simd_compare_base & 0x20000000) != 0;
+      signed_greater = !unsigned_greater;
+    }
+    else if ((simd_compare_op & 0xdfffffff) == 0x0e208c00) {
+      op_name = (simd_compare_base & 0x20000000) ? "cmeq" : "cmtst";
+      equal = (simd_compare_base & 0x20000000) != 0;
+      test_bits = !equal;
+    }
+
+    if (op_name != 0) {
+      if ((simd_compare_base & 0x00c00000) == 0x00400000)
+        element_bits = 16;
+      else if ((simd_compare_base & 0x00c00000) == 0x00800000)
+        element_bits = 32;
+      else if ((simd_compare_base & 0x00c00000) == 0x00c00000)
+        element_bits = 64;
+      if (!q && element_bits == 64)
+        return false;
+
+      if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+          !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+        return false;
+
+      Bit64u mask = bx_poly_low_mask(element_bits);
+      Bit32u lanes = (q ? 128 : 64) / element_bits;
+      for (Bit32u lane = 0; lane < lanes; lane++) {
+        Bit32u bit_offset = lane * element_bits;
+        Bit32u shift = bit_offset & 63;
+        Bit64u left_qword = bit_offset < 64 ? left_lo : left_hi;
+        Bit64u right_qword = bit_offset < 64 ? right_lo : right_hi;
+        Bit64u left = (left_qword >> shift) & mask;
+        Bit64u right = (right_qword >> shift) & mask;
+        bool matched = false;
+
+        if (equal)
+          matched = left == right;
+        else if (test_bits)
+          matched = (left & right) != 0;
+        else if (unsigned_greater)
+          matched = left > right;
+        else if (signed_greater)
+          matched = bx_poly_sign_extend64(left, element_bits) >
+            bx_poly_sign_extend64(right, element_bits);
+
+        if (matched) {
+          Bit64u *result_qword = bit_offset < 64 ? &result_lo : &result_hi;
+          *result_qword |= mask << shift;
+        }
+      }
+
+      if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%u-bit,v%u,v%u lo=%llu hi=%llu",
+        op_name, rd, element_bits, rn, rm,
+        (unsigned long long) result_lo, (unsigned long long) result_hi));
+      return true;
+    }
+  }
+
   Bit32u simd_add_base =
     insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) | 0x40000000);
   if (simd_add_base == 0x0e208400 || simd_add_base == 0x0e608400 ||
