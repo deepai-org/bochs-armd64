@@ -4812,6 +4812,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffffffe0) == 0xd53bd060) { // tpidrro_el0
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, 0))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,tpidrro_el0 value=0", rd));
+    return true;
+  }
+
   if ((insn & 0xffffffe0) == 0xd51bd040) {
     Bit32u rn = insn & 0x1f;
     Bit64u value = 0;
