@@ -307,7 +307,6 @@ static const Bit32u BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY = (1U << 0);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS = (1U << 1);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE = (1U << 2);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS = (1U << 3);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_STATUS_OPS = (1U << 4);
 static const Bit32u BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY = (1U << 5);
 static const Bit32u BX_POLY_INTERRUPT_ABI_VERSION = 1;
 static const Bit32u BX_POLY_INTERRUPT_FLAG_RAW_CPL3_ONLY = (1U << 0);
@@ -2716,7 +2715,7 @@ static Bit64u bx_poly_trap_packet_flags(void)
 {
   if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE)
     return 0;
-  Bit64u flags = BX_POLY_TRAP_PACKET_FLAG_STATUS_OPS;
+  Bit64u flags = 0;
   if (bx_poly_monitor_packet_addr != 0)
     flags |= BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY;
   return flags;
@@ -12299,34 +12298,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op >= 0x30 && op <= 0x32) {
-        Bit8u status_id = op - 0x30;
-        if (status_id == 1)
-          RAX = bx_poly_last_syscall_number;
-        else if (status_id == 2)
-          RAX = bx_poly_last_syscall_mode;
-        else
-          RAX = bx_poly_current_mode;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: syscall status op=0x%02x id=%u current_mode=%u last_mode=%u number=%u",
-          op, status_id, bx_poly_current_mode, bx_poly_last_syscall_mode,
-          bx_poly_last_syscall_number));
-        return true;
-      }
-      if (op >= 0x38 && op <= 0x3a) {
-        Bit8u status_id = op - 0x38;
-        if (status_id == 1)
-          RAX = bx_poly_last_break_number;
-        else if (status_id == 2)
-          RAX = bx_poly_last_break_mode;
-        else
-          RAX = 0x4c000000 | (bx_poly_current_mode << 8) | status_id;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: break status op=0x%02x id=%u current_mode=%u last_mode=%u number=%u",
-          op, status_id, bx_poly_current_mode, bx_poly_last_break_mode,
-          bx_poly_last_break_number));
-        return true;
-      }
       if (op >= 0x40 && op <= 0x44) {
         Bit8u status_id = op - 0x40;
         if (status_id == 0)
@@ -12346,32 +12317,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_foreign_insn_count,
           (unsigned long long) bx_poly_foreign_syscall_count,
           (unsigned long long) bx_poly_foreign_break_count));
-        return true;
-      }
-      if (op >= 0x50 && op <= 0x5d) {
-        Bit8u status_id = op - 0x50;
-        if (status_id == 0)
-          RAX = bx_poly_last_trap.reason;
-        else if (status_id == 1)
-          RAX = bx_poly_last_trap.mode;
-        else if (status_id == 2)
-          RAX = bx_poly_last_trap.number;
-        else if (status_id >= 3 && status_id <= 8)
-          RAX = bx_poly_last_trap.args[status_id - 3];
-        else if (status_id == 9)
-          RAX = bx_poly_last_trap.pc;
-        else if (status_id == 10)
-          RAX = bx_poly_last_trap.selector;
-        else if (status_id == 12 || status_id == 13)
-          RAX = bx_poly_last_trap.args[status_id - 6];
-        else
-          RAX = bx_poly_last_trap.next_pc;
-        RIP = next_rip;
-        BX_INFO(("poly_ud: trap status op=0x%02x id=%u reason=%u mode=%u number=%u selector=%u pc=%llx next=%llx",
-          op, status_id, bx_poly_last_trap.reason, bx_poly_last_trap.mode,
-          bx_poly_last_trap.number, bx_poly_last_trap.selector,
-          (unsigned long long) bx_poly_last_trap.pc,
-          (unsigned long long) bx_poly_last_trap.next_pc));
         return true;
       }
   }
@@ -12641,7 +12586,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
           BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
           BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE |
           BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS |
-          BX_POLY_TRAP_PACKET_FLAG_STATUS_OPS |
           BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY;
     BX_NEXT_INSTR(i);
     return;
