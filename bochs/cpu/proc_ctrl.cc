@@ -604,6 +604,8 @@ static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
 static bx_address bx_poly_raw_owner_cr3 = 0;
 static bx_address bx_poly_raw_owner_fsbase = 0;
 static bx_address bx_poly_raw_owner_stack_key = 0;
+static bool bx_poly_explicit_state_key_valid = false;
+static bx_address bx_poly_explicit_state_key = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
 static Bit64u bx_poly_foreign_insn_count = 0;
 static Bit64u bx_poly_foreign_syscall_count = 0;
@@ -1758,6 +1760,9 @@ static bool bx_poly_is_stack_region_key(bx_address stack_key)
 static bx_address bx_poly_thread_selector_key(bx_address fsbase,
   bx_address rsp)
 {
+  if (bx_poly_explicit_state_key_valid)
+    return bx_poly_explicit_state_key;
+
   // In userspace, CR3+FSBASE is the stable architectural thread identity.
   // Including RSP here fragments one pthread's hidden foreign register bank
   // across ordinary call frames. Keep the stack-region key only as a fallback
@@ -1990,6 +1995,8 @@ static void bx_poly_reset_import_x86_return_frame(
 static void bx_poly_reset_current_xstate(void)
 {
   bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_explicit_state_key_valid = false;
+  bx_poly_explicit_state_key = 0;
   bx_poly_clear_return_cookie();
   bx_poly_return_cookie_top = 0;
   for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
@@ -11802,9 +11809,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x65 || op == 0x66) {
-        BX_INFO(("poly_ud: reject reserved explicit state-key op=%02x", op));
-        return false;
+      if (op == 0x65) {
+        bx_address old_key = bx_poly_current_state_key(RSP);
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
+        bx_poly_explicit_state_key = (bx_address) RAX;
+        bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+        bx_address new_key = bx_poly_current_state_key(RSP);
+        bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+        RAX = 0;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: explicit state key set value=%llx",
+          (unsigned long long) bx_poly_explicit_state_key));
+        return true;
+      }
+      if (op == 0x66) {
+        RAX = bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: explicit state key get value=%llx",
+          (unsigned long long) RAX));
+        return true;
       }
       if (op == 0x67) {
         bx_address buffer = (bx_address) RAX;
