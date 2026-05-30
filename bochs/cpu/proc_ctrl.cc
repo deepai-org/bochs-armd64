@@ -3178,6 +3178,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     BX_POLY_CROSS_RETURN_DEPTH] = {};
   bx_poly_import_x86_return_frame_t
     import_return_frames[BX_POLY_IMPORT_RETURN_DEPTH] = {};
+  Bit64u tls_flags = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET);
+  if (tls_flags != 1) {
+    BX_INFO(("poly_state_import: reject TLS flags=%llu",
+      (unsigned long long) tls_flags));
+    return false;
+  }
   Bit64u tls_active_mode = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 8);
   if (!bx_poly_valid_frontend_mode((Bit32u) tls_active_mode)) {
@@ -3191,9 +3198,16 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24);
   Bit64u imported_landing_policy = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET);
+  Bit64u imported_landing_supported = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 8);
   if (!bx_poly_valid_landing_policy(imported_landing_policy)) {
     BX_INFO(("poly_state_import: reject landing policy=%llx",
       (unsigned long long) imported_landing_policy));
+    return false;
+  }
+  if (imported_landing_supported != BX_POLY_LANDING_POLICY_SUPPORTED) {
+    BX_INFO(("poly_state_import: reject landing policy supported=%llx",
+      (unsigned long long) imported_landing_supported));
     return false;
   }
   Bit64u imported_trap_vector_mode = read_virtual_qword(seg,
@@ -3271,9 +3285,16 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
   Bit64u signature_slot_count = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_ABI_SIGNATURE_COUNT_OFFSET);
+  Bit64u signature_flags = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_ABI_SIGNATURE_COUNT_OFFSET + 8);
   if (signature_slot_count != BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
     BX_INFO(("poly_state_import: reject ABI signature slot count=%llu",
       (unsigned long long) signature_slot_count));
+    return false;
+  }
+  if (signature_flags != 0) {
+    BX_INFO(("poly_state_import: reject ABI signature flags=%llu",
+      (unsigned long long) signature_flags));
     return false;
   }
   for (unsigned n = 0; n < BX_POLY_ABI_SIGNATURE_SLOT_COUNT; n++) {
