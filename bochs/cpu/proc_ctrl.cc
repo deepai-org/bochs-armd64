@@ -6085,61 +6085,55 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   }
 
   Bit32u simd_add_base =
-    insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
-  if (simd_add_base == 0x4e208400 || simd_add_base == 0x4e608400 ||
-      simd_add_base == 0x4ea08400 || simd_add_base == 0x4ee08400) {
+    insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) | 0x40000000);
+  if (simd_add_base == 0x0e208400 || simd_add_base == 0x0e608400 ||
+      simd_add_base == 0x0ea08400 || simd_add_base == 0x0ee08400 ||
+      simd_add_base == 0x2e208400 || simd_add_base == 0x2e608400 ||
+      simd_add_base == 0x2ea08400 || simd_add_base == 0x2ee08400) {
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
     Bit32u rm = (insn >> 16) & 0x1f;
+    bool q = (insn & 0x40000000) != 0;
+    bool subtract = (simd_add_base & 0x20000000) != 0;
     Bit32u element_bits = 8;
+    Bit32u total_bits = q ? 128 : 64;
     Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
     Bit64u result_lo = 0, result_hi = 0;
 
-    if (simd_add_base == 0x4e608400)
+    if ((simd_add_base & 0xdfffffff) == 0x0e608400)
       element_bits = 16;
-    else if (simd_add_base == 0x4ea08400)
+    else if ((simd_add_base & 0xdfffffff) == 0x0ea08400)
       element_bits = 32;
-    else if (simd_add_base == 0x4ee08400)
+    else if ((simd_add_base & 0xdfffffff) == 0x0ee08400)
       element_bits = 64;
+    if (!q && element_bits == 64)
+      return false;
 
     if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
         !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
       return false;
 
-    if (element_bits == 8) {
-      for (unsigned n = 0; n < 8; n++) {
-        result_lo |= ((Bit64u) (Bit8u) ((left_lo >> (n * 8)) +
-          (right_lo >> (n * 8)))) << (n * 8);
-        result_hi |= ((Bit64u) (Bit8u) ((left_hi >> (n * 8)) +
-          (right_hi >> (n * 8)))) << (n * 8);
-      }
-    }
-    else if (element_bits == 16) {
-      for (unsigned n = 0; n < 4; n++) {
-        result_lo |= ((Bit64u) (Bit16u) ((left_lo >> (n * 16)) +
-          (right_lo >> (n * 16)))) << (n * 16);
-        result_hi |= ((Bit64u) (Bit16u) ((left_hi >> (n * 16)) +
-          (right_hi >> (n * 16)))) << (n * 16);
-      }
-    }
-    else if (element_bits == 32) {
-      result_lo = (Bit64u) (Bit32u) (left_lo + right_lo) |
-        ((Bit64u) (Bit32u) ((left_lo >> 32) + (right_lo >> 32)) << 32);
-      result_hi = (Bit64u) (Bit32u) (left_hi + right_hi) |
-        ((Bit64u) (Bit32u) ((left_hi >> 32) + (right_hi >> 32)) << 32);
-    }
-    else {
-      result_lo = left_lo + right_lo;
-      result_hi = left_hi + right_hi;
+    Bit64u mask = bx_poly_low_mask(element_bits);
+    Bit32u lanes = total_bits / element_bits;
+    for (Bit32u lane = 0; lane < lanes; lane++) {
+      Bit32u bit_offset = lane * element_bits;
+      Bit32u shift = bit_offset & 63;
+      Bit64u left_qword = bit_offset < 64 ? left_lo : left_hi;
+      Bit64u right_qword = bit_offset < 64 ? right_lo : right_hi;
+      Bit64u left = (left_qword >> shift) & mask;
+      Bit64u right = (right_qword >> shift) & mask;
+      Bit64u value = (subtract ? left - right : left + right) & mask;
+      Bit64u *result_qword = bit_offset < 64 ? &result_lo : &result_hi;
+      *result_qword |= value << shift;
     }
 
     if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
       return false;
 
     RIP = next_rip;
-    BX_DEBUG(("poly_raw: emulated aarch64 add v%u.%u-bit,v%u,v%u lo=%llu hi=%llu",
-      rd, element_bits, rn, rm, (unsigned long long) result_lo,
-      (unsigned long long) result_hi));
+    BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%u-bit,v%u,v%u lo=%llu hi=%llu",
+      subtract ? "sub" : "add", rd, element_bits, rn, rm,
+      (unsigned long long) result_lo, (unsigned long long) result_hi));
     return true;
   }
 
