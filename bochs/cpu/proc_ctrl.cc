@@ -6135,6 +6135,47 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) |
+      (0xf << 11) | 0x40000000)) == 0x2e000000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u imm = (insn >> 11) & 0xf;
+    bool q = (insn & 0x40000000) != 0;
+    Bit32u bytes = q ? 16 : 8;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if (!q && imm >= 8)
+      return false;
+    if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+        !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+      return false;
+
+    for (Bit32u byte = 0; byte < bytes; byte++) {
+      Bit32u source_byte = imm + byte;
+      Bit64u source_qword = 0;
+      if (source_byte < bytes) {
+        source_qword = source_byte < 8 ? left_lo : left_hi;
+      }
+      else {
+        source_byte -= bytes;
+        source_qword = source_byte < 8 ? right_lo : right_hi;
+      }
+      Bit64u value = (source_qword >> ((source_byte & 7) * 8)) & 0xff;
+      Bit64u *result_qword = byte < 8 ? &result_lo : &result_hi;
+      *result_qword |= value << ((byte & 7) * 8);
+    }
+
+    if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 ext v%u.%ub,v%u,v%u,#%u lo=%llu hi=%llu",
+      rd, bytes, rn, rm, imm, (unsigned long long) result_lo,
+      (unsigned long long) result_hi));
+    return true;
+  }
+
   {
     Bit32u simd_logical_base =
       insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) | 0x40000000);
