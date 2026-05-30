@@ -171,6 +171,8 @@ static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_AARCH64_
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_AARCH64_CTRL(0x6b);
 static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET = BX_POLY_AARCH64_CTRL(0x6c);
 static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_GET = BX_POLY_AARCH64_CTRL(0x6d);
+static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_SET = BX_POLY_AARCH64_CTRL(0x6e);
+static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_GET = BX_POLY_AARCH64_CTRL(0x6f);
 static const Bit32u BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE = 16;
 static const Bit32u BX_POLY_RISCV_CTRL_X86_ESCAPE = BX_POLY_RISCV_CTRL(0);
 static const Bit32u BX_POLY_RISCV_CTRL_AARCH64_SWITCH = BX_POLY_RISCV_CTRL(1);
@@ -183,6 +185,8 @@ static const Bit32u BX_POLY_RISCV_CTRL_CALL_SIG_MODE = BX_POLY_RISCV_CTRL(10);
 static const Bit32u BX_POLY_RISCV_CTRL_LANDING = BX_POLY_RISCV_CTRL(11);
 static const Bit32u BX_POLY_RISCV_CTRL_ABI_SIGNATURE_SET = BX_POLY_RISCV_CTRL(12);
 static const Bit32u BX_POLY_RISCV_CTRL_ABI_SIGNATURE_GET = BX_POLY_RISCV_CTRL(13);
+static const Bit32u BX_POLY_RISCV_CTRL_STATE_KEY_SET = BX_POLY_RISCV_CTRL(14);
+static const Bit32u BX_POLY_RISCV_CTRL_STATE_KEY_GET = BX_POLY_RISCV_CTRL(15);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_SET = BX_POLY_RISCV_CTRL(24);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_GET = BX_POLY_RISCV_CTRL(25);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_RISCV_CTRL(26);
@@ -7564,6 +7568,37 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == BX_POLY_AARCH64_CTRL_STATE_KEY_SET) {
+    Bit64u key = 0;
+    if (!read_poly_aarch64_reg(0, &key))
+      return false;
+    Bit32u saved_mode = bx_poly_current_mode;
+    bx_address old_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
+    bx_poly_explicit_state_key = (bx_address) key;
+    bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+    bx_address new_key = bx_poly_current_state_key(RSP);
+    bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+    bx_poly_current_mode = saved_mode;
+    write_poly_aarch64_reg(0, 0);
+    bx_poly_current_mode = saved_mode;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 state key set value=%llx",
+      (unsigned long long) key));
+    return true;
+  }
+
+  if (insn == BX_POLY_AARCH64_CTRL_STATE_KEY_GET) {
+    write_poly_aarch64_reg(0,
+      bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: aarch64 state key get value=%llx",
+      (unsigned long long) (bx_poly_explicit_state_key_valid ?
+        bx_poly_explicit_state_key : 0)));
+    return true;
+  }
+
   if (insn == BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET) {
     Bit64u slot = 0;
     Bit64u value = 0;
@@ -8825,6 +8860,37 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv monitor packet get value=%llx",
       (unsigned long long) bx_poly_monitor_packet_addr));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_STATE_KEY_SET) {
+    Bit64u key = 0;
+    if (!read_poly_riscv_reg(10, &key))
+      return false;
+    Bit32u saved_mode = bx_poly_current_mode;
+    bx_address old_key = bx_poly_current_state_key(RSP);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
+    bx_poly_explicit_state_key = (bx_address) key;
+    bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+    bx_address new_key = bx_poly_current_state_key(RSP);
+    bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+    bx_poly_current_mode = saved_mode;
+    write_poly_riscv_reg(10, 0);
+    bx_poly_current_mode = saved_mode;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv state key set value=%llx",
+      (unsigned long long) key));
+    return true;
+  }
+
+  if (insn == BX_POLY_RISCV_CTRL_STATE_KEY_GET) {
+    write_poly_riscv_reg(10,
+      bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0);
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: riscv state key get value=%llx",
+      (unsigned long long) (bx_poly_explicit_state_key_valid ?
+        bx_poly_explicit_state_key : 0)));
     return true;
   }
 
@@ -11852,12 +11918,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return true;
       }
       if (op == 0x65) {
+        Bit32u saved_mode = bx_poly_current_mode;
         bx_address old_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
         bx_poly_explicit_state_key = (bx_address) RAX;
         bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
         bx_address new_key = bx_poly_current_state_key(RSP);
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
+        bx_poly_current_mode = saved_mode;
         RAX = 0;
         RIP = next_rip;
         BX_INFO(("poly_ud: explicit state key set value=%llx",
@@ -12214,6 +12282,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
         (BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 << 8);
       RCX = BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET;
       RDX = 8;
+    }
+    else if (ECX == 19) {
+      RAX = BX_POLY_AARCH64_CTRL_STATE_KEY_SET;
+      RBX = BX_POLY_AARCH64_CTRL_STATE_KEY_GET;
+      RCX = BX_POLY_RISCV_CTRL_STATE_KEY_SET;
+      RDX = BX_POLY_RISCV_CTRL_STATE_KEY_GET;
     }
     else {
       RAX = 0;
