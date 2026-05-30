@@ -511,6 +511,8 @@ enum {
 
 enum {
   BX_POLY_CROSS_BRIDGE_DEFAULT = 0,
+  BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 = 2,
+  BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 = 3,
   BX_POLY_CROSS_BRIDGE_VEC128_U32 = 4
 };
 
@@ -1909,6 +1911,8 @@ static bool bx_poly_valid_trap_source_mode(Bit32u reason, Bit32u mode)
 static bool bx_poly_valid_cross_bridge_kind(Bit32u kind)
 {
   return kind == BX_POLY_CROSS_BRIDGE_DEFAULT ||
+    kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
+    kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 ||
     kind == BX_POLY_CROSS_BRIDGE_VEC128_U32;
 }
 
@@ -3704,6 +3708,16 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
     return true;
   }
 
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32;
+    return true;
+  }
+
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
+    return true;
+  }
+
   if (bx_poly_register_only_abi_signature_kind(kind)) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     return true;
@@ -4273,6 +4287,24 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
         mapped = false;
     }
   }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
+      bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+    if (mapped && caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
+        callee_mode == BX_POLY_MODE_RAW_RISCV) {
+      Bit32u fp0 = 0;
+      mapped =
+        read_poly_aarch64_fp32_reg(0, &fp0) &&
+        write_poly_riscv_fp32_reg(10, fp0);
+    }
+  }
   else {
     mapped = false;
   }
@@ -4344,6 +4376,24 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
         mapped = write_poly_riscv_reg(10 + n, args[n]);
       else
         mapped = false;
+    }
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
+      bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (frame->caller_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (frame->caller_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+    if (mapped && callee_mode == BX_POLY_MODE_RAW_RISCV &&
+        frame->caller_mode == BX_POLY_MODE_RAW_AARCH64) {
+      Bit32u fp0 = 0;
+      mapped =
+        read_poly_riscv_fp32_reg(10, &fp0) &&
+        write_poly_aarch64_fp32_reg(0, fp0);
     }
   }
   else if (bridge_kind == BX_POLY_CROSS_BRIDGE_VEC128_U32 &&
