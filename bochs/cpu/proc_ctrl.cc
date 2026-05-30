@@ -10956,7 +10956,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit32u csr = (insn >> 20) & 0xfff;
 
-    if ((csr == 0xc00 || csr == 0xc01 || csr == 0xc02) && funct3 != 0) {
+    if ((csr == 0xc00 || csr == 0xc01 || csr == 0xc02 ||
+         csr == 0xc80 || csr == 0xc81 || csr == 0xc82) && funct3 != 0) {
       bool read_only = false;
       if ((funct3 == 0x2 || funct3 == 0x3) && rs1 == 0)
         read_only = true;
@@ -10966,12 +10967,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
 
       Bit64u value = 0;
-      if (csr == 0xc00)
+      if (csr == 0xc00 || csr == 0xc80)
         value = BX_CPU_THIS_PTR get_Virtual_TSC();
-      else if (csr == 0xc01)
+      else if (csr == 0xc01 || csr == 0xc81)
         value = bx_pc_system.time_ticks();
       else
         value = BX_CPU_THIS_PTR icount;
+      if (csr >= 0xc80)
+        value >>= 32;
 
       if (!write_poly_riscv_reg(rd, value))
         return false;
