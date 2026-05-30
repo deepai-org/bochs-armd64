@@ -4835,6 +4835,19 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffffffe0) == 0xd53b0020) { // ctr_el0
+    Bit32u rd = insn & 0x1f;
+    const Bit64u ctr_el0_64_byte_lines_dic_idc =
+      (BX_CONST64(1) << 29) | (BX_CONST64(1) << 28) |
+      (BX_CONST64(4) << 16) | BX_CONST64(4);
+    if (!write_poly_aarch64_reg(rd, ctr_el0_64_byte_lines_dic_idc))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mrs x%u,ctr_el0 value=%llx",
+      rd, (unsigned long long) ctr_el0_64_byte_lines_dic_idc));
+    return true;
+  }
+
   if ((insn & 0xffffffe0) == 0xd53be000 || // cntfrq_el0
       (insn & 0xffffffe0) == 0xd53be020 || // cntpct_el0
       (insn & 0xffffffe0) == 0xd53be040) { // cntvct_el0
