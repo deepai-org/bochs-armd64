@@ -1898,6 +1898,9 @@ static void bx_poly_reset_riscv_regs()
   }
   bx_poly_riscv_fflags = 0;
   bx_poly_riscv_frm = 0;
+  bx_poly_riscv_reservation_valid = false;
+  bx_poly_riscv_reservation_addr = 0;
+  bx_poly_riscv_reservation_size = 0;
 }
 
 static bx_address bx_poly_stack_key(bx_address rsp)
@@ -1983,6 +1986,59 @@ static bool bx_poly_key_matches(const bx_poly_reg_state_t *state,
 static bool bx_poly_is_raw_mode(Bit32u mode)
 {
   return mode == BX_POLY_MODE_RAW_AARCH64 || mode == BX_POLY_MODE_RAW_RISCV;
+}
+
+static bool bx_poly_ranges_overlap(bx_address left_addr, Bit32u left_size,
+  bx_address right_addr, Bit32u right_size)
+{
+  if (left_size == 0 || right_size == 0)
+    return false;
+
+  bx_address left_end = left_addr + left_size - 1;
+  bx_address right_end = right_addr + right_size - 1;
+  return left_addr <= right_end && right_addr <= left_end;
+}
+
+static void bx_poly_invalidate_reservations_for_store(bx_address addr,
+  Bit32u size)
+{
+  if (bx_poly_aarch64_reservation_valid &&
+      bx_poly_ranges_overlap(addr, size, bx_poly_aarch64_reservation_addr,
+        bx_poly_aarch64_reservation_size)) {
+    bx_poly_aarch64_reservation_valid = false;
+    bx_poly_aarch64_reservation_addr = 0;
+    bx_poly_aarch64_reservation_size = 0;
+  }
+
+  if (bx_poly_riscv_reservation_valid &&
+      bx_poly_ranges_overlap(addr, size, bx_poly_riscv_reservation_addr,
+        bx_poly_riscv_reservation_size)) {
+    bx_poly_riscv_reservation_valid = false;
+    bx_poly_riscv_reservation_addr = 0;
+    bx_poly_riscv_reservation_size = 0;
+  }
+
+  for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
+    bx_poly_reg_state_t *state = &bx_poly_reg_states[n];
+    if (!state->valid)
+      continue;
+
+    if (state->aarch64_reservation_valid &&
+        bx_poly_ranges_overlap(addr, size, state->aarch64_reservation_addr,
+          state->aarch64_reservation_size)) {
+      state->aarch64_reservation_valid = false;
+      state->aarch64_reservation_addr = 0;
+      state->aarch64_reservation_size = 0;
+    }
+
+    if (state->riscv_reservation_valid &&
+        bx_poly_ranges_overlap(addr, size, state->riscv_reservation_addr,
+          state->riscv_reservation_size)) {
+      state->riscv_reservation_valid = false;
+      state->riscv_reservation_addr = 0;
+      state->riscv_reservation_size = 0;
+    }
+  }
 }
 
 static void bx_poly_clear_cross_return_stack(void)
@@ -2113,9 +2169,6 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   bx_poly_reset_aarch64_regs();
   bx_poly_reset_riscv_regs();
-  bx_poly_riscv_reservation_valid = false;
-  bx_poly_riscv_reservation_addr = 0;
-  bx_poly_riscv_reservation_size = 0;
   for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
     bx_poly_thread_key_states[n].valid = false;
     bx_poly_thread_key_states[n].cr3 = 0;
@@ -5045,10 +5098,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
     else
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
-    if (bx_poly_aarch64_reservation_valid &&
-        bx_poly_aarch64_reservation_addr == addr &&
-        bx_poly_aarch64_reservation_size == size)
-      bx_poly_aarch64_reservation_valid = false;
+    bx_poly_invalidate_reservations_for_store(addr, size);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 stlr %c%u,[rn=%u] addr=%llx value=%llu",
       size == 8 ? 'x' : 'w', rt, rn, (unsigned long long) addr,
@@ -5123,6 +5173,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
         else
           write_virtual_qword(BX_SEG_REG_DS, addr, value);
+        bx_poly_invalidate_reservations_for_store(addr, size);
       }
       bx_poly_aarch64_reservation_valid = false;
       bx_poly_aarch64_reservation_addr = 0;
@@ -5237,10 +5288,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     else
       write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
 
-    if (bx_poly_aarch64_reservation_valid &&
-        bx_poly_aarch64_reservation_addr == addr &&
-        bx_poly_aarch64_reservation_size == size)
-      bx_poly_aarch64_reservation_valid = false;
+    bx_poly_invalidate_reservations_for_store(addr, size);
     if (!write_poly_aarch64_reg(rt, size == 4 ? (Bit32u) old_value : old_value))
       return false;
     RIP = next_rip;
@@ -5304,12 +5352,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) desired);
       else
         write_virtual_qword(BX_SEG_REG_DS, addr, desired);
+      bx_poly_invalidate_reservations_for_store(addr, size);
     }
-
-    if (bx_poly_aarch64_reservation_valid &&
-        bx_poly_aarch64_reservation_addr == addr &&
-        bx_poly_aarch64_reservation_size == size)
-      bx_poly_aarch64_reservation_valid = false;
     if (!write_poly_aarch64_reg(rs, size == 4 ? (Bit32u) old_value : old_value))
       return false;
     RIP = next_rip;
@@ -8046,6 +8090,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
           write_virtual_qword(BX_SEG_REG_DS, addr + 8, hi0);
           write_virtual_qword(BX_SEG_REG_DS, addr + 16, lo1);
           write_virtual_qword(BX_SEG_REG_DS, addr + 24, hi1);
+          bx_poly_invalidate_reservations_for_store(addr, 32);
         }
         else if (is_double) {
           Bit64u value0 = 0, value1 = 0;
@@ -8054,6 +8099,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
             return false;
           write_virtual_qword(BX_SEG_REG_DS, addr, value0);
           write_virtual_qword(BX_SEG_REG_DS, addr + 8, value1);
+          bx_poly_invalidate_reservations_for_store(addr, 16);
         }
         else {
           Bit32u value0 = 0, value1 = 0;
@@ -8062,6 +8108,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
             return false;
           write_virtual_dword(BX_SEG_REG_DS, addr, value0);
           write_virtual_dword(BX_SEG_REG_DS, addr + 4, value1);
+          bx_poly_invalidate_reservations_for_store(addr, 8);
         }
       }
 
@@ -8186,10 +8233,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         if (width == 8) {
           write_virtual_qword(BX_SEG_REG_DS, addr, value0);
           write_virtual_qword(BX_SEG_REG_DS, addr + 8, value1);
+          bx_poly_invalidate_reservations_for_store(addr, 16);
         }
         else {
           write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value0);
           write_virtual_dword(BX_SEG_REG_DS, addr + 4, (Bit32u) value1);
+          bx_poly_invalidate_reservations_for_store(addr, 8);
         }
       }
 
@@ -8257,18 +8306,21 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return false;
       write_virtual_qword(BX_SEG_REG_DS, addr, lo);
       write_virtual_qword(BX_SEG_REG_DS, addr + 8, hi);
+      bx_poly_invalidate_reservations_for_store(addr, 16);
     }
     else if (size == 2) {
       Bit32u value = 0;
       if (!read_poly_aarch64_fp32_reg(rt, &value))
         return false;
       write_virtual_dword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 4);
     }
     else {
       Bit64u value = 0;
       if (!read_poly_aarch64_fp64_reg(rt, &value))
         return false;
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 8);
     }
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 fp str%u v%u,[x%u,#%u] addr=%llx",
@@ -8340,12 +8392,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         if (!read_poly_aarch64_fp32_reg(rt, &fp_value))
           return false;
         write_virtual_dword(BX_SEG_REG_DS, addr, fp_value);
+        bx_poly_invalidate_reservations_for_store(addr, 4);
       }
       else {
         Bit64u fp_value = 0;
         if (!read_poly_aarch64_fp64_reg(rt, &fp_value))
           return false;
         write_virtual_qword(BX_SEG_REG_DS, addr, fp_value);
+        bx_poly_invalidate_reservations_for_store(addr, 8);
       }
       if (pre_index || post_index) {
         Bit64u new_base = base + offset;
@@ -8425,6 +8479,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
     else
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+    bx_poly_invalidate_reservations_for_store(addr, 1u << size);
     if (pre_index || post_index) {
       Bit64u new_base = base + offset;
       if (rn == 31)
@@ -8505,12 +8560,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         if (!read_poly_aarch64_fp32_reg(rt, &fp_value))
           return false;
         write_virtual_dword(BX_SEG_REG_DS, addr, fp_value);
+        bx_poly_invalidate_reservations_for_store(addr, 4);
       }
       else {
         Bit64u fp_value = 0;
         if (!read_poly_aarch64_fp64_reg(rt, &fp_value))
           return false;
         write_virtual_qword(BX_SEG_REG_DS, addr, fp_value);
+        bx_poly_invalidate_reservations_for_store(addr, 8);
       }
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 fp str%u v%u,[x%u,x%u,extend=%u,lsl=%u] addr=%llx",
@@ -8566,6 +8623,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
     else
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+    bx_poly_invalidate_reservations_for_store(addr, 1u << size);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 str%u x%u,[x%u,x%u,extend=%u,lsl=%u] addr=%llx value=%llu",
       8U << size, rt, rn, rm, option, shift, (unsigned long long) addr,
@@ -8639,6 +8697,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
     else
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+    bx_poly_invalidate_reservations_for_store(addr, 1u << size);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 str%u x%u,[x%u,#%u] addr=%llx value=%llu", 8U << size, rt, rn, imm12 << size, (unsigned long long) addr, (unsigned long long) value));
     return true;
@@ -9122,6 +9181,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) right);
         else
           write_virtual_qword(BX_SEG_REG_DS, addr, right);
+        bx_poly_invalidate_reservations_for_store(addr, size);
       }
       bx_poly_riscv_reservation_valid = false;
       bx_poly_riscv_reservation_addr = 0;
@@ -9181,6 +9241,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           return false;
       }
       write_virtual_dword(BX_SEG_REG_DS, addr, new32);
+      bx_poly_invalidate_reservations_for_store(addr, size);
       result = (Bit64u) bx_poly_sign_extend(old32, 32);
       new_value = new32;
     }
@@ -9227,13 +9288,9 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
           return false;
       }
       write_virtual_qword(BX_SEG_REG_DS, addr, new_value);
+      bx_poly_invalidate_reservations_for_store(addr, size);
       result = old_value;
     }
-
-    if (bx_poly_riscv_reservation_valid &&
-        bx_poly_riscv_reservation_addr == addr &&
-        bx_poly_riscv_reservation_size == size)
-      bx_poly_riscv_reservation_valid = false;
     if (!write_poly_riscv_reg(rd, result))
       return false;
     RIP = next_rip;
@@ -10386,6 +10443,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp32_reg(rs2, &value))
         return false;
       write_virtual_dword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 4);
       op_name = "fsw";
     }
     else if (funct3 == 0x3) {
@@ -10393,6 +10451,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp64_reg(rs2, &value))
         return false;
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 8);
       op_name = "fsd";
     }
     else {
@@ -10421,18 +10480,22 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
     if (funct3 == 0x0) {
       write_virtual_byte(BX_SEG_REG_DS, addr, (Bit8u) value);
+      bx_poly_invalidate_reservations_for_store(addr, 1);
       op_name = "sb";
     }
     else if (funct3 == 0x1) {
       write_virtual_word(BX_SEG_REG_DS, addr, (Bit16u) value);
+      bx_poly_invalidate_reservations_for_store(addr, 2);
       op_name = "sh";
     }
     else if (funct3 == 0x2) {
       write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
+      bx_poly_invalidate_reservations_for_store(addr, 4);
       op_name = "sw";
     }
     else if (funct3 == 0x3) {
       write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 8);
       op_name = "sd";
     }
     else {
@@ -10656,6 +10719,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (!read_poly_riscv_fp64_reg(reg, &value))
           return false;
         write_virtual_qword(BX_SEG_REG_DS, addr, value);
+        bx_poly_invalidate_reservations_for_store(addr, 8);
         BX_DEBUG(("poly_raw: emulated riscv c.fsd f%u,%u(x%u) value=%llu", reg, imm, rs1, (unsigned long long) value));
       }
       RIP = next_rip;
@@ -10681,6 +10745,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (!read_poly_riscv_reg(reg, &value))
           return false;
         write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
+        bx_poly_invalidate_reservations_for_store(addr, 4);
         BX_DEBUG(("poly_raw: emulated riscv c.sw x%u,%u(x%u) value=%llu", reg, imm, rs1, (unsigned long long) value));
       }
       RIP = next_rip;
@@ -10706,6 +10771,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (!read_poly_riscv_reg(reg, &value))
           return false;
         write_virtual_qword(BX_SEG_REG_DS, addr, value);
+        bx_poly_invalidate_reservations_for_store(addr, 8);
         BX_DEBUG(("poly_raw: emulated riscv c.sd x%u,%u(x%u) value=%llu", reg, imm, rs1, (unsigned long long) value));
       }
       RIP = next_rip;
@@ -11020,7 +11086,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       Bit64u sp = 0, value = 0;
       if (!read_poly_riscv_reg(2, &sp) || !read_poly_riscv_fp64_reg(rs2, &value))
         return false;
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (sp + imm), value);
+      bx_address addr = (bx_address) (sp + imm);
+      write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 8);
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv c.fsdsp f%u,%u(sp) value=%llu", rs2, imm, (unsigned long long) value));
       return true;
@@ -11032,7 +11100,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       Bit64u sp = 0, value = 0;
       if (!read_poly_riscv_reg(2, &sp) || !read_poly_riscv_reg(rs2, &value))
         return false;
-      write_virtual_dword(BX_SEG_REG_DS, (bx_address) (sp + imm), (Bit32u) value);
+      bx_address addr = (bx_address) (sp + imm);
+      write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value);
+      bx_poly_invalidate_reservations_for_store(addr, 4);
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv c.swsp x%u,%u(sp) value=%llu", rs2, imm, (unsigned long long) value));
       return true;
@@ -11044,7 +11114,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       Bit64u sp = 0, value = 0;
       if (!read_poly_riscv_reg(2, &sp) || !read_poly_riscv_reg(rs2, &value))
         return false;
-      write_virtual_qword(BX_SEG_REG_DS, (bx_address) (sp + imm), value);
+      bx_address addr = (bx_address) (sp + imm);
+      write_virtual_qword(BX_SEG_REG_DS, addr, value);
+      bx_poly_invalidate_reservations_for_store(addr, 8);
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv c.sdsp x%u,%u(sp) value=%llu", rs2, imm, (unsigned long long) value));
       return true;
