@@ -9021,12 +9021,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u rs3 = (insn >> 27) & 0x1f;
     const char *op_name = "fmadd";
     Bit32u op = 0;
-    softfloat_status_t status = bx_poly_softfloat_status();
 
     if (opcode == 0x43 || opcode == 0x47 ||
         opcode == 0x4b || opcode == 0x4f) {
-      if (rm > 4 && rm != 7)
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
         return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
 
       switch (opcode) {
         case 0x43:
@@ -9053,8 +9055,10 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
             !read_poly_riscv_fp32_reg(rs2, &product_right) ||
             !read_poly_riscv_fp32_reg(rs3, &addend))
           return false;
-        if (!write_poly_riscv_fp32_reg(rd,
-              f32_mulAdd(product_left, product_right, addend, op, &status)))
+        Bit32u result = f32_mulAdd(product_left, product_right, addend, op,
+          &status);
+        bx_poly_riscv_accumulate_softfloat_fflags(&status);
+        if (!write_poly_riscv_fp32_reg(rd, result))
           return false;
         RIP = next_rip;
         BX_DEBUG(("poly_raw: emulated riscv %s.s f%u, f%u, f%u, f%u",
@@ -9068,8 +9072,10 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
             !read_poly_riscv_fp64_reg(rs2, &product_right) ||
             !read_poly_riscv_fp64_reg(rs3, &addend))
           return false;
-        if (!write_poly_riscv_fp64_reg(rd,
-              f64_mulAdd(product_left, product_right, addend, op, &status)))
+        Bit64u result = f64_mulAdd(product_left, product_right, addend, op,
+          &status);
+        bx_poly_riscv_accumulate_softfloat_fflags(&status);
+        if (!write_poly_riscv_fp64_reg(rd, result))
           return false;
         RIP = next_rip;
         BX_DEBUG(("poly_raw: emulated riscv %s.d f%u, f%u, f%u, f%u",
@@ -9097,36 +9103,60 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     if (rm > 4 && rm != 7)
       return false;
     if (funct7 == 0x00) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fadd.s";
       fp32_op = true;
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) + bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_add(left32_bits, right32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x04) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fsub.s";
       fp32_op = true;
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) - bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_sub(left32_bits, right32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x08) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fmul.s";
       fp32_op = true;
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) * bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_mul(left32_bits, right32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x0c) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fdiv.s";
       fp32_op = true;
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits) ||
           !read_poly_riscv_fp32_reg(rs2, &right32_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits(bx_poly_fp32_from_bits(left32_bits) / bx_poly_fp32_from_bits(right32_bits));
+      result32_bits = f32_div(left32_bits, right32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x14 && rm == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -9147,32 +9177,56 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       result32_bits = f32_max(left32_bits, right32_bits, &status);
     }
     else if (funct7 == 0x01) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fadd.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) + bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_add(left_bits, right_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x05) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fsub.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) - bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_sub(left_bits, right_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x09) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fmul.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) * bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_mul(left_bits, right_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x0d) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fdiv.d";
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits) ||
           !read_poly_riscv_fp64_reg(rs2, &right_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits(bx_poly_fp64_from_bits(left_bits) / bx_poly_fp64_from_bits(right_bits));
+      result_bits = f64_div(left_bits, right_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x15 && rm == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
