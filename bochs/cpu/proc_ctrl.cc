@@ -1205,7 +1205,10 @@ static void bx_poly_set_vector_element(Bit64u *lo, Bit64u *hi,
 {
   Bit32u bit_offset = lane * element_bits;
   Bit64u *target = bit_offset < 64 ? lo : hi;
-  *target |= (value & bx_poly_low_mask(element_bits)) << (bit_offset & 63);
+  Bit32u shift = bit_offset & 63;
+  Bit64u mask = bx_poly_low_mask(element_bits) << shift;
+  *target = (*target & ~mask) |
+    ((value & bx_poly_low_mask(element_bits)) << shift);
 }
 
 static Bit64s bx_poly_sign_extend64(Bit64u value, unsigned bits)
@@ -6189,6 +6192,61 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     BX_DEBUG(("poly_raw: emulated aarch64 ext v%u.%ub,v%u,v%u,#%u lo=%llu hi=%llu",
       rd, bytes, rn, rm, imm, (unsigned long long) result_lo,
       (unsigned long long) result_hi));
+    return true;
+  }
+
+  if ((insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) |
+      (0x3 << 13) | 0x1000 | 0x40000000)) == 0x0e000000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    Bit32u table_regs = ((insn >> 13) & 0x3) + 1;
+    bool tbx = (insn & 0x1000) != 0;
+    bool q = (insn & 0x40000000) != 0;
+    Bit32u result_bytes = q ? 16 : 8;
+    Bit32u table_bytes = table_regs * 16;
+    Bit64u index_lo = 0, index_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+    Bit64u table_lo[4] = { 0, 0, 0, 0 };
+    Bit64u table_hi[4] = { 0, 0, 0, 0 };
+
+    if (!read_poly_aarch64_fp128_reg(rm, &index_lo, &index_hi))
+      return false;
+    if (tbx && !read_poly_aarch64_fp128_reg(rd, &result_lo, &result_hi))
+      return false;
+    for (Bit32u reg = 0; reg < table_regs; reg++) {
+      if (!read_poly_aarch64_fp128_reg((rn + reg) & 0x1f,
+          &table_lo[reg], &table_hi[reg]))
+        return false;
+    }
+
+    for (Bit32u byte = 0; byte < result_bytes; byte++) {
+      Bit32u index = (Bit32u) bx_poly_get_vector_element(index_lo, index_hi,
+        8, byte);
+      Bit64u value = 0;
+
+      if (index < table_bytes) {
+        Bit32u table_reg = index >> 4;
+        Bit32u table_byte = index & 0xf;
+        value = bx_poly_get_vector_element(table_lo[table_reg],
+          table_hi[table_reg], 8, table_byte);
+        bx_poly_set_vector_element(&result_lo, &result_hi, 8, byte, value);
+      }
+      else if (!tbx) {
+        Bit64u *target = byte < 8 ? &result_lo : &result_hi;
+        *target &= ~(BX_CONST64(0xff) << ((byte & 7) * 8));
+      }
+    }
+
+    if (!q)
+      result_hi = 0;
+    if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%ub,{v%u-%u},v%u lo=%llu hi=%llu",
+      tbx ? "tbx" : "tbl", rd, result_bytes, rn,
+      (rn + table_regs - 1) & 0x1f, rm,
+      (unsigned long long) result_lo, (unsigned long long) result_hi));
     return true;
   }
 
