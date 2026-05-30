@@ -3414,6 +3414,85 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         "cross return"))
     return false;
 
+  bool imported_interrupted_raw_valid = false;
+  Bit32u imported_interrupted_raw_mode = BX_POLY_MODE_X86;
+  bx_address imported_interrupted_raw_rip = 0;
+  bool imported_transition_frame_valid = false;
+  bx_poly_cross_return_frame_t imported_transition_frame = {};
+  Bit64u return_pc =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET);
+  Bit64u transition_modes = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8);
+  Bit64u transition_abi_flags = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16);
+  Bit64u transition_cookie = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
+  if (return_pc != 0) {
+    Bit64u modes = transition_modes;
+    Bit64u abi_flags = transition_abi_flags;
+    if ((abi_flags >> 32) != 0) {
+      BX_INFO(("poly_state_import: reject active transition reserved=%llx",
+        (unsigned long long) (abi_flags >> 32)));
+      return false;
+    }
+    Bit32u flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
+    Bit32u caller_mode = (Bit32u) modes;
+    Bit32u target_mode = (Bit32u) (modes >> 32);
+    Bit32u bridge_kind = (Bit32u) (Bit16u) abi_flags;
+    if ((flags & BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW) != 0) {
+      if (caller_mode != BX_POLY_MODE_X86 ||
+          !bx_poly_is_raw_mode(target_mode) ||
+          bridge_kind != BX_POLY_CROSS_BRIDGE_DEFAULT) {
+        BX_INFO(("poly_state_import: reject interrupted transition caller=%u target=%u bridge=%u",
+          caller_mode, target_mode, bridge_kind));
+        return false;
+      }
+      imported_interrupted_raw_valid = true;
+      imported_interrupted_raw_mode = target_mode;
+      imported_interrupted_raw_rip = return_pc;
+    }
+    else if (cross_top == 0) {
+      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
+            bridge_kind)) {
+        BX_INFO(("poly_state_import: reject active transition caller=%u target=%u bridge=%u",
+          caller_mode, target_mode, bridge_kind));
+        return false;
+      }
+      imported_transition_frame.return_rip = return_pc;
+      imported_transition_frame.return_rsp = transition_cookie;
+      imported_transition_frame.caller_mode = caller_mode;
+      imported_transition_frame.callee_mode = target_mode;
+      imported_transition_frame.bridge_kind = bridge_kind;
+      imported_transition_frame.flags = flags;
+      imported_transition_frame_valid = true;
+    }
+    else {
+      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
+            bridge_kind)) {
+        BX_INFO(("poly_state_import: reject active transition summary caller=%u target=%u bridge=%u",
+          caller_mode, target_mode, bridge_kind));
+        return false;
+      }
+      Bit64u return_rsp = transition_cookie;
+      const bx_poly_cross_return_frame_t *top_frame =
+        &cross_return_frames[cross_top - 1];
+      if (top_frame->return_rip != return_pc ||
+          top_frame->return_rsp != return_rsp ||
+          top_frame->caller_mode != caller_mode ||
+          top_frame->callee_mode != target_mode ||
+          top_frame->bridge_kind != bridge_kind ||
+          top_frame->flags != flags) {
+        BX_INFO(("poly_state_import: reject mismatched active transition summary"));
+        return false;
+      }
+    }
+  }
+  else if (transition_modes != 0 || transition_abi_flags != 0 ||
+           transition_cookie != 0) {
+    BX_INFO(("poly_state_import: reject inactive transition metadata"));
+    return false;
+  }
+
   bx_address old_state_key = bx_poly_current_state_key(RSP);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_state_key);
   bx_poly_explicit_state_key_valid =
@@ -3451,79 +3530,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_interrupted_raw_valid = false;
   bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
   bx_poly_interrupted_raw_rip = 0;
-  Bit64u return_pc =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET);
-  Bit64u transition_modes = read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 8);
-  Bit64u transition_abi_flags = read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 16);
-  Bit64u transition_cookie = read_virtual_qword(seg,
-    base + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24);
-  if (return_pc != 0) {
-    Bit64u modes = transition_modes;
-    Bit64u abi_flags = transition_abi_flags;
-    if ((abi_flags >> 32) != 0) {
-      BX_INFO(("poly_state_import: reject active transition reserved=%llx",
-        (unsigned long long) (abi_flags >> 32)));
-      return false;
-    }
-    Bit32u flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
-    Bit32u caller_mode = (Bit32u) modes;
-    Bit32u target_mode = (Bit32u) (modes >> 32);
-    Bit32u bridge_kind = (Bit32u) (Bit16u) abi_flags;
-    if ((flags & BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW) != 0) {
-      if (caller_mode != BX_POLY_MODE_X86 ||
-          !bx_poly_is_raw_mode(target_mode) ||
-          bridge_kind != BX_POLY_CROSS_BRIDGE_DEFAULT) {
-        BX_INFO(("poly_state_import: reject interrupted transition caller=%u target=%u bridge=%u",
-          caller_mode, target_mode, bridge_kind));
-        return false;
-      }
-      bx_poly_interrupted_raw_valid = true;
-      bx_poly_interrupted_raw_mode = target_mode;
-      bx_poly_interrupted_raw_rip = return_pc;
-    }
-    else if (cross_top == 0) {
-      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
-            bridge_kind)) {
-        BX_INFO(("poly_state_import: reject active transition caller=%u target=%u bridge=%u",
-          caller_mode, target_mode, bridge_kind));
-        return false;
-      }
-      bx_poly_cross_return_frame_t *frame = &bx_poly_cross_return_stack[0];
-      frame->return_rip = return_pc;
-      frame->return_rsp = transition_cookie;
-      frame->caller_mode = caller_mode;
-      frame->callee_mode = target_mode;
-      frame->bridge_kind = bridge_kind;
-      frame->flags = flags;
-      bx_poly_cross_return_top = 1;
-    }
-    else {
-      if (!bx_poly_valid_cross_return_shape(caller_mode, target_mode,
-            bridge_kind)) {
-        BX_INFO(("poly_state_import: reject active transition summary caller=%u target=%u bridge=%u",
-          caller_mode, target_mode, bridge_kind));
-        return false;
-      }
-      Bit64u return_rsp = transition_cookie;
-      const bx_poly_cross_return_frame_t *top_frame =
-        &cross_return_frames[cross_top - 1];
-      if (top_frame->return_rip != return_pc ||
-          top_frame->return_rsp != return_rsp ||
-          top_frame->caller_mode != caller_mode ||
-          top_frame->callee_mode != target_mode ||
-          top_frame->bridge_kind != bridge_kind ||
-          top_frame->flags != flags) {
-        BX_INFO(("poly_state_import: reject mismatched active transition summary"));
-        return false;
-      }
-    }
+  if (imported_interrupted_raw_valid) {
+    bx_poly_interrupted_raw_valid = true;
+    bx_poly_interrupted_raw_mode = imported_interrupted_raw_mode;
+    bx_poly_interrupted_raw_rip = imported_interrupted_raw_rip;
   }
-  else if (transition_modes != 0 || transition_abi_flags != 0 ||
-           transition_cookie != 0) {
-    BX_INFO(("poly_state_import: reject inactive transition metadata"));
-    return false;
+  else if (imported_transition_frame_valid) {
+    bx_poly_cross_return_stack[0] = imported_transition_frame;
+    bx_poly_cross_return_top = 1;
   }
   if (!bx_poly_interrupted_raw_valid && cross_top != 0) {
     bx_poly_cross_return_top = cross_top;
