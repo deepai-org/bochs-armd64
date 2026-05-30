@@ -246,7 +246,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
 static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
-static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 8;
+static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 9;
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_XCR0_USER = (1U << 0);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED = (1U << 1);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME = (1U << 2);
@@ -258,6 +258,8 @@ static const Bit32u BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET = (1U << 7);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN = (1U << 8);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS = (1U << 9);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY = (1U << 10);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_STATE_KEY = (1U << 11);
+static const Bit64u BX_POLY_STATE_KEY_FLAG_EXPLICIT = (1ULL << 0);
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_OFFSET = 0x000;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET = 0x040;
 static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET = 0x080;
@@ -291,8 +293,10 @@ static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET = 0xea0;
 static const Bit32u BX_POLY_STATE_XSAVE_FRONTEND_TLS_BYTES = 0x40;
 static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET = 0xee0;
 static const Bit32u BX_POLY_STATE_XSAVE_LANDING_POLICY_BYTES = 0x40;
-static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_OFFSET = 0xf20;
-static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_BYTES = 0x0e0;
+static const Bit32u BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET = 0xf20;
+static const Bit32u BX_POLY_STATE_XSAVE_STATE_KEY_BYTES = 0x40;
+static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_OFFSET = 0xf60;
+static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_BYTES = 0x0a0;
 static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
 static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
@@ -2474,7 +2478,8 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_MONITOR_PACKET |
     BX_POLY_STATE_XSAVE_FLAG_CROSS_RETURN |
     BX_POLY_STATE_XSAVE_FLAG_FRONTEND_TLS |
-    BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY;
+    BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY |
+    BX_POLY_STATE_XSAVE_FLAG_STATE_KEY;
 }
 
 static Bit64u bx_poly_trap_packet_flags(void)
@@ -3003,6 +3008,12 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
     bx_poly_landing_policy_flags);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 8,
     BX_POLY_LANDING_POLICY_SUPPORTED);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET,
+    bx_poly_explicit_state_key_valid ? BX_POLY_STATE_KEY_FLAG_EXPLICIT : 0);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 8,
+    bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0);
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 16,
+    BX_POLY_STATE_KEY_FLAG_EXPLICIT);
 
   return true;
 }
@@ -3069,6 +3080,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET);
   Bit64u imported_landing_supported = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 8);
+  Bit64u imported_state_key_flags = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET);
+  Bit64u imported_state_key_value = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 8);
+  Bit64u imported_state_key_supported = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 16);
   if (!bx_poly_valid_landing_policy(imported_landing_policy)) {
     BX_INFO(("poly_state_import: reject landing policy=%llx",
       (unsigned long long) imported_landing_policy));
@@ -3077,6 +3094,22 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   if (imported_landing_supported != BX_POLY_LANDING_POLICY_SUPPORTED) {
     BX_INFO(("poly_state_import: reject landing policy supported=%llx",
       (unsigned long long) imported_landing_supported));
+    return false;
+  }
+  if ((imported_state_key_flags & ~BX_POLY_STATE_KEY_FLAG_EXPLICIT) != 0) {
+    BX_INFO(("poly_state_import: reject state-key flags=%llx",
+      (unsigned long long) imported_state_key_flags));
+    return false;
+  }
+  if (imported_state_key_supported != BX_POLY_STATE_KEY_FLAG_EXPLICIT) {
+    BX_INFO(("poly_state_import: reject state-key supported=%llx",
+      (unsigned long long) imported_state_key_supported));
+    return false;
+  }
+  if ((imported_state_key_flags & BX_POLY_STATE_KEY_FLAG_EXPLICIT) == 0 &&
+      imported_state_key_value != 0) {
+    BX_INFO(("poly_state_import: reject inactive state-key value=%llx",
+      (unsigned long long) imported_state_key_value));
     return false;
   }
   if (!reserved_qwords_are_zero(
@@ -3088,6 +3121,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       !reserved_qwords_are_zero(
         BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET + 16, 48,
         "landing policy") ||
+      !reserved_qwords_are_zero(
+        BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 24,
+        BX_POLY_STATE_XSAVE_STATE_KEY_BYTES - 24, "state key") ||
       !reserved_qwords_are_zero(
         BX_POLY_STATE_XSAVE_RESERVED_OFFSET,
         BX_POLY_STATE_XSAVE_RESERVED_BYTES, "top-level"))
@@ -3330,6 +3366,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         "cross return"))
     return false;
 
+  bx_address old_state_key = bx_poly_current_state_key(RSP);
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_state_key);
+  bx_poly_explicit_state_key_valid =
+    (imported_state_key_flags & BX_POLY_STATE_KEY_FLAG_EXPLICIT) != 0;
+  bx_poly_explicit_state_key = bx_poly_explicit_state_key_valid ?
+    (bx_address) imported_state_key_value : 0;
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   bx_poly_current_mode = BX_POLY_MODE_X86;
