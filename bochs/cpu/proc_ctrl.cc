@@ -4857,6 +4857,22 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffffffe0) == 0xd5380600 || // id_aa64isar0_el1
+      (insn & 0xffffffe0) == 0xd5380620 || // id_aa64isar1_el1
+      (insn & 0xffffffe0) == 0xd5380400 || // id_aa64pfr0_el1
+      (insn & 0xffffffe0) == 0xd5380420 || // id_aa64pfr1_el1
+      (insn & 0xffffffe0) == 0xd5380700 || // id_aa64mmfr0_el1
+      (insn & 0xffffffe0) == 0xd5380720 || // id_aa64mmfr1_el1
+      (insn & 0xffffffe0) == 0xd5380500) { // id_aa64dfr0_el1
+    Bit32u rd = insn & 0x1f;
+    if (!write_poly_aarch64_reg(rd, 0))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 feature-id mrs x%u,op=%08x value=0",
+      rd, (unsigned) insn));
+    return true;
+  }
+
   if ((insn & 0xffffffe0) == 0xd53be000 || // cntfrq_el0
       (insn & 0xffffffe0) == 0xd53be020 || // cntpct_el0
       (insn & 0xffffffe0) == 0xd53be040) { // cntvct_el0
