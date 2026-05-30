@@ -3346,7 +3346,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   Bit64u import_depth = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH_OFFSET);
   if (import_top64 > import_depth ||
-      import_depth > BX_POLY_IMPORT_RETURN_DEPTH) {
+      import_depth != BX_POLY_IMPORT_RETURN_DEPTH) {
     BX_INFO(("poly_state_import: reject import return top=%llu depth=%llu",
       (unsigned long long) import_top64,
       (unsigned long long) import_depth));
@@ -3385,6 +3385,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         read_virtual_qword(seg, frame_base + 40 + alias * 8);
     if (!reserved_qwords_are_zero(
           frame_base + 88 - base, 40, "import return frame"))
+      return false;
+  }
+  for (unsigned n = import_top; n < BX_POLY_IMPORT_RETURN_DEPTH; n++) {
+    Bit32u frame_offset = BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAMES_OFFSET +
+      n * BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAME_BYTES;
+    if (!reserved_qwords_are_zero(frame_offset,
+          BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAME_BYTES,
+          "inactive import return frame"))
       return false;
   }
 
@@ -3458,6 +3466,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         n, frame->caller_mode, frame->callee_mode, frame->bridge_kind));
       return false;
     }
+  }
+  for (unsigned n = cross_top; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
+    Bit32u frame_offset = BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET +
+      n * BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES;
+    if (!reserved_qwords_are_zero(frame_offset,
+          BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES,
+          "inactive cross return frame"))
+      return false;
   }
   if (!reserved_qwords_are_zero(
         BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET +
