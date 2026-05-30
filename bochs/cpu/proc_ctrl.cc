@@ -9251,6 +9251,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
         return false;
       result32_bits = f32_sqrt(left32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x2d && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -9258,38 +9259,63 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
         return false;
       result_bits = f64_sqrt(left_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x20 && rs2 == 1) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
       op_name = "fcvt.s.d";
       fp32_op = true;
       if (!read_poly_riscv_fp64_reg(rs1, &left_bits))
         return false;
-      result32_bits = bx_poly_fp32_to_bits((float) bx_poly_fp64_from_bits(left_bits));
+      result32_bits = f64_to_f32(left_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if (funct7 == 0x21 && rs2 == 0) {
+      softfloat_status_t status = bx_poly_softfloat_status();
       op_name = "fcvt.d.s";
       if (!read_poly_riscv_fp32_reg(rs1, &left32_bits))
         return false;
-      result_bits = bx_poly_fp64_to_bits((double) bx_poly_fp32_from_bits(left32_bits));
+      result_bits = f32_to_f64(left32_bits, &status);
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
     }
     else if ((funct7 == 0x68 || funct7 == 0x69) && rs2 <= 3) {
+      Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
+      if (rounding_mode == 0xff)
+        return false;
       Bit64u value = 0;
       bool source_64 = rs2 >= 2;
       bool is_unsigned = (rs2 & 1) != 0;
       fp32_op = funct7 == 0x68;
+      softfloat_status_t status = bx_poly_softfloat_status();
+      status.softfloat_roundingMode = rounding_mode;
 
       if (!read_poly_riscv_reg(rs1, &value))
         return false;
       if (fp32_op) {
-        result32_bits = is_unsigned ?
-          bx_poly_fp32_to_bits(source_64 ? (float) value : (float) (Bit32u) value) :
-          bx_poly_fp32_to_bits(source_64 ? (float) (Bit64s) value : (float) (Bit32s) (Bit32u) value);
+        if (source_64)
+          result32_bits = is_unsigned ?
+            ui64_to_f32(value, &status) :
+            i64_to_f32((Bit64s) value, &status);
+        else
+          result32_bits = is_unsigned ?
+            ui32_to_f32((Bit32u) value, &status) :
+            i32_to_f32((Bit32s) (Bit32u) value, &status);
       }
       else {
-        result_bits = is_unsigned ?
-          bx_poly_fp64_to_bits(source_64 ? (double) value : (double) (Bit32u) value) :
-          bx_poly_fp64_to_bits(source_64 ? (double) (Bit64s) value : (double) (Bit32s) (Bit32u) value);
+        if (source_64)
+          result_bits = is_unsigned ?
+            ui64_to_f64(value, &status) :
+            i64_to_f64((Bit64s) value, &status);
+        else
+          result_bits = is_unsigned ?
+            ui32_to_f64((Bit32u) value) :
+            i32_to_f64((Bit32s) (Bit32u) value);
       }
+      bx_poly_riscv_accumulate_softfloat_fflags(&status);
       op_name = fp32_op ?
         (source_64 ? (is_unsigned ? "fcvt.s.lu" : "fcvt.s.l") :
           (is_unsigned ? "fcvt.s.wu" : "fcvt.s.w")) :
