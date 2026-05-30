@@ -2519,7 +2519,8 @@ static Bit64u bx_poly_trap_packet_flags(void)
 {
   if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE)
     return 0;
-  Bit64u flags = 0;
+  Bit64u flags = BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
+    BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS;
   if (bx_poly_trap_vector != 0 &&
       bx_poly_valid_frontend_mode(bx_poly_trap_vector_mode))
     flags |= BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY;
