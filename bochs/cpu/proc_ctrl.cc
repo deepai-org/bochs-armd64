@@ -343,6 +343,19 @@ static const Bit32u BX_POLY_TRANSITION_FLAG_TRAP_RETURN = (1U << 8);
 static const Bit32u BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW = (1U << 9);
 static const Bit32u BX_POLY_TRANSITION_FLAG_LANDING_PADS = (1U << 10);
 static const Bit32u BX_POLY_TRANSITION_FLAG_LANDING_POLICY = (1U << 11);
+static const Bit32u BX_POLY_TRANSITION_FLAGS_SUPPORTED =
+  BX_POLY_TRANSITION_FLAG_DECODED_X86_OPCODES |
+  BX_POLY_TRANSITION_FLAG_NATIVE_RAW_ESCAPES |
+  BX_POLY_TRANSITION_FLAG_PIPELINE_FLUSH |
+  BX_POLY_TRANSITION_FLAG_BLOCK_BOUNDARY |
+  BX_POLY_TRANSITION_FLAG_PRECISE_NEXT_PC |
+  BX_POLY_TRANSITION_FLAG_FIXED_RAW_WIDTH |
+  BX_POLY_TRANSITION_FLAG_NEUTRAL_FOREIGN |
+  BX_POLY_TRANSITION_FLAG_NATIVE_RETURN_COOKIE |
+  BX_POLY_TRANSITION_FLAG_TRAP_RETURN |
+  BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW |
+  BX_POLY_TRANSITION_FLAG_LANDING_PADS |
+  BX_POLY_TRANSITION_FLAG_LANDING_POLICY;
 static const Bit64u BX_POLY_LANDING_POLICY_REQUIRE_SWITCH = (1ULL << 0);
 static const Bit64u BX_POLY_LANDING_POLICY_REQUIRE_CALL = (1ULL << 1);
 static const Bit64u BX_POLY_LANDING_POLICY_SUPPORTED =
@@ -3390,6 +3403,11 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     }
     frame->bridge_kind = (Bit32u) (Bit16u) abi_flags;
     frame->flags = (Bit32u) ((abi_flags >> 16) & 0xffff);
+    if ((frame->flags & ~BX_POLY_TRANSITION_FLAGS_SUPPORTED) != 0) {
+      BX_INFO(("poly_state_import: reject cross return frame %u flags=%x",
+        n, frame->flags));
+      return false;
+    }
     if (!bx_poly_valid_cross_return_shape(frame->caller_mode,
           frame->callee_mode, frame->bridge_kind)) {
       BX_INFO(("poly_state_import: reject cross return frame %u caller=%u callee=%u bridge=%u",
@@ -3439,6 +3457,11 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     Bit32u caller_mode = (Bit32u) modes;
     Bit32u target_mode = (Bit32u) (modes >> 32);
     Bit32u bridge_kind = (Bit32u) (Bit16u) abi_flags;
+    if ((flags & ~BX_POLY_TRANSITION_FLAGS_SUPPORTED) != 0) {
+      BX_INFO(("poly_state_import: reject active transition flags=%x",
+        flags));
+      return false;
+    }
     if ((flags & BX_POLY_TRANSITION_FLAG_INTERRUPTED_RAW) != 0) {
       if (caller_mode != BX_POLY_MODE_X86 ||
           !bx_poly_is_raw_mode(target_mode) ||
