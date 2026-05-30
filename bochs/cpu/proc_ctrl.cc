@@ -96,6 +96,8 @@ struct bx_poly_trap_saved_regs {
   bool riscv_x_valid[32];
   Bit64u riscv_fp[32];
   Bit64u riscv_fp_hi[32];
+  Bit32u riscv_fflags;
+  Bit32u riscv_frm;
 };
 
 static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
@@ -121,6 +123,8 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   regs->aarch64_state_valid = false;
   regs->riscv_state_valid = false;
   regs->aarch64_nzcv = 0;
+  regs->riscv_fflags = 0;
+  regs->riscv_frm = 0;
   for (unsigned n = 0; n < 32; n++) {
     regs->aarch64_x[n] = 0;
     regs->aarch64_x_valid[n] = false;
@@ -840,6 +844,8 @@ static Bit64u bx_poly_riscv_x[32];
 static bool bx_poly_riscv_x_valid[32];
 static Bit64u bx_poly_riscv_fp[32];
 static Bit64u bx_poly_riscv_fp_hi[32];
+static Bit32u bx_poly_riscv_fflags = 0;
+static Bit32u bx_poly_riscv_frm = 0;
 static bool bx_poly_riscv_reservation_valid = false;
 static bx_address bx_poly_riscv_reservation_addr = 0;
 static Bit32u bx_poly_riscv_reservation_size = 0;
@@ -896,6 +902,8 @@ struct bx_poly_reg_state_t {
   bool riscv_x_valid[32];
   Bit64u riscv_fp[32];
   Bit64u riscv_fp_hi[32];
+  Bit32u riscv_fflags;
+  Bit32u riscv_frm;
   bool riscv_reservation_valid;
   bx_address riscv_reservation_addr;
   Bit32u riscv_reservation_size;
@@ -1063,10 +1071,64 @@ static Bit32u bx_poly_aarch64_expand_fp32_imm(Bit32u imm8)
 static softfloat_status_t bx_poly_softfloat_status()
 {
   softfloat_status_t status = {};
-  status.softfloat_roundingMode = softfloat_round_near_even;
+  Bit32u frm = (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) ?
+    (bx_poly_riscv_frm & 0x7) : 0;
+  switch (frm) {
+  case 0:
+    status.softfloat_roundingMode = softfloat_round_near_even;
+    break;
+  case 1:
+    status.softfloat_roundingMode = softfloat_round_to_zero;
+    break;
+  case 2:
+    status.softfloat_roundingMode = softfloat_round_min;
+    break;
+  case 3:
+    status.softfloat_roundingMode = softfloat_round_max;
+    break;
+  case 4:
+    status.softfloat_roundingMode = softfloat_round_near_maxMag;
+    break;
+  default:
+    status.softfloat_roundingMode = softfloat_round_near_even;
+    break;
+  }
   status.softfloat_exceptionMasks = softfloat_all_exceptions_mask;
   status.extF80_roundingPrecision = 80;
   return status;
+}
+
+static Bit32u bx_poly_riscv_read_fp_csr(Bit32u csr)
+{
+  switch (csr) {
+  case 0x001:
+    return bx_poly_riscv_fflags & 0x1f;
+  case 0x002:
+    return bx_poly_riscv_frm & 0x7;
+  case 0x003:
+    return ((bx_poly_riscv_frm & 0x7) << 5) |
+      (bx_poly_riscv_fflags & 0x1f);
+  default:
+    return 0;
+  }
+}
+
+static bool bx_poly_riscv_write_fp_csr(Bit32u csr, Bit32u value)
+{
+  switch (csr) {
+  case 0x001:
+    bx_poly_riscv_fflags = value & 0x1f;
+    return true;
+  case 0x002:
+    bx_poly_riscv_frm = value & 0x7;
+    return true;
+  case 0x003:
+    bx_poly_riscv_fflags = value & 0x1f;
+    bx_poly_riscv_frm = (value >> 5) & 0x7;
+    return true;
+  default:
+    return false;
+  }
 }
 
 static Bit64u bx_poly_fp64_to_uint64_rtz(double value)
@@ -1746,6 +1808,8 @@ static void bx_poly_reset_riscv_regs()
     bx_poly_riscv_fp[n] = 0;
     bx_poly_riscv_fp_hi[n] = 0;
   }
+  bx_poly_riscv_fflags = 0;
+  bx_poly_riscv_frm = 0;
 }
 
 static bx_address bx_poly_stack_key(bx_address rsp)
@@ -2084,6 +2148,8 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].riscv_reservation_valid = false;
   bx_poly_reg_states[victim].riscv_reservation_addr = 0;
   bx_poly_reg_states[victim].riscv_reservation_size = 0;
+  bx_poly_reg_states[victim].riscv_fflags = 0;
+  bx_poly_reg_states[victim].riscv_frm = 0;
   for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
     bx_poly_reg_states[victim].cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
     bx_poly_reg_states[victim].cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
@@ -2236,6 +2302,8 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].riscv_reservation_valid = bx_poly_riscv_reservation_valid;
   bx_poly_reg_states[slot].riscv_reservation_addr = bx_poly_riscv_reservation_addr;
   bx_poly_reg_states[slot].riscv_reservation_size = bx_poly_riscv_reservation_size;
+  bx_poly_reg_states[slot].riscv_fflags = bx_poly_riscv_fflags;
+  bx_poly_reg_states[slot].riscv_frm = bx_poly_riscv_frm;
   for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
     bx_poly_reg_states[slot].return_cookie_stack[n] =
       bx_poly_return_cookie_stack[n];
@@ -2301,6 +2369,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_riscv_reservation_valid = bx_poly_reg_states[slot].riscv_reservation_valid;
   bx_poly_riscv_reservation_addr = bx_poly_reg_states[slot].riscv_reservation_addr;
   bx_poly_riscv_reservation_size = bx_poly_reg_states[slot].riscv_reservation_size;
+  bx_poly_riscv_fflags = bx_poly_reg_states[slot].riscv_fflags;
+  bx_poly_riscv_frm = bx_poly_reg_states[slot].riscv_frm;
   for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
     bx_poly_return_cookie_stack[n] =
       bx_poly_reg_states[slot].return_cookie_stack[n];
@@ -10106,17 +10176,59 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u rs1 = (insn >> 15) & 0x1f;
     Bit32u csr = (insn >> 20) & 0xfff;
 
-    if (csr == 0x001 && funct3 == 0x2 && rs1 == 0) {
-      if (!write_poly_riscv_reg(rd, 0))
+    if (csr >= 0x001 && csr <= 0x003 && funct3 != 0) {
+      Bit32u old_value = bx_poly_riscv_read_fp_csr(csr);
+      Bit64u source64 = 0;
+      Bit32u source = 0;
+      bool write_csr = false;
+      Bit32u new_value = old_value;
+
+      if (funct3 >= 0x5) {
+        source = rs1;
+      }
+      else if (!read_poly_riscv_reg(rs1, &source64)) {
+        return false;
+      }
+      else {
+        source = (Bit32u) source64;
+      }
+
+      switch (funct3) {
+      case 0x1:
+        new_value = source;
+        write_csr = true;
+        break;
+      case 0x2:
+        new_value = old_value | source;
+        write_csr = (rs1 != 0);
+        break;
+      case 0x3:
+        new_value = old_value & ~source;
+        write_csr = (rs1 != 0);
+        break;
+      case 0x5:
+        new_value = source;
+        write_csr = true;
+        break;
+      case 0x6:
+        new_value = old_value | source;
+        write_csr = (rs1 != 0);
+        break;
+      case 0x7:
+        new_value = old_value & ~source;
+        write_csr = (rs1 != 0);
+        break;
+      default:
+        return false;
+      }
+
+      if (write_csr && !bx_poly_riscv_write_fp_csr(csr, new_value))
+        return false;
+      if (!write_poly_riscv_reg(rd, old_value))
         return false;
       RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated riscv frflags x%u", rd));
-      return true;
-    }
-
-    if (csr == 0x001 && funct3 == 0x1 && rd == 0) {
-      RIP = next_rip;
-      BX_DEBUG(("poly_raw: emulated riscv fsflags x%u", rs1));
+      BX_DEBUG(("poly_raw: emulated riscv fp csr csr=%03x rd=x%u funct3=%u rs1=%u old=%u new=%u",
+        csr, rd, funct3, rs1, old_value, bx_poly_riscv_read_fp_csr(csr)));
       return true;
     }
   }
@@ -10745,6 +10857,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   }
   else if (trap_mode == BX_POLY_MODE_RAW_RISCV) {
     bx_poly_trap_saved_regs.riscv_state_valid = true;
+    bx_poly_trap_saved_regs.riscv_fflags = bx_poly_riscv_fflags;
+    bx_poly_trap_saved_regs.riscv_frm = bx_poly_riscv_frm;
     for (unsigned n = 0; n < 32; n++) {
       bx_poly_trap_saved_regs.riscv_x_valid[n] =
         read_poly_riscv_reg(n, &bx_poly_trap_saved_regs.riscv_x[n]);
@@ -10912,6 +11026,8 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
         write_poly_riscv_fp128_reg(n, bx_poly_trap_saved_regs.riscv_fp[n],
           bx_poly_trap_saved_regs.riscv_fp_hi[n]);
       }
+      bx_poly_riscv_fflags = bx_poly_trap_saved_regs.riscv_fflags;
+      bx_poly_riscv_frm = bx_poly_trap_saved_regs.riscv_frm;
     }
     bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   }
