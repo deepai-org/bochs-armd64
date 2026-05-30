@@ -6251,6 +6251,68 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   }
 
   {
+    Bit32u simd_reverse_base =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x3 << 22) | 0x40000000);
+    const char *op_name = 0;
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u size = (insn >> 22) & 0x3;
+    bool q = (insn & 0x40000000) != 0;
+    Bit32u total_bytes = q ? 16 : 8;
+    Bit32u element_bytes = 1U << size;
+    Bit32u group_bytes = 0;
+    Bit64u source_lo = 0, source_hi = 0;
+    Bit64u result_lo = 0, result_hi = 0;
+
+    if (simd_reverse_base == 0x0e201800) {
+      op_name = "rev16";
+      group_bytes = 2;
+      if (size != 0)
+        op_name = 0;
+    }
+    else if (simd_reverse_base == 0x2e200800) {
+      op_name = "rev32";
+      group_bytes = 4;
+      if (size > 1)
+        op_name = 0;
+    }
+    else if (simd_reverse_base == 0x0e200800) {
+      op_name = "rev64";
+      group_bytes = 8;
+      if (size > 2)
+        op_name = 0;
+    }
+
+    if (op_name != 0) {
+      if (!read_poly_aarch64_fp128_reg(rn, &source_lo, &source_hi))
+        return false;
+
+      for (Bit32u element = 0; element < total_bytes / element_bytes;
+          element++) {
+        Bit32u group_element_count = group_bytes / element_bytes;
+        Bit32u group_start = (element / group_element_count) *
+          group_element_count;
+        Bit32u reverse_element = group_start + group_element_count - 1 -
+          (element % group_element_count);
+        Bit64u value = bx_poly_get_vector_element(source_lo, source_hi,
+          element_bytes * 8, reverse_element);
+        bx_poly_set_vector_element(&result_lo, &result_hi, element_bytes * 8,
+          element, value);
+      }
+
+      if (!q)
+        result_hi = 0;
+      if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.%u-bit,v%u lo=%llu hi=%llu",
+        op_name, rd, element_bytes * 8, rn,
+        (unsigned long long) result_lo, (unsigned long long) result_hi));
+      return true;
+    }
+  }
+
+  {
     Bit32u simd_permute_base =
       insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16) |
         (0x3 << 22) | 0x40000000);
