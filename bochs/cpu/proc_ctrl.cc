@@ -2520,6 +2520,11 @@ static Bit64u bx_poly_trap_packet_flags(void)
   if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE)
     return 0;
   Bit64u flags = 0;
+  if (bx_poly_trap_vector != 0 &&
+      bx_poly_valid_frontend_mode(bx_poly_trap_vector_mode))
+    flags |= BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY;
+  if (bx_poly_trap_saved_regs.valid)
+    flags |= BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE;
   if (bx_poly_monitor_packet_addr != 0)
     flags |= BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY;
   return flags;
