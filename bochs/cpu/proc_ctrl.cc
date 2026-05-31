@@ -1889,9 +1889,6 @@ static bx_address bx_poly_thread_selector_key(bx_address fsbase,
 
 static bool bx_poly_stack_key_is_current_explicit(bx_address stack_key)
 {
-  if ((BX_CPU_THIS_PTR xcr0.get32() &
-        (1U << BX_POLY_STATE_XSAVE_COMPONENT_ARCH)) != 0)
-    return false;
   return bx_poly_explicit_state_key_valid &&
     stack_key == bx_poly_explicit_state_key;
 }
