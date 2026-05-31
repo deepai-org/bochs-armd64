@@ -4632,6 +4632,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
 
   Bit64u args[8] = {};
   Bit64u fp_args[2] = {};
+  Bit64u vec_args_lo[2] = {};
+  Bit64u vec_args_hi[2] = {};
   bool mapped = true;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
@@ -4639,6 +4641,11 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
       mapped = read_poly_aarch64_fp64_reg(0, &fp_args[0]) &&
         read_poly_aarch64_fp64_reg(1, &fp_args[1]);
+    if (mapped &&
+        source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
+      mapped = read_poly_aarch64_fp128_reg(0, &vec_args_lo[0],
+          &vec_args_hi[0]) &&
+        read_poly_aarch64_fp128_reg(1, &vec_args_lo[1], &vec_args_hi[1]);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     for (Bit32u n = 0; mapped && n < 8; n++)
@@ -4646,6 +4653,12 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
       mapped = read_poly_riscv_fp64_reg(10, &fp_args[0]) &&
         read_poly_riscv_fp64_reg(11, &fp_args[1]);
+    if (mapped &&
+        source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
+      mapped = read_poly_riscv_reg(10, &vec_args_lo[0]) &&
+        read_poly_riscv_reg(11, &vec_args_hi[0]) &&
+        read_poly_riscv_reg(12, &vec_args_lo[1]) &&
+        read_poly_riscv_reg(13, &vec_args_hi[1]);
   }
   else if (mode == BX_POLY_MODE_X86) {
     if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE) {
@@ -4735,6 +4748,12 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     BX_WRITE_XMM_REG_HI_QWORD(0, 0);
     BX_WRITE_XMM_REG_LO_QWORD(1, fp_args[1]);
     BX_WRITE_XMM_REG_HI_QWORD(1, 0);
+  }
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32) {
+    BX_WRITE_XMM_REG_LO_QWORD(0, vec_args_lo[0]);
+    BX_WRITE_XMM_REG_HI_QWORD(0, vec_args_hi[0]);
+    BX_WRITE_XMM_REG_LO_QWORD(1, vec_args_lo[1]);
+    BX_WRITE_XMM_REG_HI_QWORD(1, vec_args_hi[1]);
   }
 
   bx_address x86_rsp = ((x86_stack_base - 16) & ~BX_CONST64(0xf)) + 8;
