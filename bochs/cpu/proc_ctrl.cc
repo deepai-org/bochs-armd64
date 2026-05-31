@@ -488,18 +488,6 @@ static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT0 = 106;
 static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113;
 static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 234;
-static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS = BX_CONST64(1) << 0;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 = BX_CONST64(1) << 1;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128 = BX_CONST64(1) << 2;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64 = BX_CONST64(1) << 5;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR32 = BX_CONST64(1) << 6;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128 = BX_CONST64(1) << 7;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64 = BX_CONST64(1) << 10;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32 = BX_CONST64(1) << 11;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_U32_F32 =
-  BX_CONST64(1) << 12;
-static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_F32_U32 =
-  BX_CONST64(1) << 13;
 static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_CALL_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 // Keep suspended x86 helper frames and active foreign frames from colliding
@@ -524,6 +512,19 @@ enum {
   BX_POLY_RETURN_KIND_FP64 = 13,
   BX_POLY_RETURN_KIND_FP32 = 14,
   BX_POLY_RETURN_KIND_FPAIR64 = 15
+};
+
+enum {
+  BX_POLY_X86_RETURN_MAP_DEFAULT = 0,
+  BX_POLY_X86_RETURN_MAP_I128 = 1,
+  BX_POLY_X86_RETURN_MAP_FP128 = 2,
+  BX_POLY_X86_RETURN_MAP_FPAIR64 = 3,
+  BX_POLY_X86_RETURN_MAP_FPAIR32 = 4,
+  BX_POLY_X86_RETURN_MAP_VEC128 = 5,
+  BX_POLY_X86_RETURN_MAP_FP64 = 6,
+  BX_POLY_X86_RETURN_MAP_FP32 = 7,
+  BX_POLY_X86_RETURN_MAP_COMPACT_U32_F32 = 8,
+  BX_POLY_X86_RETURN_MAP_COMPACT_F32_U32 = 9
 };
 
 enum {
@@ -4934,25 +4935,27 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   bx_address return_rip = frame.rip;
   bx_address return_rsp = frame.rsp;
   Bit64u import_id = frame.import_id;
-  const Bit64u return_flags = frame.return_flags;
+  const Bit64u return_map = frame.return_flags;
+  if (return_map > BX_POLY_X86_RETURN_MAP_COMPACT_F32_U32)
+    return false;
   const bool returns_i128 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_I128) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_I128;
   const bool returns_fp128 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_FP128;
   const bool returns_fp64 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_FP64;
   const bool returns_fp32 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_FP32;
   const bool returns_fpair64 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_FPAIR64;
   const bool returns_fpair32 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR32) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_FPAIR32;
   const bool returns_vec128 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_VEC128;
   const bool returns_compact_u32_f32 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_U32_F32) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_COMPACT_U32_F32;
   const bool returns_compact_f32_u32 =
-    (return_flags & BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_F32_U32) != 0;
+    return_map == BX_POLY_X86_RETURN_MAP_COMPACT_F32_U32;
   const Bit64u result_rax = RAX;
   const Bit64u result_rdx = RDX;
   const Bit64u result_xmm0_lo = BX_READ_XMM_REG_LO_QWORD(0);
@@ -5187,24 +5190,22 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   frame->rip = return_rip;
   frame->rsp = foreign_rsp;
   frame->import_id = BX_POLY_DIRECT_X86_IMPORT_ID;
-  frame->return_flags =
-    source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
-    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ?
-      BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 : 0;
+  frame->return_flags = BX_POLY_X86_RETURN_MAP_DEFAULT;
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128)
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_I128;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
-    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_VEC128;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
-    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_FP64;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32)
-    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_FP32;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_FP32;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FP128_RET)
-    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_FP128;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32)
-    frame->return_flags |=
-      BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_U32_F32;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_COMPACT_U32_F32;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32)
-    frame->return_flags |=
-      BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_F32_U32;
+    frame->return_flags = BX_POLY_X86_RETURN_MAP_COMPACT_F32_U32;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
   frame->alias[1] = RSI;
