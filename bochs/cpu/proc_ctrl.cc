@@ -3705,7 +3705,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_set_explicit_state_key(
     (imported_state_key_flags & BX_POLY_STATE_KEY_FLAG_EXPLICIT) != 0 ?
       (bx_address) imported_state_key_value : 0,
-    BX_CPU_THIS_PTR cr3, base);
+    BX_CPU_THIS_PTR cr3, MSR_FSBASE);
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   bx_poly_current_mode = BX_POLY_MODE_X86;
