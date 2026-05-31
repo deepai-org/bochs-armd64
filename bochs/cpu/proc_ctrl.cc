@@ -4881,10 +4881,15 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   Bit64u vec_args_lo[2] = {};
   Bit64u vec_args_hi[2] = {};
   Bit32u compact_fp_arg = 0;
+  Bit64u sret_ptr = 0;
+  const bool maps_sret_to_x86 =
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_SRET_X86_SYSV_REGS;
   bool mapped = true;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_aarch64_reg(n, &args[n]);
+    if (mapped && maps_sret_to_x86)
+      mapped = read_poly_aarch64_reg(8, &sret_ptr);
     if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = read_poly_aarch64_fp64_reg(n, &fp_args[n]);
@@ -5011,12 +5016,30 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     else if (mode == BX_POLY_MODE_RAW_RISCV &&
         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32)
       args[0] = ((Bit64u) (Bit32u) args[0] << 32) | compact_fp_arg;
-    RDI = args[0];
-    RSI = args[1];
-    RDX = args[2];
-    RCX = args[3];
-    R8 = args[4];
-    R9 = args[5];
+    if (maps_sret_to_x86 && mode == BX_POLY_MODE_RAW_AARCH64) {
+      RDI = sret_ptr;
+      RSI = args[0];
+      RDX = args[1];
+      RCX = args[2];
+      R8 = args[3];
+      R9 = args[4];
+    }
+    else if (maps_sret_to_x86 && mode == BX_POLY_MODE_RAW_RISCV) {
+      RDI = args[0];
+      RSI = args[1];
+      RDX = args[2];
+      RCX = args[3];
+      R8 = args[4];
+      R9 = args[5];
+    }
+    else {
+      RDI = args[0];
+      RSI = args[1];
+      RDX = args[2];
+      RCX = args[3];
+      R8 = args[4];
+      R9 = args[5];
+    }
   }
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
     for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
