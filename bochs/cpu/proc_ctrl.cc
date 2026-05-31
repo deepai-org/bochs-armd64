@@ -3839,11 +3839,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   Bit64u args[8];
   Bit64u fp_args[8];
   Bit64u fp_args_hi[8];
-  bool aarch64_hfa64_sret =
-    return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA3_F64 ||
-    return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64;
-  bx_address sret_ptr = (sret_call || aarch64_hfa64_sret) ?
-    (bx_address) RDI : 0;
+  bx_address sret_ptr = sret_call ? (bx_address) RDI : 0;
   bx_address original_rsp = RSP;
   bx_address foreign_stack_anchor = RSP;
   if (bx_poly_import_x86_return_top != 0) {
@@ -4304,13 +4300,12 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   RIP = return_rip;
   if (sret_call)
     RAX = sret_ptr;
-  else if (has_hfa64_result && sret_ptr != 0) {
-    write_virtual_qword(BX_SEG_REG_DS, sret_ptr, hfa64_result[0]);
-    write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 8, hfa64_result[1]);
-    write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 16, hfa64_result[2]);
+  else if (has_hfa64_result) {
+    BX_WRITE_XMM_REG_LO_QWORD(0, hfa64_result[0]);
+    BX_WRITE_XMM_REG_LO_QWORD(1, hfa64_result[1]);
+    BX_WRITE_XMM_REG_LO_QWORD(2, hfa64_result[2]);
     if (return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64)
-      write_virtual_qword(BX_SEG_REG_DS, sret_ptr + 24, hfa64_result[3]);
-    RAX = sret_ptr;
+      BX_WRITE_XMM_REG_LO_QWORD(3, hfa64_result[3]);
   }
   else if (has_fpair32_result) {
     BX_WRITE_XMM_REG_LO_QWORD(0,
@@ -12497,19 +12492,27 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x23)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_AARCH64_HFA3_F64, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_AARCH64_HFA3_F64,
+          BX_POLY_ARG_KIND_FP64_REGS,
+          BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64, false);
       if (op == 0x24)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_AARCH64_HFA4_F64, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_AARCH64_HFA4_F64,
+          BX_POLY_ARG_KIND_FP64_REGS,
+          BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64, false);
       if (op == 0x25)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_AARCH64_HFA3_F32, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_AARCH64_HFA3_F32,
+          BX_POLY_ARG_KIND_FP32_REGS,
+          BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32, false);
       if (op == 0x26)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_AARCH64_HFA4_F32, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_AARCH64_HFA4_F32,
+          BX_POLY_ARG_KIND_FP32_REGS,
+          BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32, false);
       if (op >= 0x27 && op <= 0x2a) {
         BX_INFO(("poly_ud: reject HFA argument pcall opcode=0x%02x; use signature PCALL with runtime ABI thunk",
           op));
