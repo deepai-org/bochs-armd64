@@ -452,6 +452,7 @@ static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_MODE = 0x2d;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE = 0x30;
+static const Bit32u BX_POLY_X86_CTRL_TRAP_RETURN = 0x62;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
 
@@ -12816,7 +12817,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x62)
+      if (op == BX_POLY_X86_CTRL_TRAP_RETURN)
         return return_poly_architectural_trap();
       if (op == 0x63) {
         if (!bx_poly_valid_frontend_mode((Bit32u) RAX)) {
@@ -13138,7 +13139,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RAX = BX_POLY_X86_CTRL_PENTER_MODE;
       RBX = BX_POLY_X86_CTRL_PSWITCH_MODE;
       RCX = BX_POLY_X86_CTRL_PCALL_SIG_MODE;
-      RDX = 0;
+      RDX = BX_POLY_X86_CTRL_TRAP_RETURN;
     }
     else if (ECX == 6) {
       RAX = BX_POLY_AARCH64_CTRL_SWITCH_MODE;
