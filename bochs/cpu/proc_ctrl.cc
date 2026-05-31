@@ -3855,8 +3855,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address foreign_stack_rsp =
     (bx_address) ((foreign_stack_anchor - BX_POLY_FOREIGN_STACK_GAP) &
       ~BX_CONST64(0xf));
-  bx_address stack_copy_base = arg_kind == BX_POLY_ARG_KIND_FP64_STACK ?
-    original_rsp + 8 : original_rsp + 24;
+  bx_address stack_copy_base = original_rsp + 24;
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject unknown ABI signature kind=%u", source_kind));
     return false;
@@ -4012,29 +4011,6 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = write_poly_aarch64_fp32_reg(n, (Bit32u) fp_args[n]);
     }
-    else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F64 ||
-        arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)) {
-      mapped =
-        write_poly_aarch64_fp64_reg(0,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8)) &&
-        write_poly_aarch64_fp64_reg(1,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 16)) &&
-        write_poly_aarch64_fp64_reg(2,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 24));
-      if (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)
-        mapped = mapped && write_poly_aarch64_fp64_reg(3,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 32));
-    }
-    else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F32 ||
-        arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32)) {
-      mapped =
-        write_poly_aarch64_fp32_reg(0, (Bit32u) fp_args[0]) &&
-        write_poly_aarch64_fp32_reg(1, (Bit32u) (fp_args[0] >> 32)) &&
-        write_poly_aarch64_fp32_reg(2, (Bit32u) fp_args[1]);
-      if (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32)
-        mapped = mapped &&
-          write_poly_aarch64_fp32_reg(3, (Bit32u) (fp_args[1] >> 32));
-    }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     // Preserve synthetic registers not explicitly overwritten by the psABI
@@ -4087,13 +4063,6 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       mapped =
         write_poly_riscv_reg(10, int_lane) &&
         write_poly_riscv_fp32_reg(10, fp_lane);
-    }
-    else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP64_STACK) {
-      // RISC-V psABI falls back to integer arg registers after fa0-fa7.
-      for (Bit32u n = 0; mapped && n < 8; n++) {
-        mapped = write_poly_riscv_reg(10 + n,
-          read_virtual_qword(BX_SEG_REG_SS, original_rsp + 8 + n * 8));
-      }
     }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_VEC128_U32) {
       mapped =
