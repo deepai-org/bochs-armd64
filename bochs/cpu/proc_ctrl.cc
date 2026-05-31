@@ -4537,6 +4537,11 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
     return false;
   Bit32u bridge_kind = frame.bridge_kind;
 
+  // Treat return-cookie consumption like a hardware transition-stack pop:
+  // once the cookie and callee mode match, later register mapping must not see
+  // the active frame through global state rebinds.
+  bx_poly_cross_return_top--;
+
   Bit64u args[8] = {};
   if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32) {
     for (Bit32u n = 0; n < 8; n++) {
@@ -4656,7 +4661,6 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   bx_poly_prepare_tls_for_mode(frame.caller_mode);
   RIP = frame.return_rip;
   RSP = frame.return_rsp;
-  bx_poly_cross_return_top--;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
   bx_poly_mode_switch_count++;
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
