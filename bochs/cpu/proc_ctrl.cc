@@ -422,6 +422,7 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_I128 = 4;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 = 5;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_U32_F32 = 6;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32 = 7;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64 = 8;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_X86 = 0x00;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_AARCH64 = 0x01;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_RISCV = 0x02;
@@ -604,7 +605,7 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
     *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32;
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64:
-    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE;
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64;
     return true;
   default:
     return false;
