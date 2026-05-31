@@ -12855,6 +12855,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RCX = (Bit32u) BX_POLY_STATE_KEY_FLAG_EXPLICIT;
       RDX = 0;
     }
+    else if (ECX == 22) {
+      RAX = BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64;
+      RBX = BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64;
+      RCX = BX_POLY_ABI_BRIDGE_FP_ARG_COUNT;
+      RDX = 0;
+    }
     else {
       RAX = 0;
       RBX = 0;
