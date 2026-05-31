@@ -500,7 +500,8 @@ enum {
   BX_POLY_RETURN_KIND_AARCH64_HFA4_F64 = 10,
   BX_POLY_RETURN_KIND_AARCH64_HFA3_F32 = 11,
   BX_POLY_RETURN_KIND_AARCH64_HFA4_F32 = 12,
-  BX_POLY_RETURN_KIND_FP64 = 13
+  BX_POLY_RETURN_KIND_FP64 = 13,
+  BX_POLY_RETURN_KIND_FP32 = 14
 };
 
 enum {
@@ -518,7 +519,8 @@ enum {
   BX_POLY_ARG_KIND_AARCH64_HFA4_F64 = 11,
   BX_POLY_ARG_KIND_AARCH64_HFA3_F32 = 12,
   BX_POLY_ARG_KIND_AARCH64_HFA4_F32 = 13,
-  BX_POLY_ARG_KIND_FP64_REGS = 14
+  BX_POLY_ARG_KIND_FP64_REGS = 14,
+  BX_POLY_ARG_KIND_FP32_REGS = 15
 };
 
 enum {
@@ -527,7 +529,8 @@ enum {
   BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 = 2,
   BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 = 3,
   BX_POLY_CROSS_BRIDGE_VEC128_U32 = 4,
-  BX_POLY_CROSS_BRIDGE_FP64 = 5
+  BX_POLY_CROSS_BRIDGE_FP64 = 5,
+  BX_POLY_CROSS_BRIDGE_FP32 = 6
 };
 
 static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
@@ -1967,7 +1970,8 @@ static bool bx_poly_valid_cross_bridge_kind(Bit32u kind)
     kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
     kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 ||
     kind == BX_POLY_CROSS_BRIDGE_VEC128_U32 ||
-    kind == BX_POLY_CROSS_BRIDGE_FP64;
+    kind == BX_POLY_CROSS_BRIDGE_FP64 ||
+    kind == BX_POLY_CROSS_BRIDGE_FP32;
 }
 
 static bool bx_poly_valid_cross_return_shape(Bit32u caller_mode,
@@ -3780,9 +3784,13 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
     return true;
   }
 
-  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
-      kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_FP64;
+    return true;
+  }
+
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_FP32;
     return true;
   }
 
@@ -3984,6 +3992,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = write_poly_aarch64_fp64_reg(n, fp_args[n]);
     }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP32_REGS) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = write_poly_aarch64_fp32_reg(n, (Bit32u) fp_args[n]);
+    }
     else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F64 ||
         arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)) {
       mapped =
@@ -4078,6 +4090,10 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = write_poly_riscv_fp64_reg(10 + n, fp_args[n]);
     }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP32_REGS) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = write_poly_riscv_fp32_reg(10 + n, (Bit32u) fp_args[n]);
+    }
   }
   else {
     mapped = false;
@@ -4144,8 +4160,8 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32 &&
       return_kind == BX_POLY_RETURN_KIND_DEFAULT &&
       arg_kind == BX_POLY_ARG_KIND_DEFAULT) {
-    return_kind = BX_POLY_RETURN_KIND_FP64;
-    arg_kind = BX_POLY_ARG_KIND_FP64_REGS;
+    return_kind = BX_POLY_RETURN_KIND_FP32;
+    arg_kind = BX_POLY_ARG_KIND_FP32_REGS;
   }
 
   BX_DEBUG(("poly_ud: pcall signature mode=%u slot=%u kind=%u target=%llx return=%llx",
@@ -4183,6 +4199,8 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   bool has_hfa64_result = false;
   Bit32u hfa32_result[4] = {};
   bool has_hfa32_result = false;
+  Bit32u fp32_result = 0;
+  bool has_fp32_result = false;
   bool sret_call = bx_poly_return_cookie_sret;
   bx_address sret_ptr = bx_poly_return_cookie_sret_ptr;
   bx_address return_rsp = bx_poly_return_cookie_rsp;
@@ -4259,6 +4277,14 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       mode == BX_POLY_MODE_RAW_RISCV) {
     has_second_result = read_poly_riscv_fp64_reg(10, &second_result);
   }
+  else if (return_kind == BX_POLY_RETURN_KIND_FP32 &&
+      mode == BX_POLY_MODE_RAW_AARCH64) {
+    has_fp32_result = read_poly_aarch64_fp32_reg(0, &fp32_result);
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_FP32 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    has_fp32_result = read_poly_riscv_fp32_reg(10, &fp32_result);
+  }
   else if ((return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA3_F64 ||
       return_kind == BX_POLY_RETURN_KIND_AARCH64_HFA4_F64) &&
       mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -4331,6 +4357,9 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
   }
   else if (return_kind == BX_POLY_RETURN_KIND_FP64 && has_second_result) {
     BX_WRITE_XMM_REG_LO_QWORD(0, second_result);
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_FP32 && has_fp32_result) {
+    BX_WRITE_XMM_REG_LO_DWORD(0, fp32_result);
   }
   else if (has_second_result)
     RDX = second_result;
@@ -4421,6 +4450,32 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
         Bit64u fp = 0;
         mapped = read_poly_riscv_fp64_reg(10 + n, &fp) &&
           write_poly_aarch64_fp64_reg(n, fp);
+      }
+    }
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_FP32) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (callee_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+    if (mapped && caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
+        callee_mode == BX_POLY_MODE_RAW_RISCV) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+        Bit32u fp = 0;
+        mapped = read_poly_aarch64_fp32_reg(n, &fp) &&
+          write_poly_riscv_fp32_reg(10 + n, fp);
+      }
+    }
+    else if (mapped && caller_mode == BX_POLY_MODE_RAW_RISCV &&
+        callee_mode == BX_POLY_MODE_RAW_AARCH64) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+        Bit32u fp = 0;
+        mapped = read_poly_riscv_fp32_reg(10 + n, &fp) &&
+          write_poly_aarch64_fp32_reg(n, fp);
       }
     }
   }
@@ -4537,6 +4592,30 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
       mapped =
         read_poly_aarch64_fp64_reg(0, &fp0) &&
         write_poly_riscv_fp64_reg(10, fp0);
+    }
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_FP32) {
+    for (Bit32u n = 0; mapped && n < 8; n++) {
+      if (frame->caller_mode == BX_POLY_MODE_RAW_AARCH64)
+        mapped = write_poly_aarch64_reg(n, args[n]);
+      else if (frame->caller_mode == BX_POLY_MODE_RAW_RISCV)
+        mapped = write_poly_riscv_reg(10 + n, args[n]);
+      else
+        mapped = false;
+    }
+    if (mapped && callee_mode == BX_POLY_MODE_RAW_RISCV &&
+        frame->caller_mode == BX_POLY_MODE_RAW_AARCH64) {
+      Bit32u fp0 = 0;
+      mapped =
+        read_poly_riscv_fp32_reg(10, &fp0) &&
+        write_poly_aarch64_fp32_reg(0, fp0);
+    }
+    else if (mapped && callee_mode == BX_POLY_MODE_RAW_AARCH64 &&
+        frame->caller_mode == BX_POLY_MODE_RAW_RISCV) {
+      Bit32u fp0 = 0;
+      mapped =
+        read_poly_aarch64_fp32_reg(0, &fp0) &&
+        write_poly_riscv_fp32_reg(10, fp0);
     }
   }
   else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
@@ -4767,6 +4846,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
 
   Bit64u args[8] = {};
   Bit64u fp_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+  Bit32u fp32_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
   Bit64u vec_args_lo[2] = {};
   Bit64u vec_args_hi[2] = {};
   Bit32u compact_fp_arg = 0;
@@ -4774,11 +4854,13 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_aarch64_reg(n, &args[n]);
-    if (mapped &&
-        (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
-         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32)) {
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = read_poly_aarch64_fp64_reg(n, &fp_args[n]);
+    }
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = read_poly_aarch64_fp32_reg(n, &fp32_args[n]);
     }
     if (mapped &&
         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
@@ -4789,11 +4871,13 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_riscv_reg(10 + n, &args[n]);
-    if (mapped &&
-        (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
-         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32)) {
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
       for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
         mapped = read_poly_riscv_fp64_reg(10 + n, &fp_args[n]);
+    }
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = read_poly_riscv_fp32_reg(10 + n, &fp32_args[n]);
     }
     if (mapped &&
         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
@@ -4903,10 +4987,15 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     R8 = args[4];
     R9 = args[5];
   }
-  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
     for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
       BX_WRITE_XMM_REG_LO_QWORD(n, fp_args[n]);
+      BX_WRITE_XMM_REG_HI_QWORD(n, 0);
+    }
+  }
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32) {
+    for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+      BX_WRITE_XMM_REG_LO_DWORD(n, fp32_args[n]);
       BX_WRITE_XMM_REG_HI_QWORD(n, 0);
     }
   }
