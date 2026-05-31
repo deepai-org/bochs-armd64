@@ -3768,6 +3768,15 @@ static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32;
 }
 
+static bool bx_poly_arg_kind_requires_memory_side_abi_work(Bit32u kind)
+{
+  return kind == BX_POLY_ARG_KIND_FP64_STACK ||
+    kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F64 ||
+    kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64 ||
+    kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F32 ||
+    kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32;
+}
+
 static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
   Bit32u *bridge_kind)
 {
@@ -3816,6 +3825,13 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, bool sret_call, Bit32u return_kind, Bit32u arg_kind,
   Bit32u source_kind, bool copy_foreign_stack_args)
 {
+  if (!copy_foreign_stack_args &&
+      bx_poly_arg_kind_requires_memory_side_abi_work(arg_kind)) {
+    BX_INFO(("poly_ud: reject register-signature pcall with memory-shaped arg kind=%u",
+      arg_kind));
+    return false;
+  }
+
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, mode,
         BX_POLY_LANDING_POLICY_REQUIRE_CALL, "x86-pcall"))
     return false;
