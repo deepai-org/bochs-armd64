@@ -3912,10 +3912,17 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
     return false;
 
   // Foreign-to-foreign signature calls are register-renaming only. AArch64 and
-  // RISC-V integer ABI lanes already align as x0/a0 through x7/a7, so the
-  // register-only signature kinds select the default cross bridge. The older
-  // stack-capable SysV kind is intentionally rejected here; stack or aggregate
-  // layout conversion belongs in loader/runtime thunks, not in PCALL.
+  // RISC-V integer ABI lanes already align as x0/a0 through x7/a7. x86-SysV
+  // maps are only meaningful when one endpoint is x86; accepting them here
+  // would silently reinterpret an x86 ABI signature as a native AArch64/RISC-V
+  // bridge.
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
+      kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+      kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+    return true;
+  }
+
   if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_VEC128_U32;
     return true;
@@ -3938,11 +3945,6 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
 
   if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
-    return true;
-  }
-
-  if (bx_poly_register_only_abi_signature_kind(kind)) {
-    *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     return true;
   }
 
