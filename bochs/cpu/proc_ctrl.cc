@@ -3966,9 +3966,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
         write_poly_aarch64_fp128_reg(1, fp_args[1], fp_args_hi[1]);
     }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP64_REGS) {
-      mapped =
-        write_poly_aarch64_fp64_reg(0, fp_args[0]) &&
-        write_poly_aarch64_fp64_reg(1, fp_args[1]);
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = write_poly_aarch64_fp64_reg(n, fp_args[n]);
     }
     else if (mapped && (arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA3_F64 ||
         arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F64)) {
@@ -4061,9 +4060,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
         write_poly_riscv_reg(13, fp_args_hi[1]);
     }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_FP64_REGS) {
-      mapped =
-        write_poly_riscv_fp64_reg(10, fp_args[0]) &&
-        write_poly_riscv_fp64_reg(11, fp_args[1]);
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = write_poly_riscv_fp64_reg(10 + n, fp_args[n]);
     }
   }
   else {
