@@ -12422,15 +12422,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x10)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x11)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x12)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, true,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x13)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, true,
@@ -12438,57 +12441,69 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x14)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_FPAIR32, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_FPAIR32, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x15)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_FPAIR32, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_FPAIR32, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x16)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FPAIR32);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FPAIR32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x17)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FPAIR32);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FPAIR32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x18)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_U64_F64,
-          BX_POLY_ARG_KIND_HETERO_U64_F64);
+          BX_POLY_ARG_KIND_HETERO_U64_F64,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x19)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_F64_U64,
-          BX_POLY_ARG_KIND_HETERO_F64_U64);
+          BX_POLY_ARG_KIND_HETERO_F64_U64,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x1a)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_U64_F32,
-          BX_POLY_ARG_KIND_HETERO_U64_F32);
+          BX_POLY_ARG_KIND_HETERO_U64_F32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x1b)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_HETERO_F32_U64,
-          BX_POLY_ARG_KIND_HETERO_F32_U64);
+          BX_POLY_ARG_KIND_HETERO_F32_U64,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x1c)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_COMPACT_U32_F32,
-          BX_POLY_ARG_KIND_COMPACT_U32_F32);
+          BX_POLY_ARG_KIND_COMPACT_U32_F32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x1d)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_COMPACT_F32_U32,
-          BX_POLY_ARG_KIND_COMPACT_F32_U32);
+          BX_POLY_ARG_KIND_COMPACT_F32_U32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x21)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32);
+          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x22)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32);
+          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x23)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
