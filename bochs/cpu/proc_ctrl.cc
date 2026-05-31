@@ -4738,6 +4738,10 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
       else
         mapped = false;
     }
+    // AArch64 non-HFA compact aggregates are GPR-packed. RISC-V psABI splits
+    // the same shape across a0/fa0, so only AArch64-to-RISC-V entry needs an
+    // FP lane copy here; RISC-V-to-AArch64 uses the packed a0 prepared by the
+    // generated thunk.
     if (mapped && caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
         callee_mode == BX_POLY_MODE_RAW_RISCV) {
       Bit32u fp0 = 0;
@@ -4877,6 +4881,9 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
       else
         mapped = false;
     }
+    // Return mapping is the inverse of entry: AArch64 receives the packed x0
+    // value directly, while a RISC-V result returning to AArch64 must expose
+    // fa0 so the caller-side thunk can repack the compact aggregate.
     if (mapped && callee_mode == BX_POLY_MODE_RAW_RISCV &&
         frame.caller_mode == BX_POLY_MODE_RAW_AARCH64) {
       Bit32u fp0 = 0;
