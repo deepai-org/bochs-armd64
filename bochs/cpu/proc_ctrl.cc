@@ -5242,7 +5242,7 @@ bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
       bx_poly_current_state_key(RSP));
     BX_INFO(("poly_raw: import %u unresolved; delivering import trap",
       (unsigned) import_id));
-    return deliver_poly_architectural_trap("foreign", "import", target_rip);
+    return deliver_poly_architectural_trap(target_rip);
   }
   return false;
 }
@@ -9598,14 +9598,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(7, &arg7))
       return false;
     Bit32u syscall_reg = (Bit32u) syscall_value;
-    return handle_poly_foreign_syscall("aarch64", "svc", syscall_reg,
-      syscall_id, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
+    return handle_poly_foreign_syscall(syscall_reg, syscall_id, arg0, arg1,
+      arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
   if ((insn & 0xffe0001f) == 0xd4200000) {
     Bit32u break_id = (insn >> 5) & 0xffff;
-    return handle_poly_break_trap("aarch64", "brk", break_id, break_id, pc,
-      next_rip);
+    return handle_poly_break_trap(break_id, break_id, pc, next_rip);
   }
 
   return false;
@@ -11543,16 +11542,15 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(17, &arg7))
       return false;
     Bit32u syscall_number = (Bit32u) syscall_value;
-    return handle_poly_foreign_syscall("riscv", "ecall", syscall_number, 0,
-      arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
+    return handle_poly_foreign_syscall(syscall_number, 0, arg0, arg1, arg2,
+      arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
   if (insn == 0x00100073) {
     Bit64u break_id = 0;
     if (!read_poly_riscv_reg(17, &break_id))
       return false;
-    return handle_poly_break_trap("riscv", "ebreak", (Bit32u) break_id, 0, pc,
-      next_rip);
+    return handle_poly_break_trap((Bit32u) break_id, 0, pc, next_rip);
   }
 
   return false;
@@ -11924,8 +11922,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         Bit64u break_id = 0;
         if (!read_poly_riscv_reg(17, &break_id))
           return false;
-        return handle_poly_break_trap("riscv", "c.ebreak", (Bit32u) break_id,
-          0, pc, next_rip);
+        return handle_poly_break_trap((Bit32u) break_id, 0, pc, next_rip);
       }
       if (high && rs2 == 0) {
         Bit64u target = 0;
@@ -12047,7 +12044,7 @@ void BX_CPU_C::execute_poly_raw_step(void)
         pc, next_pc);
       bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
         bx_poly_current_state_key(RSP));
-      deliver_poly_architectural_trap(arch_name, "illegal", pc);
+      deliver_poly_architectural_trap(pc);
       return;
     }
     bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -12113,8 +12110,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 }
 
 
-bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
-  const char *trap_name, bx_address fallback_pc)
+bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
 {
   Bit32u trap_mode = bx_poly_last_trap.mode;
   bx_address trap_vector = bx_poly_trap_vector;
@@ -12189,8 +12185,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   }
 
   if (!bx_poly_valid_frontend_mode(trap_vector_mode)) {
-    BX_INFO(("poly_ud: architectural %s %s trap has invalid vector mode=%u",
-      arch_name, trap_name, trap_vector_mode));
+    BX_INFO(("poly_ud: architectural trap has invalid vector mode=%u reason=%u source_mode=%u",
+      trap_vector_mode, bx_poly_last_trap.reason, trap_mode));
     trap_vector = 0;
   }
 
@@ -12265,8 +12261,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_INFO(("poly_ud: architectural %s %s trap vector=%llx source_mode=%u target_mode=%u pc=%llx next=%llx",
-      arch_name, trap_name, (unsigned long long) trap_vector, trap_mode,
+    BX_INFO(("poly_ud: architectural trap vector=%llx reason=%u source_mode=%u target_mode=%u pc=%llx next=%llx",
+      (unsigned long long) trap_vector, bx_poly_last_trap.reason, trap_mode,
       trap_vector_mode,
       (unsigned long long) bx_poly_last_trap.pc,
       (unsigned long long) bx_poly_last_trap.next_pc));
@@ -12276,8 +12272,9 @@ bool BX_CPU_C::deliver_poly_architectural_trap(const char *arch_name,
   bx_poly_current_mode = BX_POLY_MODE_X86;
   unsigned vector = bx_poly_last_trap.reason == BX_POLY_TRAP_BREAK ?
     BX_BP_EXCEPTION : BX_UD_EXCEPTION;
-  BX_INFO(("poly_ud: architectural %s %s trap exit without installed vector mode=%u pc=%llx vector=%u",
-    arch_name, trap_name, trap_mode, (unsigned long long) fallback_pc, vector));
+  BX_INFO(("poly_ud: architectural trap exit without installed vector reason=%u source_mode=%u pc=%llx vector=%u",
+    bx_poly_last_trap.reason, trap_mode, (unsigned long long) fallback_pc,
+    vector));
   RIP = fallback_pc;
   exception(vector, 0);
   return true;
@@ -12367,10 +12364,9 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   return true;
 }
 
-bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *trap_name,
-  Bit32u syscall_number, Bit32u trap_selector, Bit64u arg0, Bit64u arg1,
-  Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6,
-  Bit64u arg7, bx_address next_rip)
+bool BX_CPU_C::handle_poly_foreign_syscall(Bit32u syscall_number,
+  Bit32u trap_selector, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
+  Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7, bx_address next_rip)
 {
   // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
   // the architectural trap path. Linux syscall translation is guest policy.
@@ -12378,11 +12374,11 @@ bool BX_CPU_C::handle_poly_foreign_syscall(const char *arch_name, const char *tr
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
-  return deliver_poly_architectural_trap(arch_name, trap_name, RIP);
+  return deliver_poly_architectural_trap(RIP);
 }
 
-bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_name,
-  Bit32u break_id, Bit32u trap_selector, bx_address trap_pc, bx_address next_rip)
+bool BX_CPU_C::handle_poly_break_trap(Bit32u break_id, Bit32u trap_selector,
+  bx_address trap_pc, bx_address next_rip)
 {
   Bit64u trap_arg0 = RAX;
   Bit64u trap_arg1 = 0;
@@ -12423,7 +12419,7 @@ bool BX_CPU_C::handle_poly_break_trap(const char *arch_name, const char *trap_na
     trap_arg4, trap_arg5, trap_arg6, trap_arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
-  return deliver_poly_architectural_trap(arch_name, trap_name, trap_pc);
+  return deliver_poly_architectural_trap(trap_pc);
 }
 
 bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
