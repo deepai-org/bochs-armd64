@@ -12173,14 +12173,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_COMPACT_F32_U32,
           BX_POLY_ARG_KIND_COMPACT_F32_U32);
-      if (op == 0x1e)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FP64_STACK);
-      if (op == 0x1f)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_FP64_STACK);
       if (op == 0x21)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
