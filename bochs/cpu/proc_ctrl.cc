@@ -4202,6 +4202,18 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       for (Bit32u n = 1; mapped && n < 7; n++)
         mapped = write_poly_riscv_fp64_reg(10 + n + 1, fp_args[n]);
     }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_HETERO_U64_F64) {
+      mapped = write_poly_riscv_fp64_reg(10, fp_args[0]);
+    }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_HETERO_F64_U64) {
+      mapped = write_poly_riscv_fp64_reg(10, fp_args[0]);
+    }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_HETERO_U64_F32) {
+      mapped = write_poly_riscv_fp32_reg(10, (Bit32u) fp_args[0]);
+    }
+    else if (mapped && arg_kind == BX_POLY_ARG_KIND_HETERO_F32_U64) {
+      mapped = write_poly_riscv_fp32_reg(10, (Bit32u) fp_args[0]);
+    }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_COMPACT_U32_F32) {
       Bit32u int_lane = (Bit32u) args[0];
       Bit32u fp_lane = (Bit32u) (args[0] >> 32);
@@ -4428,11 +4440,21 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       mode == BX_POLY_MODE_RAW_AARCH64) {
     has_second_result = read_poly_aarch64_reg(1, &second_result);
   }
+  else if (return_kind == BX_POLY_RETURN_KIND_HETERO_U64_F64 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    has_second_result = read_poly_riscv_fp64_reg(10, &second_result);
+  }
   else if (return_kind == BX_POLY_RETURN_KIND_HETERO_F64_U64 &&
       mode == BX_POLY_MODE_RAW_AARCH64) {
     has_hetero_f64_u64_result =
       read_poly_aarch64_reg(0, &hetero_f64_u64_fp_result) &&
       read_poly_aarch64_reg(1, &hetero_f64_u64_int_result);
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_HETERO_F64_U64 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    has_hetero_f64_u64_result =
+      read_poly_riscv_fp64_reg(10, &hetero_f64_u64_fp_result) &&
+      read_poly_riscv_reg(10, &hetero_f64_u64_int_result);
   }
   else if (return_kind == BX_POLY_RETURN_KIND_HETERO_U64_F32 &&
       mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -4441,12 +4463,24 @@ bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
       read_poly_aarch64_reg(1, &second_result);
     hetero_f32_result = (Bit32u) second_result;
   }
+  else if (return_kind == BX_POLY_RETURN_KIND_HETERO_U64_F32 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    has_hetero_f32_result =
+      read_poly_riscv_reg(10, &hetero_f32_int_result) &&
+      read_poly_riscv_fp32_reg(10, &hetero_f32_result);
+  }
   else if (return_kind == BX_POLY_RETURN_KIND_HETERO_F32_U64 &&
       mode == BX_POLY_MODE_RAW_AARCH64) {
     has_hetero_f32_result =
       read_poly_aarch64_reg(0, &second_result) &&
       read_poly_aarch64_reg(1, &hetero_f32_int_result);
     hetero_f32_result = (Bit32u) second_result;
+  }
+  else if (return_kind == BX_POLY_RETURN_KIND_HETERO_F32_U64 &&
+      mode == BX_POLY_MODE_RAW_RISCV) {
+    has_hetero_f32_result =
+      read_poly_riscv_fp32_reg(10, &hetero_f32_result) &&
+      read_poly_riscv_reg(10, &hetero_f32_int_result);
   }
   else if (return_kind == BX_POLY_RETURN_KIND_COMPACT_U32_F32 &&
       mode == BX_POLY_MODE_RAW_RISCV) {
