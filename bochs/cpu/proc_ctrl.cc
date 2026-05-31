@@ -726,7 +726,9 @@ static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32,
     BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_U32_F32 },
   { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32 }
+    BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32 },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64,
+    BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64 }
 };
 static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
 static unsigned bx_poly_cross_return_top = 0;
