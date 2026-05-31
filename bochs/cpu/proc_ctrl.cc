@@ -712,6 +712,8 @@ static bx_address bx_poly_raw_owner_fsbase = 0;
 static bx_address bx_poly_raw_owner_stack_key = 0;
 static bool bx_poly_explicit_state_key_valid = false;
 static bx_address bx_poly_explicit_state_key = 0;
+static bx_address bx_poly_explicit_state_key_owner_cr3 = 0;
+static bx_address bx_poly_explicit_state_key_owner_fsbase = 0;
 static Bit64u bx_poly_mode_switch_count = 0;
 static Bit64u bx_poly_foreign_insn_count = 0;
 static Bit64u bx_poly_foreign_syscall_count = 0;
@@ -1893,16 +1895,35 @@ static bool bx_poly_stack_key_is_current_explicit(bx_address stack_key)
     stack_key == bx_poly_explicit_state_key;
 }
 
+static void bx_poly_set_explicit_state_key(bx_address key, bx_address cr3,
+  bx_address fsbase)
+{
+  bx_poly_explicit_state_key = key;
+  bx_poly_explicit_state_key_valid = key != 0;
+  bx_poly_explicit_state_key_owner_cr3 =
+    bx_poly_explicit_state_key_valid ? cr3 : 0;
+  bx_poly_explicit_state_key_owner_fsbase =
+    bx_poly_explicit_state_key_valid ? fsbase : 0;
+}
+
 static void bx_poly_normalize_bank_key(bx_address *cr3, bx_address *fsbase,
   bx_address stack_key)
 {
   if (!bx_poly_stack_key_is_current_explicit(stack_key))
     return;
 
-  // An explicit Poly state key is the architectural identity. CR3/FSBASE are
-  // only Bochs fallback selectors and must not split an explicit XSAVE bank.
-  *cr3 = 0;
-  *fsbase = 0;
+  // The explicit Poly state key is architectural state. Until the guest kernel
+  // saves the prototype Poly XSAVE component on real context switches, Bochs
+  // must still use a live guest-thread selector for pthread isolation. Prefer
+  // nonzero FSBASE when it is available, and keep the captured owner as the
+  // fallback for FSBASE-zero/no-TLS execution inside the same thread.
+  if (*fsbase != 0) {
+    bx_poly_explicit_state_key_owner_cr3 = *cr3;
+    bx_poly_explicit_state_key_owner_fsbase = *fsbase;
+    return;
+  }
+  *cr3 = bx_poly_explicit_state_key_owner_cr3;
+  *fsbase = bx_poly_explicit_state_key_owner_fsbase;
 }
 
 static bool bx_poly_thread_key_matches(const bx_poly_thread_key_state_t *state,
@@ -2155,8 +2176,7 @@ static void bx_poly_reset_import_x86_return_frame(
 static void bx_poly_reset_current_xstate(void)
 {
   bx_poly_current_mode = BX_POLY_MODE_X86;
-  bx_poly_explicit_state_key_valid = false;
-  bx_poly_explicit_state_key = 0;
+  bx_poly_set_explicit_state_key(0, 0, 0);
   bx_poly_clear_return_cookie();
   bx_poly_return_cookie_top = 0;
   for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
@@ -3624,10 +3644,10 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
   bx_address old_state_key = bx_poly_current_state_key(RSP);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_state_key);
-  bx_poly_explicit_state_key_valid =
-    (imported_state_key_flags & BX_POLY_STATE_KEY_FLAG_EXPLICIT) != 0;
-  bx_poly_explicit_state_key = bx_poly_explicit_state_key_valid ?
-    (bx_address) imported_state_key_value : 0;
+  bx_poly_set_explicit_state_key(
+    (imported_state_key_flags & BX_POLY_STATE_KEY_FLAG_EXPLICIT) != 0 ?
+      (bx_address) imported_state_key_value : 0,
+    BX_CPU_THIS_PTR cr3, base);
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -3760,11 +3780,13 @@ void BX_CPU_C::xrstor_poly_state(bxInstruction_c *i, bx_address offset)
 
 void BX_CPU_C::xrstor_init_poly_state(void)
 {
-  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
+  bx_address old_state_key = bx_poly_current_state_key(RSP);
+  bx_address old_cr3 = BX_CPU_THIS_PTR cr3;
+  bx_address old_fsbase = MSR_FSBASE;
+  bx_poly_normalize_bank_key(&old_cr3, &old_fsbase, old_state_key);
+  bx_poly_bind_reg_state(old_cr3, old_fsbase, old_state_key);
   bx_poly_reset_current_xstate();
-  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
+  bx_poly_commit_reg_state(old_cr3, old_fsbase, old_state_key);
 }
 
 static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
@@ -8424,8 +8446,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u saved_mode = bx_poly_current_mode;
     bx_address old_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
-    bx_poly_explicit_state_key = (bx_address) key;
-    bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+    bx_poly_set_explicit_state_key((bx_address) key, BX_CPU_THIS_PTR cr3,
+      MSR_FSBASE);
     bx_address new_key = bx_poly_current_state_key(RSP);
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
     bx_poly_current_mode = saved_mode;
@@ -9708,8 +9730,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit32u saved_mode = bx_poly_current_mode;
     bx_address old_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
-    bx_poly_explicit_state_key = (bx_address) key;
-    bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+    bx_poly_set_explicit_state_key((bx_address) key, BX_CPU_THIS_PTR cr3,
+      MSR_FSBASE);
     bx_address new_key = bx_poly_current_state_key(RSP);
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
     bx_poly_current_mode = saved_mode;
@@ -12733,8 +12755,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         Bit32u saved_mode = bx_poly_current_mode;
         bx_address old_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
-        bx_poly_explicit_state_key = (bx_address) RAX;
-        bx_poly_explicit_state_key_valid = bx_poly_explicit_state_key != 0;
+        bx_poly_set_explicit_state_key((bx_address) RAX, BX_CPU_THIS_PTR cr3,
+          MSR_FSBASE);
         bx_address new_key = bx_poly_current_state_key(RSP);
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, new_key);
         bx_poly_current_mode = saved_mode;
