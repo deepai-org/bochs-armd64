@@ -9598,7 +9598,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(7, &arg7))
       return false;
     Bit32u syscall_reg = (Bit32u) syscall_value;
-    return handle_poly_foreign_syscall(syscall_reg, syscall_id, arg0, arg1,
+    return handle_poly_syscall_trap(syscall_reg, syscall_id, arg0, arg1,
       arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
@@ -11542,7 +11542,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(17, &arg7))
       return false;
     Bit32u syscall_number = (Bit32u) syscall_value;
-    return handle_poly_foreign_syscall(syscall_number, 0, arg0, arg1, arg2,
+    return handle_poly_syscall_trap(syscall_number, 0, arg0, arg1, arg2,
       arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
@@ -12007,10 +12007,8 @@ void BX_CPU_C::execute_poly_raw_step(void)
   Bit32u insn = 0;
   Bit32u insn_bytes = 0;
   bool handled = false;
-  const char *arch_name = "foreign";
 
   if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
-    arch_name = "aarch64";
     next_pc = pc + 4;
     insn_bytes = 4;
     insn = read_virtual_dword(BX_SEG_REG_CS, pc);
@@ -12018,7 +12016,6 @@ void BX_CPU_C::execute_poly_raw_step(void)
     handled = execute_poly_raw_aarch64(insn, pc);
   }
   else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
-    arch_name = "riscv";
     Bit16u half = read_virtual_word(BX_SEG_REG_CS, pc);
     bx_poly_foreign_insn_count++;
     if ((half & 0x3) != 0x3) {
@@ -12364,12 +12361,12 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   return true;
 }
 
-bool BX_CPU_C::handle_poly_foreign_syscall(Bit32u syscall_number,
+bool BX_CPU_C::handle_poly_syscall_trap(Bit32u syscall_number,
   Bit32u trap_selector, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
   Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7, bx_address next_rip)
 {
   // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
-  // the architectural trap path. Linux syscall translation is guest policy.
+  // the architectural trap path. Syscall translation is guest policy.
   bx_poly_record_syscall_trap(bx_poly_current_mode, syscall_number, trap_selector,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
