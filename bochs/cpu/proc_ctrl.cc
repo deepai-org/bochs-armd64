@@ -3857,7 +3857,18 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     return false;
   }
 
-  if (sret_call) {
+  if (sret_call && !copy_foreign_stack_args &&
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS) {
+    args[0] = RSI;
+    args[1] = RDX;
+    args[2] = RCX;
+    args[3] = R8;
+    args[4] = R9;
+    args[5] = RBX;
+    args[6] = RBP;
+    args[7] = R15;
+  }
+  else if (sret_call) {
     args[0] = RSI;
     args[1] = RDX;
     args[2] = RCX;
@@ -12437,7 +12448,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x13)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
           (bx_address) R10, (bx_address) R11, true,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT);
+          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
+          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
       if (op == 0x14)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
