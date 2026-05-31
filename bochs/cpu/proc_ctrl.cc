@@ -2042,6 +2042,17 @@ static void bx_poly_clear_cross_return_stack(void)
   bx_poly_cross_return_top = 0;
 }
 
+static void bx_poly_reset_cross_return_frame(
+    bx_poly_cross_return_frame_t *frame)
+{
+  frame->caller_mode = BX_POLY_MODE_X86;
+  frame->callee_mode = BX_POLY_MODE_X86;
+  frame->bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
+  frame->return_rip = 0;
+  frame->return_rsp = 0;
+  frame->flags = 0;
+}
+
 static void bx_poly_reset_return_cookie_frame(
     bx_poly_return_cookie_frame_t *frame)
 {
@@ -2131,14 +2142,8 @@ static void bx_poly_reset_current_xstate(void)
   for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
     bx_poly_reset_return_cookie_frame(&bx_poly_return_cookie_stack[n]);
   bx_poly_clear_cross_return_stack();
-  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
-    bx_poly_cross_return_stack[n].caller_mode = BX_POLY_MODE_X86;
-    bx_poly_cross_return_stack[n].callee_mode = BX_POLY_MODE_X86;
-    bx_poly_cross_return_stack[n].bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
-    bx_poly_cross_return_stack[n].return_rip = 0;
-    bx_poly_cross_return_stack[n].return_rsp = 0;
-    bx_poly_cross_return_stack[n].flags = 0;
-  }
+  for (unsigned n = 0; n < BX_POLY_CROSS_RETURN_DEPTH; n++)
+    bx_poly_reset_cross_return_frame(&bx_poly_cross_return_stack[n]);
   bx_poly_clear_import_x86_return_stack();
   for (unsigned n = 0; n < BX_POLY_IMPORT_RETURN_DEPTH; n++)
     bx_poly_reset_import_x86_return_frame(&bx_poly_import_x86_return_stack[n]);
@@ -4537,11 +4542,6 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
     return false;
   Bit32u bridge_kind = frame.bridge_kind;
 
-  // Treat return-cookie consumption like a hardware transition-stack pop:
-  // once the cookie and callee mode match, later register mapping must not see
-  // the active frame through global state rebinds.
-  bx_poly_cross_return_top--;
-
   Bit64u args[8] = {};
   if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32) {
     for (Bit32u n = 0; n < 8; n++) {
@@ -4655,6 +4655,12 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   }
   if (!mapped)
     return false;
+
+  // Pop only after return-value mapping succeeds. A rejected return must leave
+  // the transition stack intact, matching precise hardware fault behavior.
+  bx_poly_cross_return_top--;
+  bx_poly_reset_cross_return_frame(
+    &bx_poly_cross_return_stack[bx_poly_cross_return_top]);
 
   bx_poly_capture_tls_base_for_mode(callee_mode);
   bx_poly_current_mode = frame.caller_mode;
