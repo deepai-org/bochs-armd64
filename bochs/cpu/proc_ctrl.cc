@@ -1832,6 +1832,27 @@ static bx_address bx_poly_thread_selector_key(bx_address fsbase,
   return bx_poly_stack_key(rsp);
 }
 
+static bool bx_poly_stack_key_is_current_explicit(bx_address stack_key)
+{
+  if ((BX_CPU_THIS_PTR xcr0.get32() &
+        (1U << BX_POLY_STATE_XSAVE_COMPONENT_ARCH)) != 0)
+    return false;
+  return bx_poly_explicit_state_key_valid &&
+    stack_key == bx_poly_explicit_state_key;
+}
+
+static void bx_poly_normalize_bank_key(bx_address *cr3, bx_address *fsbase,
+  bx_address stack_key)
+{
+  if (!bx_poly_stack_key_is_current_explicit(stack_key))
+    return;
+
+  // An explicit Poly state key is the architectural identity. CR3/FSBASE are
+  // only Bochs fallback selectors and must not split an explicit XSAVE bank.
+  *cr3 = 0;
+  *fsbase = 0;
+}
+
 static bool bx_poly_thread_key_matches(const bx_poly_thread_key_state_t *state,
   bx_address cr3, bx_address fsbase, bx_address stack_key)
 {
@@ -1842,6 +1863,8 @@ static bool bx_poly_thread_key_matches(const bx_poly_thread_key_state_t *state,
 static unsigned bx_poly_find_or_alloc_thread_key_state(bx_address cr3,
   bx_address fsbase, bx_address stack_key)
 {
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
   unsigned victim = 0;
   Bit64u oldest_age = ~BX_CONST64(0);
 
@@ -2122,6 +2145,8 @@ static void bx_poly_reset_current_xstate(void)
 static void bx_poly_update_raw_owner(bx_address cr3, bx_address fsbase,
   bx_address stack_key)
 {
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
   if (bx_poly_is_raw_mode(bx_poly_current_mode)) {
     bx_poly_raw_owner_cr3 = cr3;
     bx_poly_raw_owner_fsbase = fsbase;
@@ -2137,6 +2162,10 @@ static void bx_poly_update_raw_owner(bx_address cr3, bx_address fsbase,
 static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_address fsbase, bx_address stack_key)
 {
+  const bool explicit_stack_key = bx_poly_stack_key_is_current_explicit(
+    stack_key);
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
   unsigned victim = 0;
   Bit64u oldest_age = ~BX_CONST64(0);
   bool inherited_trap_vector_valid = false;
@@ -2150,7 +2179,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
       return n;
   }
 
-  if (bx_poly_is_stack_region_key(stack_key)) {
+  if (!explicit_stack_key && bx_poly_is_stack_region_key(stack_key)) {
     for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
       if (!bx_poly_reg_states[n].valid ||
           bx_poly_reg_states[n].cr3 != cr3 ||
@@ -2264,7 +2293,11 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
 static void bx_poly_propagate_trap_vector_state(bx_address cr3,
   bx_address fsbase, bx_address stack_key)
 {
-  if (!bx_poly_is_stack_region_key(stack_key))
+  const bool explicit_stack_key = bx_poly_stack_key_is_current_explicit(
+    stack_key);
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
+  if (explicit_stack_key || !bx_poly_is_stack_region_key(stack_key))
     return;
 
   for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
@@ -2486,6 +2519,8 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
 static void bx_poly_bind_reg_state(bx_address cr3, bx_address fsbase,
   bx_address stack_key)
 {
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
   if (bx_poly_loaded_reg_state_valid &&
       bx_poly_loaded_reg_state_cr3 == cr3 &&
       bx_poly_loaded_reg_state_fsbase == fsbase &&
@@ -2506,6 +2541,8 @@ static void bx_poly_bind_reg_state(bx_address cr3, bx_address fsbase,
 static void bx_poly_commit_reg_state(bx_address cr3, bx_address fsbase,
   bx_address stack_key)
 {
+  bx_poly_normalize_bank_key(&cr3, &fsbase, stack_key);
+
   bx_poly_save_current_reg_state(cr3, fsbase, stack_key);
   bx_poly_loaded_reg_state_valid = true;
   bx_poly_loaded_reg_state_cr3 = cr3;
