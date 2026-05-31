@@ -4744,7 +4744,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   }
 
   Bit64u args[8] = {};
-  Bit64u fp_args[2] = {};
+  Bit64u fp_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
   Bit64u vec_args_lo[2] = {};
   Bit64u vec_args_hi[2] = {};
   Bit32u compact_fp_arg = 0;
@@ -4752,9 +4752,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_aarch64_reg(n, &args[n]);
-    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
-      mapped = read_poly_aarch64_fp64_reg(0, &fp_args[0]) &&
-        read_poly_aarch64_fp64_reg(1, &fp_args[1]);
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = read_poly_aarch64_fp64_reg(n, &fp_args[n]);
+    }
     if (mapped &&
         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
       mapped = read_poly_aarch64_fp128_reg(0, &vec_args_lo[0],
@@ -4764,9 +4765,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_riscv_reg(10 + n, &args[n]);
-    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
-      mapped = read_poly_riscv_fp64_reg(10, &fp_args[0]) &&
-        read_poly_riscv_fp64_reg(11, &fp_args[1]);
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        mapped = read_poly_riscv_fp64_reg(10 + n, &fp_args[n]);
+    }
     if (mapped &&
         source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
       mapped = read_poly_riscv_reg(10, &vec_args_lo[0]) &&
@@ -4874,10 +4876,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     R9 = args[5];
   }
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
-    BX_WRITE_XMM_REG_LO_QWORD(0, fp_args[0]);
-    BX_WRITE_XMM_REG_HI_QWORD(0, 0);
-    BX_WRITE_XMM_REG_LO_QWORD(1, fp_args[1]);
-    BX_WRITE_XMM_REG_HI_QWORD(1, 0);
+    for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+      BX_WRITE_XMM_REG_LO_QWORD(n, fp_args[n]);
+      BX_WRITE_XMM_REG_HI_QWORD(n, 0);
+    }
   }
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32) {
     BX_WRITE_XMM_REG_LO_QWORD(0, vec_args_lo[0]);
