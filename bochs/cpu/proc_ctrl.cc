@@ -12541,22 +12541,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) R10, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_AARCH64_HFA4_F32, BX_POLY_ARG_KIND_DEFAULT);
-      if (op == 0x27)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA3_F64);
-      if (op == 0x28)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA4_F64);
-      if (op == 0x29)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA3_F32);
-      if (op == 0x2a)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_AARCH64_HFA4_F32);
+      if (op >= 0x27 && op <= 0x2a) {
+        BX_INFO(("poly_ud: reject HFA argument pcall opcode=0x%02x; use signature PCALL with runtime ABI thunk",
+          op));
+        return false;
+      }
       if (op == 0x2b)
         return enter_poly_abi_signature_call(BX_POLY_MODE_RAW_AARCH64,
           (bx_address) RBX, (bx_address) R11, false,
