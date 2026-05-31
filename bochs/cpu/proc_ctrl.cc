@@ -447,7 +447,6 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_HETERO_F32_U64 =
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FPAIR64_RET = 18;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FPAIR64_ARG = 19;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_MIXED_U64_FP64 = 20;
-static const Bit32u BX_POLY_X86_CTRL_PENTER_X86 = 0x00;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
 static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
@@ -12634,18 +12633,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
   if (opcode0 == 0x0f && opcode1 == 0x3a && opcode2 == 0xfc) {
     Bit8u op = opcode3;
     bx_address next_rip = PREV_RIP + 4;
-      if (op == BX_POLY_X86_CTRL_PENTER_X86 ||
-          op == BX_POLY_X86_CTRL_PENTER_MODE) {
+      if (op == BX_POLY_X86_CTRL_PENTER_MODE) {
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (op == BX_POLY_X86_CTRL_PENTER_X86) {
-          target_mode = BX_POLY_MODE_X86;
-        }
-        else {
-          Bit32u frontend_id = (Bit32u) R15;
-          if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-            BX_INFO(("poly_ud: reject generic frontend id=%u", frontend_id));
-            return false;
-          }
+        Bit32u frontend_id = (Bit32u) R15;
+        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+          BX_INFO(("poly_ud: reject generic frontend id=%u", frontend_id));
+          return false;
         }
         bx_poly_current_mode = target_mode;
         if (target_mode == BX_POLY_MODE_X86)
