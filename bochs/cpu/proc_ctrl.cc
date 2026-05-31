@@ -413,6 +413,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 = 5;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 = 6;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32 = 7;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32 = 8;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 = 9;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
@@ -597,6 +598,9 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32:
     *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE;
     return true;
   default:
     return false;
@@ -3717,7 +3721,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32 ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32 ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64;
 }
 
 static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
@@ -3727,7 +3732,8 @@ static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32 ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64;
 }
 
 static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
@@ -4625,14 +4631,21 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   }
 
   Bit64u args[8] = {};
+  Bit64u fp_args[2] = {};
   bool mapped = true;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_aarch64_reg(n, &args[n]);
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
+      mapped = read_poly_aarch64_fp64_reg(0, &fp_args[0]) &&
+        read_poly_aarch64_fp64_reg(1, &fp_args[1]);
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_riscv_reg(10 + n, &args[n]);
+    if (mapped && source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
+      mapped = read_poly_riscv_fp64_reg(10, &fp_args[0]) &&
+        read_poly_riscv_fp64_reg(11, &fp_args[1]);
   }
   else if (mode == BX_POLY_MODE_X86) {
     if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE) {
@@ -4684,6 +4697,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
       BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 : 0;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
     frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_VEC128;
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64)
+    frame->return_flags |= BX_POLY_IMPORT_X86_RETURN_SHAPE_FP64;
   frame->alias_valid = true;
   frame->alias[0] = RDI;
   frame->alias[1] = RSI;
@@ -4714,6 +4729,12 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     RCX = args[3];
     R8 = args[4];
     R9 = args[5];
+  }
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64) {
+    BX_WRITE_XMM_REG_LO_QWORD(0, fp_args[0]);
+    BX_WRITE_XMM_REG_HI_QWORD(0, 0);
+    BX_WRITE_XMM_REG_LO_QWORD(1, fp_args[1]);
+    BX_WRITE_XMM_REG_HI_QWORD(1, 0);
   }
 
   bx_address x86_rsp = ((x86_stack_base - 16) & ~BX_CONST64(0xf)) + 8;
