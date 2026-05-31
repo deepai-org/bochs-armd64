@@ -4387,21 +4387,19 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
     }
     if (mapped && caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
         callee_mode == BX_POLY_MODE_RAW_RISCV) {
-      Bit64u fp0 = 0, fp1 = 0;
-      mapped =
-        read_poly_aarch64_fp64_reg(0, &fp0) &&
-        read_poly_aarch64_fp64_reg(1, &fp1) &&
-        write_poly_riscv_fp64_reg(10, fp0) &&
-        write_poly_riscv_fp64_reg(11, fp1);
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+        Bit64u fp = 0;
+        mapped = read_poly_aarch64_fp64_reg(n, &fp) &&
+          write_poly_riscv_fp64_reg(10 + n, fp);
+      }
     }
     else if (mapped && caller_mode == BX_POLY_MODE_RAW_RISCV &&
         callee_mode == BX_POLY_MODE_RAW_AARCH64) {
-      Bit64u fp0 = 0, fp1 = 0;
-      mapped =
-        read_poly_riscv_fp64_reg(10, &fp0) &&
-        read_poly_riscv_fp64_reg(11, &fp1) &&
-        write_poly_aarch64_fp64_reg(0, fp0) &&
-        write_poly_aarch64_fp64_reg(1, fp1);
+      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+        Bit64u fp = 0;
+        mapped = read_poly_riscv_fp64_reg(10 + n, &fp) &&
+          write_poly_aarch64_fp64_reg(n, fp);
+      }
     }
   }
   else if (bridge_kind == BX_POLY_CROSS_BRIDGE_COMPACT_U32_F32 ||
