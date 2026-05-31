@@ -393,7 +393,7 @@ static const Bit32u BX_POLY_ABI_BRIDGE_FLAG_REGISTER_MAP_SIGNATURES = (1U << 14)
 static const Bit32u BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT = 8;
 static const Bit32u BX_POLY_ABI_BRIDGE_FP_ARG_COUNT = 8;
 static const Bit32u BX_POLY_ABI_BRIDGE_STACK_ALIGN = 16;
-static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 8;
+static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 9;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128 = 2;
@@ -402,6 +402,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_I128 = 4;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_VEC128_U32 = 5;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_COMPACT_U32_F32 = 6;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_COMPACT_F32_U32 = 7;
+static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_FP64 = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 // Kind 1 is reserved for the removed stack-capable SysV signature. Real
 // signature slots are register-only; memory-side ABI work belongs in thunks.
@@ -666,6 +667,9 @@ static void bx_poly_reset_abi_signature_slots(
   bx_poly_set_abi_signature_slot(
     &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_COMPACT_F32_U32],
     BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_FP64],
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64);
 }
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -12859,7 +12863,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RAX = BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64;
       RBX = BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64;
       RCX = BX_POLY_ABI_BRIDGE_FP_ARG_COUNT;
-      RDX = 0;
+      RDX = BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_FP64;
     }
     else {
       RAX = 0;
