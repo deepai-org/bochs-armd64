@@ -425,6 +425,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_U64_F32 = 17
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_F32_U64 = 18;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_RET = 19;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG = 20;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64 = 21;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
@@ -445,6 +446,7 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_HETERO_U64_F32 =
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_HETERO_F32_U64 = 17;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FPAIR64_RET = 18;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FPAIR64_ARG = 19;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_MIXED_U64_FP64 = 20;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_X86 = 0x00;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_AARCH64 = 0x01;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_RISCV = 0x02;
@@ -681,6 +683,10 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
   case BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG:
     *register_map =
       BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FPAIR64_ARG;
+    return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64:
+    *register_map =
+      BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_MIXED_U64_FP64;
     return true;
   default:
     return false;
@@ -3859,7 +3865,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_U64_F32 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_F32_U64 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_RET ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64;
 }
 
 static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
@@ -3881,7 +3888,8 @@ static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_U64_F32 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_F32_U64 ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_RET ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64;
 }
 
 static bool bx_poly_arg_kind_requires_memory_side_abi_work(Bit32u kind)
@@ -4038,7 +4046,8 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_U64_F32 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_HETERO_F32_U64 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_RET ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG) {
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64) {
     args[0] = RDI;
     args[1] = RSI;
     args[2] = RDX;
@@ -4315,6 +4324,12 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
     arg_kind = BX_POLY_ARG_KIND_FP64_REGS;
   }
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR64_ARG &&
+      return_kind == BX_POLY_RETURN_KIND_DEFAULT &&
+      arg_kind == BX_POLY_ARG_KIND_DEFAULT) {
+    return_kind = BX_POLY_RETURN_KIND_FP64;
+    arg_kind = BX_POLY_ARG_KIND_FP64_REGS;
+  }
+  else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_MIXED_U64_FP64 &&
       return_kind == BX_POLY_RETURN_KIND_DEFAULT &&
       arg_kind == BX_POLY_ARG_KIND_DEFAULT) {
     return_kind = BX_POLY_RETURN_KIND_FP64;
