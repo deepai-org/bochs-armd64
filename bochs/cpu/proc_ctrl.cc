@@ -464,6 +464,10 @@ static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
+static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT0 = 106;
+static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113;
+static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 233;
+static const Bit64u BX_POLY_IMPORT_X86_DESCRIPTOR_STACK_ARGS = BX_CONST64(1) << 0;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_I128 = BX_CONST64(1) << 1;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FP128 = BX_CONST64(1) << 2;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_FPAIR64 = BX_CONST64(1) << 5;
@@ -475,7 +479,7 @@ static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_U32_F32 =
   BX_CONST64(1) << 12;
 static const Bit64u BX_POLY_IMPORT_X86_RETURN_SHAPE_COMPACT_F32_U32 =
   BX_CONST64(1) << 13;
-static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = 233;
+static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_CALL_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 // Keep suspended x86 helper frames and active foreign frames from colliding
 // when libc helpers use deep stack frames beneath the x86 return cookie.
