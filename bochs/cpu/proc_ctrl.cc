@@ -12600,16 +12600,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           BX_POLY_RETURN_KIND_COMPACT_F32_U32,
           BX_POLY_ARG_KIND_COMPACT_F32_U32,
           BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
-      if (op == 0x21)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32,
-          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
-      if (op == 0x22)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_VEC128_U32, BX_POLY_ARG_KIND_VEC128_U32,
-          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
+      if (op == 0x21 || op == 0x22) {
+        BX_INFO(("poly_ud: reject vec128-specific pcall opcode=0x%02x; use signature PCALL with vec128 ABI slot",
+          op));
+        return false;
+      }
       if (op >= 0x23 && op <= 0x2a) {
         BX_INFO(("poly_ud: reject HFA-specific pcall opcode=0x%02x; use signature PCALL with runtime ABI thunk",
           op));
