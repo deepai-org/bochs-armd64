@@ -390,7 +390,7 @@ static const Bit32u BX_POLY_ABI_BRIDGE_FLAG_REGISTER_MAP_SIGNATURES = (1U << 14)
 static const Bit32u BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT = 8;
 static const Bit32u BX_POLY_ABI_BRIDGE_FP_ARG_COUNT = 8;
 static const Bit32u BX_POLY_ABI_BRIDGE_STACK_ALIGN = 16;
-static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 12;
+static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_COUNT = 13;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS = 1;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_I128 = 2;
@@ -403,6 +403,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_FP64 = 8;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_REGS_FP32 = 9;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_SRET_X86_SYSV_REGS = 10;
 static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_FP128_RET = 11;
+static const Bit32u BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_SRET_REGS = 12;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE = 0;
 // Kind 1 is reserved for the removed stack-capable SysV signature. Real
 // signature slots are register-only; memory-side ABI work belongs in thunks.
@@ -431,6 +432,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_RE
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_RET = 23;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_ARG = 24;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG = 25;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS = 26;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
@@ -456,6 +458,7 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA3_F32_RET = 
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_RET = 22;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA3_F32_ARG = 23;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_ARG = 24;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET = 25;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
 static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
@@ -563,7 +566,8 @@ enum {
   BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 = 3,
   BX_POLY_CROSS_BRIDGE_VEC128_U32 = 4,
   BX_POLY_CROSS_BRIDGE_FP64 = 5,
-  BX_POLY_CROSS_BRIDGE_FP32 = 6
+  BX_POLY_CROSS_BRIDGE_FP32 = 6,
+  BX_POLY_CROSS_BRIDGE_NATIVE_SRET = 7
 };
 
 static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
@@ -714,6 +718,9 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
     *register_map =
       BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_ARG;
     return true;
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS:
+    *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET;
+    return true;
   default:
     return false;
   }
@@ -785,6 +792,9 @@ static void bx_poly_reset_abi_signature_slots(
   bx_poly_set_abi_signature_slot(
     &slots[BX_POLY_ABI_SIGNATURE_SLOT_X86_SYSV_REGS_FP128_RET],
     BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FP128_RET);
+  bx_poly_set_abi_signature_slot(
+    &slots[BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_SRET_REGS],
+    BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS);
 }
 
 static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
@@ -851,7 +861,9 @@ static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
   { BX_POLY_ABI_SIGNATURE_KIND_SRET_X86_SYSV_REGS,
     BX_POLY_ABI_REGISTER_MAP_SRET_X86_SYSV_TO_NATIVE },
   { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FP128_RET,
-    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FP128_RET }
+    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FP128_RET },
+  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS,
+    BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET }
 };
 static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
 static unsigned bx_poly_cross_return_top = 0;
@@ -2977,7 +2989,8 @@ static bool bx_poly_valid_cross_bridge_kind(Bit32u kind)
     kind == BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32 ||
     kind == BX_POLY_CROSS_BRIDGE_VEC128_U32 ||
     kind == BX_POLY_CROSS_BRIDGE_FP64 ||
-    kind == BX_POLY_CROSS_BRIDGE_FP32;
+    kind == BX_POLY_CROSS_BRIDGE_FP32 ||
+    kind == BX_POLY_CROSS_BRIDGE_NATIVE_SRET;
 }
 
 static bool bx_poly_valid_cross_return_shape(Bit32u caller_mode,
@@ -4799,7 +4812,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_RET ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_RET ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_ARG ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS;
 }
 
 static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
@@ -4826,7 +4840,8 @@ static bool bx_poly_register_only_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_RET ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_RET ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F32_ARG ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS;
 }
 
 static bool bx_poly_arg_kind_requires_memory_side_abi_work(Bit32u kind)
@@ -4876,6 +4891,11 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
 
   if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_COMPACT_F32_U32;
+    return true;
+  }
+
+  if (kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS) {
+    *bridge_kind = BX_POLY_CROSS_BRIDGE_NATIVE_SRET;
     return true;
   }
 
@@ -5605,7 +5625,8 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
     return false;
 
   Bit64u args[8] = {};
-  if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32) {
+  if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32 &&
+      bridge_kind != BX_POLY_CROSS_BRIDGE_NATIVE_SRET) {
     for (Bit32u n = 0; n < 8; n++) {
       bool read_ok = false;
       if (caller_mode == BX_POLY_MODE_RAW_AARCH64)
@@ -5726,6 +5747,44 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
         write_poly_riscv_fp32_reg(10, fp0);
     }
   }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_NATIVE_SRET &&
+      caller_mode == BX_POLY_MODE_RAW_AARCH64 &&
+      callee_mode == BX_POLY_MODE_RAW_RISCV) {
+    Bit64u sret_ptr = 0;
+    mapped = read_poly_aarch64_reg(8, &sret_ptr);
+    for (Bit32u n = 0; mapped && n < 7; n++)
+      mapped = read_poly_aarch64_reg(n, &args[n]);
+    if (mapped) {
+      mapped =
+        write_poly_riscv_reg(10, sret_ptr) &&
+        write_poly_riscv_reg(11, args[0]) &&
+        write_poly_riscv_reg(12, args[1]) &&
+        write_poly_riscv_reg(13, args[2]) &&
+        write_poly_riscv_reg(14, args[3]) &&
+        write_poly_riscv_reg(15, args[4]) &&
+        write_poly_riscv_reg(16, args[5]) &&
+        write_poly_riscv_reg(17, args[6]);
+    }
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_NATIVE_SRET &&
+      caller_mode == BX_POLY_MODE_RAW_RISCV &&
+      callee_mode == BX_POLY_MODE_RAW_AARCH64) {
+    Bit64u sret_ptr = 0;
+    mapped = read_poly_riscv_reg(10, &sret_ptr);
+    for (Bit32u n = 0; mapped && n < 7; n++)
+      mapped = read_poly_riscv_reg(11 + n, &args[n]);
+    if (mapped) {
+      mapped =
+        write_poly_aarch64_reg(0, args[0]) &&
+        write_poly_aarch64_reg(1, args[1]) &&
+        write_poly_aarch64_reg(2, args[2]) &&
+        write_poly_aarch64_reg(3, args[3]) &&
+        write_poly_aarch64_reg(4, args[4]) &&
+        write_poly_aarch64_reg(5, args[5]) &&
+        write_poly_aarch64_reg(6, args[6]) &&
+        write_poly_aarch64_reg(8, sret_ptr);
+    }
+  }
   else {
     mapped = false;
   }
@@ -5776,7 +5835,8 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
   Bit32u bridge_kind = frame.bridge_kind;
 
   Bit64u args[8] = {};
-  if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32) {
+  if (bridge_kind != BX_POLY_CROSS_BRIDGE_VEC128_U32 &&
+      bridge_kind != BX_POLY_CROSS_BRIDGE_NATIVE_SRET) {
     for (Bit32u n = 0; n < 8; n++) {
       bool read_ok = false;
       if (callee_mode == BX_POLY_MODE_RAW_AARCH64)
@@ -5885,6 +5945,11 @@ bool BX_CPU_C::return_poly_cross_call(Bit32u callee_mode, bx_address target_rip)
       read_poly_aarch64_fp128_reg(0, &v0_lo, &v0_hi) &&
       write_poly_riscv_reg(10, v0_lo) &&
       write_poly_riscv_reg(11, v0_hi);
+  }
+  else if (bridge_kind == BX_POLY_CROSS_BRIDGE_NATIVE_SRET) {
+    // SRET results are written through the hidden result pointer. The native
+    // return registers are ABI don't-care here, so no register copy is needed.
+    mapped = true;
   }
   else {
     mapped = false;
@@ -15435,6 +15500,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA3_F32_ARG;
       RCX = BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG;
       RDX = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_ARG;
+    }
+    else if (ECX == 28) {
+      RAX = BX_POLY_ABI_SIGNATURE_SLOT_NATIVE_SRET_REGS;
+      RBX = BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS;
+      RCX = BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET;
+      RDX = BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT;
     }
     else {
       RAX = 0;
