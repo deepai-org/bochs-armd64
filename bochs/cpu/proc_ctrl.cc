@@ -6028,6 +6028,39 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xffe0fc00) == 0x4e001c00) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u imm5 = (insn >> 16) & 0x1f;
+    Bit32u size = 0;
+    if (imm5 & 0x01)
+      size = 8;
+    else if (imm5 & 0x02)
+      size = 16;
+    else if (imm5 & 0x04)
+      size = 32;
+    else if (imm5 & 0x08)
+      size = 64;
+    else
+      return false;
+    Bit32u lane = imm5 >> (size == 8 ? 1 : size == 16 ? 2 : size == 32 ? 3 : 4);
+    if (lane >= 128 / size)
+      return false;
+    Bit64u value = 0;
+    Bit64u lo = 0, hi = 0;
+    if (!read_poly_aarch64_reg(rn, &value) ||
+        !read_poly_aarch64_fp128_reg(rd, &lo, &hi))
+      return false;
+    bx_poly_set_vector_element(&lo, &hi, size, lane, value);
+    if (!write_poly_aarch64_fp128_reg(rd, lo, hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 mov v%u.%u[%u],%c%u value=%llu",
+      rd, size, lane, size == 64 ? 'x' : 'w', rn,
+      (unsigned long long) (value & bx_poly_low_mask(size))));
+    return true;
+  }
+
   if ((insn & 0xffe0fc00) == 0x4e000c00 ||
       (insn & 0xffe0fc00) == 0x0e000c00) {
     Bit32u rd = insn & 0x1f;
