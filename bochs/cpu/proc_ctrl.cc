@@ -1860,6 +1860,129 @@ static Bit64u bx_poly_riscv_sha512_result(Bit64u x, Bit32u imm_raw)
   return 0;
 }
 
+static Bit32u bx_poly_sha256_sigma0(Bit32u value)
+{
+  return (Bit32u) bx_poly_rotate_right(value, 32, 2) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 13) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 22);
+}
+
+static Bit32u bx_poly_sha256_sigma1(Bit32u value)
+{
+  return (Bit32u) bx_poly_rotate_right(value, 32, 6) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 11) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 25);
+}
+
+static Bit32u bx_poly_sha256_small_sigma0(Bit32u value)
+{
+  return (Bit32u) bx_poly_rotate_right(value, 32, 7) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 18) ^
+         (value >> 3);
+}
+
+static Bit32u bx_poly_sha256_small_sigma1(Bit32u value)
+{
+  return (Bit32u) bx_poly_rotate_right(value, 32, 17) ^
+         (Bit32u) bx_poly_rotate_right(value, 32, 19) ^
+         (value >> 10);
+}
+
+static Bit32u bx_poly_sha_choose(Bit32u x, Bit32u y, Bit32u z)
+{
+  return (((y ^ z) & x) ^ z);
+}
+
+static Bit32u bx_poly_sha_majority(Bit32u x, Bit32u y, Bit32u z)
+{
+  return ((x & y) | ((x | y) & z));
+}
+
+static void bx_poly_load_u32x4(Bit64u lo, Bit64u hi, Bit32u lane[4])
+{
+  for (Bit32u i = 0; i < 4; i++)
+    lane[i] = (Bit32u) bx_poly_get_vector_element(lo, hi, 32, i);
+}
+
+static void bx_poly_store_u32x4(const Bit32u lane[4], Bit64u *lo, Bit64u *hi)
+{
+  *lo = 0;
+  *hi = 0;
+  for (Bit32u i = 0; i < 4; i++)
+    bx_poly_set_vector_element(lo, hi, 32, i, lane[i]);
+}
+
+static void bx_poly_sha256_hash(Bit64u x_lo, Bit64u x_hi,
+    Bit64u y_lo, Bit64u y_hi, Bit64u w_lo, Bit64u w_hi,
+    bool part1, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u x[4], y[4], w[4];
+
+  bx_poly_load_u32x4(x_lo, x_hi, x);
+  bx_poly_load_u32x4(y_lo, y_hi, y);
+  bx_poly_load_u32x4(w_lo, w_hi, w);
+
+  for (Bit32u e = 0; e < 4; e++) {
+    Bit32u t = y[3] + bx_poly_sha256_sigma1(y[0]) +
+      bx_poly_sha_choose(y[0], y[1], y[2]) + w[e];
+    Bit32u new_x3 = x[3] + t;
+    Bit32u new_y3 = t + bx_poly_sha256_sigma0(x[0]) +
+      bx_poly_sha_majority(x[0], x[1], x[2]);
+    Bit32u next_x[4] = { new_y3, x[0], x[1], x[2] };
+    Bit32u next_y[4] = { new_x3, y[0], y[1], y[2] };
+    for (Bit32u i = 0; i < 4; i++) {
+      x[i] = next_x[i];
+      y[i] = next_y[i];
+    }
+  }
+
+  bx_poly_store_u32x4(part1 ? x : y, result_lo, result_hi);
+}
+
+static void bx_poly_sha256_schedule0(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], t[4], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  t[0] = dst[1];
+  t[1] = dst[2];
+  t[2] = dst[3];
+  t[3] = src[0];
+
+  for (Bit32u i = 0; i < 4; i++)
+    result[i] = dst[i] + bx_poly_sha256_small_sigma0(t[i]);
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sha256_schedule1(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], src2[4], t0[4], t1[2], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+  t0[0] = src[1];
+  t0[1] = src[2];
+  t0[2] = src[3];
+  t0[3] = src2[0];
+  t1[0] = src2[2];
+  t1[1] = src2[3];
+
+  for (Bit32u i = 0; i < 2; i++)
+    result[i] = bx_poly_sha256_small_sigma1(t1[i]) + dst[i] + t0[i];
+  t1[0] = result[0];
+  t1[1] = result[1];
+  for (Bit32u i = 2; i < 4; i++)
+    result[i] = bx_poly_sha256_small_sigma1(t1[i - 2]) + dst[i] + t0[i];
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -6082,6 +6205,59 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.16b,v%u.16b lo=%llu hi=%llu",
         op_name, rd, rn, (unsigned long long) result_lo,
+        (unsigned long long) result_hi));
+      return true;
+    }
+  }
+
+  {
+    Bit32u sha_op = insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+    Bit32u sha_su0_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    const char *op_name = 0;
+    Bit64u dst_lo = 0, dst_hi = 0, src_lo = 0, src_hi = 0;
+    Bit64u src2_lo = 0, src2_hi = 0, result_lo = 0, result_hi = 0;
+
+    if (sha_op == 0x5e004000 || sha_op == 0x5e005000 ||
+        sha_op == 0x5e006000 || sha_su0_op == 0x5e282800) {
+      if (sha_su0_op == 0x5e282800) {
+        op_name = "sha256su0";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
+          return false;
+        bx_poly_sha256_schedule0(dst_lo, dst_hi, src_lo, src_hi,
+          &result_lo, &result_hi);
+      }
+      else if (sha_op == 0x5e006000) {
+        op_name = "sha256su1";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        bx_poly_sha256_schedule1(dst_lo, dst_hi, src_lo, src_hi,
+          src2_lo, src2_hi, &result_lo, &result_hi);
+      }
+      else {
+        bool part1 = sha_op == 0x5e004000;
+        op_name = part1 ? "sha256h" : "sha256h2";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        if (part1)
+          bx_poly_sha256_hash(dst_lo, dst_hi, src_lo, src_hi,
+            src2_lo, src2_hi, true, &result_lo, &result_hi);
+        else
+          bx_poly_sha256_hash(src_lo, src_hi, dst_lo, dst_hi,
+            src2_lo, src2_hi, false, &result_lo, &result_hi);
+      }
+      if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.4s lo=%llu hi=%llu",
+        op_name, rd, (unsigned long long) result_lo,
         (unsigned long long) result_hi));
       return true;
     }
