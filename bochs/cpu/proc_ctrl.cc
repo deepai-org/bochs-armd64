@@ -1888,12 +1888,50 @@ static Bit32u bx_poly_sha256_small_sigma1(Bit32u value)
          (value >> 10);
 }
 
+static Bit64u bx_poly_sha512_sigma0(Bit64u value)
+{
+  return bx_poly_rotate_right(value, 64, 28) ^
+         bx_poly_rotate_right(value, 64, 34) ^
+         bx_poly_rotate_right(value, 64, 39);
+}
+
+static Bit64u bx_poly_sha512_sigma1(Bit64u value)
+{
+  return bx_poly_rotate_right(value, 64, 14) ^
+         bx_poly_rotate_right(value, 64, 18) ^
+         bx_poly_rotate_right(value, 64, 41);
+}
+
+static Bit64u bx_poly_sha512_small_sigma0(Bit64u value)
+{
+  return bx_poly_rotate_right(value, 64, 1) ^
+         bx_poly_rotate_right(value, 64, 8) ^
+         (value >> 7);
+}
+
+static Bit64u bx_poly_sha512_small_sigma1(Bit64u value)
+{
+  return bx_poly_rotate_right(value, 64, 19) ^
+         bx_poly_rotate_right(value, 64, 61) ^
+         (value >> 6);
+}
+
 static Bit32u bx_poly_sha_choose(Bit32u x, Bit32u y, Bit32u z)
 {
   return (((y ^ z) & x) ^ z);
 }
 
 static Bit32u bx_poly_sha_majority(Bit32u x, Bit32u y, Bit32u z)
+{
+  return ((x & y) | ((x | y) & z));
+}
+
+static Bit64u bx_poly_sha_choose64(Bit64u x, Bit64u y, Bit64u z)
+{
+  return (((y ^ z) & x) ^ z);
+}
+
+static Bit64u bx_poly_sha_majority64(Bit64u x, Bit64u y, Bit64u z)
 {
   return ((x & y) | ((x | y) & z));
 }
@@ -1910,6 +1948,18 @@ static void bx_poly_store_u32x4(const Bit32u lane[4], Bit64u *lo, Bit64u *hi)
   *hi = 0;
   for (Bit32u i = 0; i < 4; i++)
     bx_poly_set_vector_element(lo, hi, 32, i, lane[i]);
+}
+
+static void bx_poly_load_u64x2(Bit64u lo, Bit64u hi, Bit64u lane[2])
+{
+  lane[0] = lo;
+  lane[1] = hi;
+}
+
+static void bx_poly_store_u64x2(const Bit64u lane[2], Bit64u *lo, Bit64u *hi)
+{
+  *lo = lane[0];
+  *hi = lane[1];
 }
 
 static void bx_poly_sha256_hash(Bit64u x_lo, Bit64u x_hi,
@@ -1981,6 +2031,61 @@ static void bx_poly_sha256_schedule1(Bit64u dst_lo, Bit64u dst_hi,
     result[i] = bx_poly_sha256_small_sigma1(t1[i - 2]) + dst[i] + t0[i];
 
   bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sha512_hash(Bit64u x_lo, Bit64u x_hi,
+    Bit64u y_lo, Bit64u y_hi, Bit64u w_lo, Bit64u w_hi,
+    bool part1, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit64u x[2], y[2], w[2], result[2];
+
+  bx_poly_load_u64x2(x_lo, x_hi, x);
+  bx_poly_load_u64x2(y_lo, y_hi, y);
+  bx_poly_load_u64x2(w_lo, w_hi, w);
+
+  if (part1) {
+    result[1] = bx_poly_sha_choose64(y[1], x[0], x[1]) +
+      bx_poly_sha512_sigma1(y[1]) + w[1];
+    Bit64u tmp = result[1] + y[0];
+    result[0] = bx_poly_sha_choose64(tmp, y[1], x[0]) +
+      bx_poly_sha512_sigma1(tmp) + w[0];
+  }
+  else {
+    result[1] = bx_poly_sha_majority64(x[0], y[1], y[0]) +
+      bx_poly_sha512_sigma0(y[0]) + w[1];
+    result[0] = bx_poly_sha_majority64(result[1], y[0], y[1]) +
+      bx_poly_sha512_sigma0(result[1]) + w[0];
+  }
+
+  bx_poly_store_u64x2(result, result_lo, result_hi);
+}
+
+static void bx_poly_sha512_schedule0(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit64u dst[2], src[2], result[2];
+
+  bx_poly_load_u64x2(dst_lo, dst_hi, dst);
+  bx_poly_load_u64x2(src_lo, src_hi, src);
+  result[0] = dst[0] + bx_poly_sha512_small_sigma0(dst[1]);
+  result[1] = dst[1] + bx_poly_sha512_small_sigma0(src[0]);
+
+  bx_poly_store_u64x2(result, result_lo, result_hi);
+}
+
+static void bx_poly_sha512_schedule1(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit64u dst[2], src[2], src2[2], result[2];
+
+  bx_poly_load_u64x2(dst_lo, dst_hi, dst);
+  bx_poly_load_u64x2(src_lo, src_hi, src);
+  bx_poly_load_u64x2(src2_lo, src2_hi, src2);
+  result[1] = dst[1] + bx_poly_sha512_small_sigma1(src[1]) + src2[1];
+  result[0] = dst[0] + bx_poly_sha512_small_sigma1(src[0]) + src2[0];
+
+  bx_poly_store_u64x2(result, result_lo, result_hi);
 }
 
 static Bit32u bx_poly_sha_parity(Bit32u x, Bit32u y, Bit32u z)
@@ -6305,8 +6410,37 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         sha_op == 0x5e002000 || sha_op == 0x5e003000 ||
         sha_unary_op == 0x5e280800 || sha_unary_op == 0x5e281800 ||
         sha_op == 0x5e004000 || sha_op == 0x5e005000 ||
-        sha_op == 0x5e006000 || sha_su0_op == 0x5e282800) {
-      if (sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
+        sha_op == 0x5e006000 || sha_su0_op == 0x5e282800 ||
+        sha_op == 0xce608000 || sha_op == 0xce608400 ||
+        sha_op == 0xce608800 || sha_su0_op == 0xcec08000) {
+      if (sha_op == 0xce608000 || sha_op == 0xce608400) {
+        bool part1 = sha_op == 0xce608000;
+        op_name = part1 ? "sha512h" : "sha512h2";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        bx_poly_sha512_hash(src_lo, src_hi, src2_lo, src2_hi,
+          dst_lo, dst_hi, part1, &result_lo, &result_hi);
+      }
+      else if (sha_su0_op == 0xcec08000) {
+        op_name = "sha512su0";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
+          return false;
+        bx_poly_sha512_schedule0(dst_lo, dst_hi, src_lo, src_hi,
+          &result_lo, &result_hi);
+      }
+      else if (sha_op == 0xce608800) {
+        op_name = "sha512su1";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        bx_poly_sha512_schedule1(dst_lo, dst_hi, src_lo, src_hi,
+          src2_lo, src2_hi, &result_lo, &result_hi);
+      }
+      else if (sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
           sha_op == 0x5e002000) {
         Bit32u function_kind = (sha_op >> 12) & 3;
         op_name = function_kind == 0 ? "sha1c" :
