@@ -12875,16 +12875,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           op));
         return false;
       }
-      if (op == 0x2b)
-        return enter_poly_abi_signature_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) RBX, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
-          (Bit32u) R12);
-      if (op == 0x2c)
-        return enter_poly_abi_signature_call(BX_POLY_MODE_RAW_RISCV,
-          (bx_address) RBX, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
-          (Bit32u) R12);
+      if (op == 0x2b || op == 0x2c) {
+        BX_INFO(("poly_ud: reject removed frontend-specific signature pcall opcode=0x%02x; use generic signature PCALL",
+          op));
+        return false;
+      }
       if (op == BX_POLY_X86_CTRL_PCALL_SIG_MODE) {
         Bit32u frontend_id = (Bit32u) R15;
         Bit32u target_mode = BX_POLY_MODE_X86;
