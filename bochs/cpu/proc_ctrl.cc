@@ -508,10 +508,8 @@ static const Bit64u BX_POLY_RETURN_COOKIE = BX_CONST64(0xfffffffffffff000);
 static const Bit64u BX_POLY_CROSS_RETURN_COOKIE = BX_CONST64(0xffffffffffffd000);
 static const Bit64u BX_POLY_IMPORT_CALL_BASE = BX_CONST64(0xffffffffffffe000);
 static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
-static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT0 = 106;
-static const Bit32u BX_POLY_IMPORT_FUNC_X86_SLOT7 = 113;
-static const Bit32u BX_POLY_IMPORT_CALL_COUNT = 234;
-static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_CALL_COUNT;
+static const Bit32u BX_POLY_IMPORT_SELECTOR_COUNT = 256;
+static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_SELECTOR_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
 // Keep suspended x86 helper frames and active foreign frames from colliding
 // when libc helpers use deep stack frames beneath the x86 return cookie.
@@ -827,6 +825,7 @@ static Bit64u bx_poly_mode_switch_count = 0;
 static Bit64u bx_poly_foreign_insn_count = 0;
 static Bit64u bx_poly_foreign_syscall_count = 0;
 static Bit64u bx_poly_foreign_break_count = 0;
+static Bit64u bx_poly_foreign_import_count = 0;
 static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
 static Bit32u bx_poly_last_syscall_number = 0;
 static Bit32u bx_poly_last_break_mode = BX_POLY_MODE_X86;
@@ -2627,6 +2626,7 @@ static void bx_poly_record_import_trap(Bit32u mode, Bit32u import_id,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
   Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
+  bx_poly_foreign_import_count++;
   bx_poly_record_architectural_trap(BX_POLY_TRAP_IMPORT, mode, import_id, 0,
     pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
@@ -15473,7 +15473,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op >= 0x40 && op <= 0x44) {
+      if (op >= 0x40 && op <= 0x45) {
         Bit8u status_id = op - 0x40;
         if (status_id == 0)
           RAX = bx_poly_mode_switch_count;
@@ -15483,15 +15483,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           RAX = bx_poly_foreign_syscall_count;
         else if (status_id == 4)
           RAX = bx_poly_foreign_break_count;
+        else if (status_id == 5)
+          RAX = bx_poly_foreign_import_count;
         else
           RAX = bx_poly_current_mode;
         RIP = next_rip;
-        BX_INFO(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu",
+        BX_INFO(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu imports=%llu",
           op, status_id, bx_poly_current_mode,
           (unsigned long long) bx_poly_mode_switch_count,
           (unsigned long long) bx_poly_foreign_insn_count,
           (unsigned long long) bx_poly_foreign_syscall_count,
-          (unsigned long long) bx_poly_foreign_break_count));
+          (unsigned long long) bx_poly_foreign_break_count,
+          (unsigned long long) bx_poly_foreign_import_count));
         return true;
       }
   }
