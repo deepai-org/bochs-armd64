@@ -2550,11 +2550,11 @@ static Bit32u bx_poly_riscv_cswsp_imm(Bit16u insn)
     ((((Bit32u) insn >> 7) & 0x3) << 6);
 }
 
-static Bit64u bx_poly_riscv_indirect_target(Bit64u target, bx_address pc)
+static Bit64u bx_poly_riscv_indirect_target(Bit64u target)
 {
-  // The raw stream may start on an odd x86 byte lane. RISC-V C has IALIGN=2,
-  // so JALR clears architectural bit 0 while preserving target bit 1.
-  return (target & ~BX_CONST64(1)) | (pc & 0x1);
+  // RISC-V JALR clears architectural bit 0. Bit 1 is preserved because the
+  // Poly RISC-V frontend supports IALIGN=2 for compressed instructions.
+  return target & ~BX_CONST64(1);
 }
 
 static bool bx_poly_valid_frontend_mode(Bit32u mode)
@@ -13833,7 +13833,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
             (bx_address) target, (bx_address) import_return))
         return true;
     }
-    target = bx_poly_riscv_indirect_target(target, pc);
+    target = bx_poly_riscv_indirect_target(target);
     RIP = (bx_address) target;
     BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
     return true;
@@ -14469,7 +14469,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
               (bx_address) target, (bx_address) import_return))
           return true;
-        target = bx_poly_riscv_indirect_target(target, pc);
+        target = bx_poly_riscv_indirect_target(target);
         RIP = (bx_address) target;
         BX_DEBUG(("poly_raw: emulated riscv c.jr x%u target=%llx", rd, (unsigned long long) target));
         return true;
@@ -14507,7 +14507,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
               (bx_address) target, next_rip))
           return true;
-        target = bx_poly_riscv_indirect_target(target, pc);
+        target = bx_poly_riscv_indirect_target(target);
         RIP = (bx_address) target;
         BX_DEBUG(("poly_raw: emulated riscv c.jalr x%u target=%llx", rd, (unsigned long long) target));
         return true;
