@@ -1064,6 +1064,13 @@ static bool bx_poly_valid_landing_policy(Bit64u policy)
   return (policy & ~BX_POLY_LANDING_POLICY_SUPPORTED) == 0;
 }
 
+static bool bx_poly_valid_control_address(Bit64u address,
+  unsigned linaddr_width)
+{
+  return address == 0 ||
+    IsCanonicalToWidth((bx_address) address, linaddr_width);
+}
+
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
   Bit32u mode)
 {
@@ -4320,10 +4327,23 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   Bit64u imported_trap_vector_mode = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48);
+  Bit64u imported_trap_vector = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
+  Bit64u imported_monitor_packet = read_virtual_qword(seg,
+    base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56);
   if (imported_trap_vector_mode > 0xffffffff ||
       !bx_poly_valid_frontend_mode((Bit32u) imported_trap_vector_mode)) {
     BX_INFO(("poly_state_import: reject trap vector mode=%llu",
       (unsigned long long) imported_trap_vector_mode));
+    return false;
+  }
+  if (!bx_poly_valid_control_address(imported_trap_vector,
+        BX_CPU_THIS_PTR linaddr_width) ||
+      !bx_poly_valid_control_address(imported_monitor_packet,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_state_import: reject control addresses vector=%llx packet=%llx",
+      (unsigned long long) imported_trap_vector,
+      (unsigned long long) imported_monitor_packet));
     return false;
   }
   Bit64u imported_trap0 =
@@ -4671,11 +4691,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_aarch64_tls_base = imported_aarch64_tls_base;
   bx_poly_riscv_tls_base = imported_riscv_tls_base;
   bx_poly_landing_policy_flags = imported_landing_policy;
-  bx_poly_trap_vector =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
+  bx_poly_trap_vector = (bx_address) imported_trap_vector;
   bx_poly_trap_vector_mode = (Bit32u) imported_trap_vector_mode;
-  bx_poly_monitor_packet_addr =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56);
+  bx_poly_monitor_packet_addr = (bx_address) imported_monitor_packet;
 
   bx_poly_last_trap.reason = imported_trap_reason;
   bx_poly_last_trap.mode = imported_trap_mode;
@@ -10741,6 +10759,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u vector = 0;
     if (!read_poly_aarch64_reg(0, &vector))
       return false;
+    if (!bx_poly_valid_control_address(vector,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
     bx_poly_trap_vector = (bx_address) vector;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
@@ -10794,6 +10818,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u packet = 0;
     if (!read_poly_aarch64_reg(0, &packet))
       return false;
+    if (!bx_poly_valid_control_address(packet,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
     bx_poly_monitor_packet_addr = (bx_address) packet;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
@@ -12026,6 +12056,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u vector = 0;
     if (!read_poly_riscv_reg(10, &vector))
       return false;
+    if (!bx_poly_valid_control_address(vector,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
     bx_poly_trap_vector = (bx_address) vector;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
@@ -12079,6 +12115,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u packet = 0;
     if (!read_poly_riscv_reg(10, &packet))
       return false;
+    if (!bx_poly_valid_control_address(packet,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
     bx_poly_monitor_packet_addr = (bx_address) packet;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
@@ -15049,6 +15091,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
+        if (!bx_poly_valid_control_address(RAX,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          BX_INFO(("poly_ud: reject non-canonical trap vector=%llx",
+            (unsigned long long) RAX));
+          RAX = (Bit64u) (Bit64s) -22;
+          RIP = next_rip;
+          return true;
+        }
         bx_poly_trap_vector = (bx_address) RAX;
         bx_address stack_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -15096,6 +15146,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return true;
       }
       if (op == 0x6b) {
+        if (!bx_poly_valid_control_address(RAX,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          BX_INFO(("poly_ud: reject non-canonical monitor packet address=%llx",
+            (unsigned long long) RAX));
+          RAX = (Bit64u) (Bit64s) -22;
+          RIP = next_rip;
+          return true;
+        }
         bx_poly_monitor_packet_addr = (bx_address) RAX;
         bx_address stack_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
