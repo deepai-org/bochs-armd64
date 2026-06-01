@@ -1076,6 +1076,22 @@ static bool bx_poly_valid_control_address(Bit64u address,
     IsCanonicalToWidth((bx_address) address, linaddr_width);
 }
 
+static bool bx_poly_frontend_target_aligned(Bit32u mode, bx_address target)
+{
+  if (mode == BX_POLY_MODE_RAW_AARCH64)
+    return (target & 0x3) == 0;
+  if (mode == BX_POLY_MODE_RAW_RISCV)
+    return (target & 0x1) == 0;
+  return true;
+}
+
+static bool bx_poly_valid_frontend_target(Bit32u mode, bx_address target,
+  unsigned linaddr_width)
+{
+  return bx_poly_valid_control_address(target, linaddr_width) &&
+    bx_poly_frontend_target_aligned(mode, target);
+}
+
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
   Bit32u mode)
 {
@@ -1100,6 +1116,11 @@ bool BX_CPU_C::bx_poly_require_landing_target(unsigned seg, bx_address target,
   if (!bx_poly_valid_control_address(target, BX_CPU_THIS_PTR linaddr_width)) {
     BX_INFO(("poly_landing: reject %s non-canonical target=%llx",
       op_name, (unsigned long long) target));
+    return false;
+  }
+  if (!bx_poly_frontend_target_aligned(mode, target)) {
+    BX_INFO(("poly_landing: reject %s unaligned mode=%u target=%llx",
+      op_name, mode, (unsigned long long) target));
     return false;
   }
   if ((bx_poly_landing_policy_flags & policy_bit) == 0)
@@ -14565,11 +14586,30 @@ void BX_CPU_C::execute_poly_raw_step(void)
   if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
     next_pc = pc + 4;
     insn_bytes = 4;
+    if (!bx_poly_frontend_target_aligned(bx_poly_current_mode, pc)) {
+      BX_INFO(("poly_raw: unaligned aarch64 rip=%llx",
+        (unsigned long long) pc));
+      bx_poly_record_illegal_trap(bx_poly_current_mode, 0, insn_bytes,
+        pc, next_pc);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      deliver_poly_architectural_trap(pc);
+      return;
+    }
     insn = read_virtual_dword(BX_SEG_REG_CS, pc);
     bx_poly_foreign_insn_count++;
     handled = execute_poly_raw_aarch64(insn, pc);
   }
   else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
+    if (!bx_poly_frontend_target_aligned(bx_poly_current_mode, pc)) {
+      BX_INFO(("poly_raw: unaligned riscv rip=%llx",
+        (unsigned long long) pc));
+      bx_poly_record_illegal_trap(bx_poly_current_mode, 0, 2, pc, pc + 2);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      deliver_poly_architectural_trap(pc);
+      return;
+    }
     Bit16u half = read_virtual_word(BX_SEG_REG_CS, pc);
     bx_poly_foreign_insn_count++;
     if ((half & 0x3) != 0x3) {
@@ -15010,6 +15050,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         Bit32u frontend_id = (Bit32u) R15;
         if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
           BX_INFO(("poly_ud: reject generic frontend id=%u", frontend_id));
+          return false;
+        }
+        if (!bx_poly_valid_frontend_target(target_mode, next_rip,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          BX_INFO(("poly_ud: reject generic enter unaligned mode=%u target=%llx",
+            target_mode, (unsigned long long) next_rip));
           return false;
         }
         bx_poly_current_mode = target_mode;
