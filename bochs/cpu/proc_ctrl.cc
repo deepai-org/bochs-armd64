@@ -6087,6 +6087,31 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     }
   }
 
+  if ((insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16))) == 0x0ee0e000 ||
+      (insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16))) == 0x4ee0e000) {
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    bool high_lane = (insn & 0x40000000) != 0;
+    Bit64u left_lo = 0, left_hi = 0, right_lo = 0, right_hi = 0;
+    if (!read_poly_aarch64_fp128_reg(rn, &left_lo, &left_hi) ||
+        !read_poly_aarch64_fp128_reg(rm, &right_lo, &right_hi))
+      return false;
+    Bit64u left = high_lane ? left_hi : left_lo;
+    Bit64u right = high_lane ? right_hi : right_lo;
+    unsigned __int128 product = bx_poly_carryless_product64(left, right);
+    Bit64u result_lo = (Bit64u) product;
+    Bit64u result_hi = (Bit64u) (product >> 64);
+    if (!write_poly_aarch64_fp128_reg(rd, result_lo, result_hi))
+      return false;
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s v%u.1q,v%u.%ud,v%u.%ud lo=%llu hi=%llu",
+      high_lane ? "pmull2" : "pmull", rd, rn, high_lane ? 2U : 1U,
+      rm, high_lane ? 2U : 1U, (unsigned long long) result_lo,
+      (unsigned long long) result_hi));
+    return true;
+  }
+
   if ((insn & 0xffffffe0) == 0xd53b00e0) {
     Bit32u rd = insn & 0x1f;
     const Bit64u dczid_el0_64_byte_block = 4;
