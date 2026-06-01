@@ -1484,6 +1484,17 @@ static unsigned __int128 bx_poly_carryless_product64(Bit64u left, Bit64u right)
   return result;
 }
 
+static Bit32u bx_poly_crc32_update(Bit32u crc, Bit64u value,
+    unsigned bytes, Bit32u polynomial)
+{
+  for (unsigned byte = 0; byte < bytes; byte++) {
+    crc ^= (Bit32u) ((value >> (byte * 8)) & 0xff);
+    for (unsigned bit = 0; bit < 8; bit++)
+      crc = (crc >> 1) ^ ((crc & 1) ? polynomial : 0);
+  }
+  return crc;
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -8733,6 +8744,71 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       op_name, sf ? "x" : "w", rd, sf ? "x" : "w", rn,
       sf ? "x" : "w", rm, (unsigned long long) result));
     return true;
+  }
+
+  {
+    Bit32u crc_op = insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+    Bit32u rd = insn & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rm = (insn >> 16) & 0x1f;
+    unsigned bytes = 0;
+    Bit32u polynomial = 0xedb88320;
+    const char *op_name = 0;
+
+    switch (crc_op) {
+    case 0x1ac04000:
+      bytes = 1;
+      op_name = "crc32b";
+      break;
+    case 0x1ac04400:
+      bytes = 2;
+      op_name = "crc32h";
+      break;
+    case 0x1ac04800:
+      bytes = 4;
+      op_name = "crc32w";
+      break;
+    case 0x9ac04c00:
+      bytes = 8;
+      op_name = "crc32x";
+      break;
+    case 0x1ac05000:
+      bytes = 1;
+      polynomial = 0x82f63b78;
+      op_name = "crc32cb";
+      break;
+    case 0x1ac05400:
+      bytes = 2;
+      polynomial = 0x82f63b78;
+      op_name = "crc32ch";
+      break;
+    case 0x1ac05800:
+      bytes = 4;
+      polynomial = 0x82f63b78;
+      op_name = "crc32cw";
+      break;
+    case 0x9ac05c00:
+      bytes = 8;
+      polynomial = 0x82f63b78;
+      op_name = "crc32cx";
+      break;
+    }
+
+    if (op_name != 0) {
+      Bit64u acc = 0;
+      Bit64u value = 0;
+      if (!read_poly_aarch64_reg(rn, &acc) ||
+          !read_poly_aarch64_reg(rm, &value))
+        return false;
+      Bit32u result = bx_poly_crc32_update((Bit32u) acc, value, bytes,
+        polynomial);
+      if (!write_poly_aarch64_reg(rd, result))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s w%u,w%u,%c%u result=%u",
+        op_name, rd, rn, bytes == 8 ? 'x' : 'w', rm, result));
+      return true;
+    }
   }
 
   if ((insn & 0x1f000000) == 0x0a000000) {
