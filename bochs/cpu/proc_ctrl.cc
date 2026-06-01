@@ -1474,6 +1474,16 @@ static Bit64u bx_poly_rotate_right(Bit64u value, unsigned bits, Bit32u amount)
   return ((value >> amount) | (value << (bits - amount))) & mask;
 }
 
+static unsigned __int128 bx_poly_carryless_product64(Bit64u left, Bit64u right)
+{
+  unsigned __int128 result = 0;
+  for (unsigned bit = 0; bit < 64; bit++) {
+    if ((right & (BX_CONST64(1) << bit)) != 0)
+      result ^= ((unsigned __int128) left) << bit;
+  }
+  return result;
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -11622,6 +11632,18 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x05 && funct3 == 0x7) {
       op_name = "maxu";
       result = left > right ? left : right;
+    }
+    else if (funct7 == 0x05 && funct3 == 0x1) {
+      op_name = "clmul";
+      result = (Bit64u) bx_poly_carryless_product64(left, right);
+    }
+    else if (funct7 == 0x05 && funct3 == 0x2) {
+      op_name = "clmulr";
+      result = (Bit64u) (bx_poly_carryless_product64(left, right) >> 63);
+    }
+    else if (funct7 == 0x05 && funct3 == 0x3) {
+      op_name = "clmulh";
+      result = (Bit64u) (bx_poly_carryless_product64(left, right) >> 64);
     }
     else if (funct7 == 0x30 && funct3 == 0x1) {
       op_name = "rol";
