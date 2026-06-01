@@ -1092,6 +1092,11 @@ bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
 bool BX_CPU_C::bx_poly_require_landing_target(unsigned seg, bx_address target,
   Bit32u mode, Bit64u policy_bit, const char *op_name)
 {
+  if (!bx_poly_valid_control_address(target, BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_landing: reject %s non-canonical target=%llx",
+      op_name, (unsigned long long) target));
+    return false;
+  }
   if ((bx_poly_landing_policy_flags & policy_bit) == 0)
     return true;
   if (bx_poly_target_has_landing_pad(seg, target, mode))
@@ -4953,6 +4958,13 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
     return false;
   }
 
+  if (!bx_poly_valid_control_address(return_rip,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_ud: reject pcall non-canonical return=%llx",
+      (unsigned long long) return_rip));
+    return false;
+  }
+
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, mode,
         BX_POLY_LANDING_POLICY_REQUIRE_CALL, "x86-pcall"))
     return false;
@@ -5674,6 +5686,12 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
 {
   if (bx_poly_cross_return_top >= BX_POLY_CROSS_RETURN_DEPTH)
     return false;
+  if (!bx_poly_valid_control_address(return_rip,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_raw: reject cross call non-canonical return=%llx",
+      (unsigned long long) return_rip));
+    return false;
+  }
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, callee_mode,
         BX_POLY_LANDING_POLICY_REQUIRE_CALL, "foreign-pcall"))
     return false;
@@ -6218,6 +6236,12 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
 {
   if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
     return false;
+  if (!bx_poly_valid_control_address(return_rip,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_raw: reject direct x86 call non-canonical return=%llx",
+      (unsigned long long) return_rip));
+    return false;
+  }
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip,
         BX_POLY_MODE_X86, BX_POLY_LANDING_POLICY_REQUIRE_CALL,
         "direct-x86-pcall"))
@@ -6527,6 +6551,10 @@ void BX_CPU_C::poly_sysexit_return_to_user(void)
 bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip)
 {
+  if (!bx_poly_valid_control_address(return_rip,
+        BX_CPU_THIS_PTR linaddr_width))
+    return false;
+
   if (target_rip < (bx_address) BX_POLY_IMPORT_CALL_BASE)
     return false;
 
