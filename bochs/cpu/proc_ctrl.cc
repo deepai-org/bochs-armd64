@@ -2035,6 +2035,111 @@ static void bx_poly_sm4_four_rounds(Bit64u state_lo, Bit64u state_hi,
   bx_poly_store_u32x4(state, result_lo, result_hi);
 }
 
+static Bit32u bx_poly_sm3_p0(Bit32u value)
+{
+  return value ^
+         (Bit32u) bx_poly_rotate_left(value, 32, 9) ^
+         (Bit32u) bx_poly_rotate_left(value, 32, 17);
+}
+
+static Bit32u bx_poly_sm3_p1(Bit32u value)
+{
+  return value ^
+         (Bit32u) bx_poly_rotate_left(value, 32, 15) ^
+         (Bit32u) bx_poly_rotate_left(value, 32, 23);
+}
+
+static void bx_poly_sm3_ss1(Bit64u src_lo, Bit64u src_hi,
+    Bit64u src2_lo, Bit64u src2_hi, Bit64u src3_lo, Bit64u src3_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u src[4], src2[4], src3[4], result[4] = { 0, 0, 0, 0 };
+
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+  bx_poly_load_u32x4(src3_lo, src3_hi, src3);
+  result[3] = (Bit32u) bx_poly_rotate_left(
+    (Bit32u) bx_poly_rotate_left(src[3], 32, 12) + src2[3] + src3[3],
+    32, 7);
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sm3_partw1(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], src2[4], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+  for (Bit32u i = 0; i < 3; i++)
+    result[i] = (dst[i] ^ src[i]) ^
+      (Bit32u) bx_poly_rotate_left(src2[i + 1], 32, 15);
+  for (Bit32u i = 0; i < 4; i++) {
+    if (i == 3)
+      result[3] = (dst[3] ^ src[3]) ^
+        (Bit32u) bx_poly_rotate_left(result[0], 32, 15);
+    result[i] = bx_poly_sm3_p1(result[i]);
+  }
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sm3_partw2(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], src2[4], tmp[4], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+  for (Bit32u i = 0; i < 4; i++) {
+    tmp[i] = src[i] ^ (Bit32u) bx_poly_rotate_left(src2[i], 32, 7);
+    result[i] = dst[i] ^ tmp[i];
+  }
+  Bit32u tmp2 = (Bit32u) bx_poly_rotate_left(tmp[0], 32, 15);
+  result[3] ^= bx_poly_sm3_p1(tmp2);
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sm3_tt(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit32u imm2, Bit32u op_kind, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], src2[4], result[4];
+  Bit32u tt;
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+
+  if (op_kind == 1) {
+    tt = (dst[3] & dst[1]) | (dst[3] & dst[2]) | (dst[1] & dst[2]);
+  }
+  else if (op_kind == 3) {
+    tt = (dst[3] & dst[2]) | (~dst[3] & dst[1]);
+  }
+  else {
+    tt = dst[1] ^ dst[2] ^ dst[3];
+  }
+
+  Bit32u addend = op_kind <= 1 ?
+    (src[3] ^ (Bit32u) bx_poly_rotate_left(dst[3], 32, 12)) : src[3];
+  tt += dst[0] + addend + src2[imm2 & 3];
+
+  result[0] = dst[1];
+  result[1] = (Bit32u) bx_poly_rotate_left(dst[2], 32,
+    op_kind <= 1 ? 9 : 19);
+  result[2] = dst[3];
+  result[3] = op_kind <= 1 ? tt : bx_poly_sm3_p0(tt);
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
 static void bx_poly_load_u64x2(Bit64u lo, Bit64u hi, Bit64u lane[2])
 {
   lane[0] = lo;
@@ -6486,6 +6591,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 10) | (0x1f << 16));
     Bit32u xar_op =
       insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x3f << 10) | (0x1f << 16));
+    Bit32u sm3ss1_op =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 10) | (0x1f << 16));
+    Bit32u sm3part_op =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+    Bit32u sm3tt_op =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x3 << 12) | (0x1f << 16));
     Bit32u sm4e_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
     Bit32u sm4ekey_op = insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
     Bit32u sha_unary_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
@@ -6498,7 +6609,11 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u dst_lo = 0, dst_hi = 0, src_lo = 0, src_hi = 0;
     Bit64u src2_lo = 0, src2_hi = 0, result_lo = 0, result_hi = 0;
 
-    if (sm4e_op == 0xcec08400 || sm4ekey_op == 0xce60c800 ||
+    if (sm3ss1_op == 0xce400000 || sm3part_op == 0xce60c000 ||
+        sm3part_op == 0xce60c400 ||
+        (sm3tt_op >= 0xce408000 && sm3tt_op <= 0xce408c00 &&
+          ((sm3tt_op - 0xce408000) & ~0xc00) == 0) ||
+        sm4e_op == 0xcec08400 || sm4ekey_op == 0xce60c800 ||
         sha3_ternary_op == 0xce000000 || sha3_ternary_op == 0xce200000 ||
         sha_op == 0xce608c00 || xar_op == 0xce800000 ||
         sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
@@ -6508,7 +6623,45 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         sha_op == 0x5e006000 || sha_su0_op == 0x5e282800 ||
         sha_op == 0xce608000 || sha_op == 0xce608400 ||
         sha_op == 0xce608800 || sha_su0_op == 0xcec08000) {
-      if (sm4e_op == 0xcec08400) {
+      if (sm3ss1_op == 0xce400000) {
+        Bit64u src3_lo = 0, src3_hi = 0;
+        op_name = "sm3ss1";
+        if (!read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi) ||
+            !read_poly_aarch64_fp128_reg(ra, &src3_lo, &src3_hi))
+          return false;
+        bx_poly_sm3_ss1(src_lo, src_hi, src2_lo, src2_hi,
+          src3_lo, src3_hi, &result_lo, &result_hi);
+      }
+      else if (sm3part_op == 0xce60c000 || sm3part_op == 0xce60c400) {
+        bool part2 = sm3part_op == 0xce60c400;
+        op_name = part2 ? "sm3partw2" : "sm3partw1";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        if (part2)
+          bx_poly_sm3_partw2(dst_lo, dst_hi, src_lo, src_hi,
+            src2_lo, src2_hi, &result_lo, &result_hi);
+        else
+          bx_poly_sm3_partw1(dst_lo, dst_hi, src_lo, src_hi,
+            src2_lo, src2_hi, &result_lo, &result_hi);
+      }
+      else if (sm3tt_op >= 0xce408000 && sm3tt_op <= 0xce408c00 &&
+          ((sm3tt_op - 0xce408000) & ~0xc00) == 0) {
+        Bit32u op_kind = (sm3tt_op - 0xce408000) >> 10;
+        Bit32u imm2 = (insn >> 12) & 3;
+        op_name = op_kind == 0 ? "sm3tt1a" :
+          (op_kind == 1 ? "sm3tt1b" :
+            (op_kind == 2 ? "sm3tt2a" : "sm3tt2b"));
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        bx_poly_sm3_tt(dst_lo, dst_hi, src_lo, src_hi, src2_lo, src2_hi,
+          imm2, op_kind, &result_lo, &result_hi);
+      }
+      else if (sm4e_op == 0xcec08400) {
         op_name = "sm4e";
         if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
             !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
