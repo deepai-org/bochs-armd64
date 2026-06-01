@@ -1805,6 +1805,61 @@ static Bit32u bx_poly_riscv_aes_rcon(Bit32u round)
   return round < 10 ? rcon[round] : 0;
 }
 
+static Bit64u bx_poly_riscv_sha256_result(Bit64u value, Bit32u imm_raw)
+{
+  Bit32u x = (Bit32u) value;
+  Bit32u result = 0;
+
+  switch (imm_raw) {
+    case 0x100:
+      result = (Bit32u) bx_poly_rotate_right(x, 32, 2) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 13) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 22);
+      break;
+    case 0x101:
+      result = (Bit32u) bx_poly_rotate_right(x, 32, 6) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 11) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 25);
+      break;
+    case 0x102:
+      result = (Bit32u) bx_poly_rotate_right(x, 32, 7) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 18) ^
+               (x >> 3);
+      break;
+    case 0x103:
+      result = (Bit32u) bx_poly_rotate_right(x, 32, 17) ^
+               (Bit32u) bx_poly_rotate_right(x, 32, 19) ^
+               (x >> 10);
+      break;
+  }
+
+  return (Bit64u) (Bit64s) (Bit32s) result;
+}
+
+static Bit64u bx_poly_riscv_sha512_result(Bit64u x, Bit32u imm_raw)
+{
+  switch (imm_raw) {
+    case 0x104:
+      return bx_poly_rotate_right(x, 64, 28) ^
+             bx_poly_rotate_right(x, 64, 34) ^
+             bx_poly_rotate_right(x, 64, 39);
+    case 0x105:
+      return bx_poly_rotate_right(x, 64, 14) ^
+             bx_poly_rotate_right(x, 64, 18) ^
+             bx_poly_rotate_right(x, 64, 41);
+    case 0x106:
+      return bx_poly_rotate_right(x, 64, 1) ^
+             bx_poly_rotate_right(x, 64, 8) ^
+             (x >> 7);
+    case 0x107:
+      return bx_poly_rotate_right(x, 64, 19) ^
+             bx_poly_rotate_right(x, 64, 61) ^
+             (x >> 6);
+  }
+
+  return 0;
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -11805,6 +11860,24 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       Bit32u word = bx_poly_aes_subword(tmp2) ^
         bx_poly_riscv_aes_rcon(round);
       result = ((Bit64u) word << 32) | word;
+    }
+    else if (funct3 == 0x1 && imm_raw >= 0x100 && imm_raw <= 0x103) {
+      switch (imm_raw) {
+        case 0x100: op_name = "sha256sum0"; break;
+        case 0x101: op_name = "sha256sum1"; break;
+        case 0x102: op_name = "sha256sig0"; break;
+        case 0x103: op_name = "sha256sig1"; break;
+      }
+      result = bx_poly_riscv_sha256_result(base, imm_raw);
+    }
+    else if (funct3 == 0x1 && imm_raw >= 0x104 && imm_raw <= 0x107) {
+      switch (imm_raw) {
+        case 0x104: op_name = "sha512sum0"; break;
+        case 0x105: op_name = "sha512sum1"; break;
+        case 0x106: op_name = "sha512sig0"; break;
+        case 0x107: op_name = "sha512sig1"; break;
+      }
+      result = bx_poly_riscv_sha512_result(base, imm_raw);
     }
     else if (funct3 == 0x0) {
       op_name = "addi";
