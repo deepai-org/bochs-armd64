@@ -3665,6 +3665,25 @@ static void bx_poly_commit_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_loaded_reg_state_stack_key = stack_key;
 }
 
+bool BX_CPU_C::commit_poly_raw_branch_target(Bit32u mode, Bit32u insn,
+  Bit32u insn_bytes, bx_address pc, bx_address next_pc, bx_address target,
+  const char *op_name)
+{
+  if (!bx_poly_valid_frontend_target(mode, target,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_raw: reject %s invalid target mode=%u pc=%llx target=%llx",
+      op_name, mode, (unsigned long long) pc, (unsigned long long) target));
+    bx_poly_record_architectural_trap(BX_POLY_TRAP_ILLEGAL, mode, insn,
+      insn_bytes, pc, next_pc, target, 0, 0, 0, 0, 0, 0, 0);
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+    return deliver_poly_architectural_trap(pc);
+  }
+
+  RIP = target;
+  return true;
+}
+
 static Bit32u bx_poly_state_contract_flags(void)
 {
   return BX_POLY_CPUID_STATE_OVERLAP_GPRS |
@@ -11172,7 +11191,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit32u cond = insn & 0xf;
     Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x7ffff, 19) << 2;
     bool taken = bx_poly_aarch64_condition_holds(cond);
-    RIP = taken ? (bx_address) ((Bit64s) pc + guest_offset) : next_rip;
+    bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+    if (taken && !commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64,
+          insn, 4, pc, next_rip, target, "aarch64 b.cond"))
+      return false;
+    if (!taken)
+      RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 b.cond cond=%u %s offset=%lld nzcv=%x",
       cond, taken ? "taken" : "not-taken", (long long) guest_offset, bx_poly_aarch64_nzcv));
     return true;
@@ -11180,6 +11204,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if ((insn & 0x7c000000) == 0x14000000) {
     Bit64s guest_offset = bx_poly_sign_extend(insn & 0x03ffffff, 26) << 2;
+    bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+    if (!bx_poly_valid_frontend_target(BX_POLY_MODE_RAW_AARCH64, target,
+          BX_CPU_THIS_PTR linaddr_width))
+      return commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn,
+        4, pc, next_rip, target, (insn & 0x80000000) ? "aarch64 bl" :
+        "aarch64 b");
     if (insn & 0x80000000) {
       if (!write_poly_aarch64_reg(30, next_rip))
         return false;
@@ -11188,8 +11218,9 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     else {
       BX_DEBUG(("poly_raw: emulated aarch64 b offset=%lld", (long long) guest_offset));
     }
-    RIP = (bx_address) ((Bit64s) pc + guest_offset);
-    return true;
+    return commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn, 4,
+      pc, next_rip, target, (insn & 0x80000000) ? "aarch64 bl" :
+      "aarch64 b");
   }
 
   if ((insn & 0x7e000000) == 0x36000000) {
@@ -11202,7 +11233,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return false;
     bool bit_set = (value & (BX_CONST64(1) << bit)) != 0;
     bool taken = branch_on_one ? bit_set : !bit_set;
-    RIP = taken ? (bx_address) ((Bit64s) pc + guest_offset) : next_rip;
+    bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+    if (taken && !commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64,
+          insn, 4, pc, next_rip, target, branch_on_one ? "aarch64 tbnz" :
+          "aarch64 tbz"))
+      return false;
+    if (!taken)
+      RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u,#%u %s offset=%lld",
       branch_on_one ? "tbnz" : "tbz", rt, bit, taken ? "taken" : "not-taken",
       (long long) guest_offset));
@@ -11221,7 +11258,10 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bool taken = (op == 0) ? (value == 0) : (value != 0);
     if (taken) {
       Bit64s guest_offset = bx_poly_sign_extend((insn >> 5) & 0x7ffff, 19) << 2;
-      RIP = (bx_address) ((Bit64s) pc + guest_offset);
+      bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+      if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn, 4,
+            pc, next_rip, target, op ? "aarch64 cbnz" : "aarch64 cbz"))
+        return false;
       BX_DEBUG(("poly_raw: emulated aarch64 %s %s%u taken offset=%lld",
         op ? "cbnz" : "cbz", sf ? "x" : "w", rt, (long long) guest_offset));
     }
@@ -11251,7 +11291,10 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
             (bx_address) target, (bx_address) import_return))
         return true;
     }
-    RIP = (bx_address) target;
+    if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn, 4,
+          pc, next_rip, (bx_address) target, link ? "aarch64 blr" :
+          "aarch64 br"))
+      return false;
     BX_DEBUG(("poly_raw: emulated aarch64 %s x%u target=%llx", link ? "blr" : "br", rn, (unsigned long long) target));
     return true;
   }
@@ -11265,7 +11308,9 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return true;
     if (return_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
       return true;
-    RIP = (bx_address) ret_addr;
+    if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn, 4,
+          pc, next_rip, (bx_address) ret_addr, "aarch64 ret"))
+      return false;
     BX_DEBUG(("poly_raw: emulated aarch64 ret x%u target=%llx", rn, (unsigned long long) ret_addr));
     return true;
   }
@@ -13783,7 +13828,10 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         (((insn >> 25) & 0x3f) << 5) |
         (((insn >> 8) & 0xf) << 1);
       Bit64s guest_offset = bx_poly_sign_extend(imm, 13);
-      RIP = (bx_address) ((Bit64s) pc + guest_offset);
+      bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+      if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 4,
+            pc, next_rip, target, op_name))
+        return false;
       BX_DEBUG(("poly_raw: emulated riscv %s taken offset=%lld", op_name, (long long) guest_offset));
     }
     else {
@@ -13801,9 +13849,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       (((insn >> 20) & 0x1) << 11) |
       (((insn >> 12) & 0xff) << 12);
     Bit64s guest_offset = bx_poly_sign_extend(imm, 21);
+    bx_address target = (bx_address) ((Bit64s) pc + guest_offset);
+    if (!bx_poly_valid_frontend_target(BX_POLY_MODE_RAW_RISCV, target,
+          BX_CPU_THIS_PTR linaddr_width))
+      return commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 4,
+        pc, next_rip, target, "riscv jal");
     if (!write_poly_riscv_reg(rd, next_rip))
       return false;
-    RIP = (bx_address) ((Bit64s) pc + guest_offset);
+    if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 4,
+          pc, next_rip, target, "riscv jal"))
+      return false;
     BX_DEBUG(("poly_raw: emulated riscv jal x%u offset=%lld link=%llx", rd, (long long) guest_offset, (unsigned long long) next_rip));
     return true;
   }
@@ -13814,8 +13869,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
     Bit64u base = 0;
     if (!read_poly_riscv_reg(rs1, &base))
-      return false;
-    if (!write_poly_riscv_reg(rd, next_rip))
       return false;
     // The x86 poly opcode can place the raw stream at any host byte lane.
     Bit64u target = (base + imm12) & ~BX_CONST64(1);
@@ -13834,7 +13887,15 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return true;
     }
     target = bx_poly_riscv_indirect_target(target);
-    RIP = (bx_address) target;
+    if (!bx_poly_valid_frontend_target(BX_POLY_MODE_RAW_RISCV,
+          (bx_address) target, BX_CPU_THIS_PTR linaddr_width))
+      return commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 4,
+        pc, next_rip, (bx_address) target, "riscv jalr");
+    if (!write_poly_riscv_reg(rd, next_rip))
+      return false;
+    if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 4,
+          pc, next_rip, (bx_address) target, "riscv jalr"))
+      return false;
     BX_DEBUG(("poly_raw: emulated riscv jalr x%u,%lld(x%u) target=%llx link=%llx", rd, (long long) imm12, rs1, (unsigned long long) RIP, (unsigned long long) next_rip));
     return true;
   }
@@ -14371,7 +14432,10 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
 
     if (funct3 == 0x5) {
       Bit64s offset = bx_poly_riscv_cj_imm(insn);
-      RIP = (bx_address) ((Bit64s) pc + offset);
+      bx_address target = (bx_address) ((Bit64s) pc + offset);
+      if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 2,
+            pc, next_rip, target, "riscv c.j"))
+        return false;
       BX_DEBUG(("poly_raw: emulated riscv c.j offset=%lld", (long long) offset));
       return true;
     }
@@ -14383,7 +14447,13 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       if (!read_poly_riscv_reg(rs1, &value))
         return false;
       bool taken = funct3 == 0x6 ? value == 0 : value != 0;
-      RIP = taken ? (bx_address) ((Bit64s) pc + offset) : next_rip;
+      bx_address target = (bx_address) ((Bit64s) pc + offset);
+      if (taken && !commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV,
+            insn, 2, pc, next_rip, target,
+            funct3 == 0x6 ? "riscv c.beqz" : "riscv c.bnez"))
+        return false;
+      if (!taken)
+        RIP = next_rip;
       BX_DEBUG(("poly_raw: emulated riscv %s %s offset=%lld", funct3 == 0x6 ? "c.beqz" : "c.bnez", taken ? "taken" : "not-taken", (long long) offset));
       return true;
     }
@@ -14470,7 +14540,9 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
               (bx_address) target, (bx_address) import_return))
           return true;
         target = bx_poly_riscv_indirect_target(target);
-        RIP = (bx_address) target;
+        if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 2,
+              pc, next_rip, (bx_address) target, "riscv c.jr"))
+          return false;
         BX_DEBUG(("poly_raw: emulated riscv c.jr x%u target=%llx", rd, (unsigned long long) target));
         return true;
       }
@@ -14496,8 +14568,7 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
       }
       if (high && rs2 == 0) {
         Bit64u target = 0;
-        if (!read_poly_riscv_reg(rd, &target) ||
-            !write_poly_riscv_reg(1, next_rip))
+        if (!read_poly_riscv_reg(rd, &target))
           return false;
         target &= ~BX_CONST64(1);
         if (return_poly_cross_call(BX_POLY_MODE_RAW_RISCV, (bx_address) target))
@@ -14508,7 +14579,15 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
               (bx_address) target, next_rip))
           return true;
         target = bx_poly_riscv_indirect_target(target);
-        RIP = (bx_address) target;
+        if (!bx_poly_valid_frontend_target(BX_POLY_MODE_RAW_RISCV,
+              (bx_address) target, BX_CPU_THIS_PTR linaddr_width))
+          return commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn,
+            2, pc, next_rip, (bx_address) target, "riscv c.jalr");
+        if (!write_poly_riscv_reg(1, next_rip))
+          return false;
+        if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_RISCV, insn, 2,
+              pc, next_rip, (bx_address) target, "riscv c.jalr"))
+          return false;
         BX_DEBUG(("poly_raw: emulated riscv c.jalr x%u target=%llx", rd, (unsigned long long) target));
         return true;
       }
