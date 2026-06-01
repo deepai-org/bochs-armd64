@@ -249,7 +249,10 @@ static const Bit32u BX_POLY_CPUID_STATE_FRONTEND_TLS_XSAVE = (1U << 16);
 static const Bit32u BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE = (1U << 17);
 static const Bit32u BX_POLY_CPUID_STATE_STATE_KEY_XSAVE = (1U << 18);
 static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
+static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_NONE = 0;
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
+static const Bit32u BX_POLY_STATE_XSAVE_BYTES_NONE = 0;
+static const Bit32u BX_POLY_STATE_XSAVE_OFFSET_ARCH = 0x3000;
 static const Bit32u BX_POLY_STATE_XSAVE_BYTES_ARCH = 4096;
 static const Bit32u BX_POLY_STATE_XSAVE_ALIGN_ARCH = 64;
 static const Bit32u BX_POLY_STATE_XSAVE_LAYOUT_VERSION = 10;
@@ -288,6 +291,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET = 0x780;
 static const Bit32u BX_POLY_STATE_XSAVE_RISCV_STATUS_BYTES = 0x80;
 static const Bit32u BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET = 0x800;
 static const Bit32u BX_POLY_STATE_XSAVE_IMPORT_RETURN_BYTES = 0x500;
+static const Bit32u BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH = 8;
 static const Bit32u BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH_OFFSET =
   BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET + 8;
 static const Bit32u BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAMES_OFFSET =
@@ -300,6 +304,7 @@ static const Bit32u BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET =
   BX_POLY_STATE_XSAVE_ABI_SIGNATURE_OFFSET + 16;
 static const Bit32u BX_POLY_STATE_XSAVE_ABI_SIGNATURE_BYTES = 0x80;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET = 0xd80;
+static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH = 8;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET =
   BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET + 8;
 static const Bit32u BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET =
@@ -4127,7 +4132,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET, import_top);
   write_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH_OFFSET,
-    BX_POLY_IMPORT_RETURN_DEPTH);
+    BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH);
   for (unsigned n = 0; n < import_top; n++) {
     const bx_poly_import_x86_return_frame_t *frame =
       &bx_poly_import_x86_return_stack[n];
@@ -4165,7 +4170,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
     base + BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET, cross_top);
   write_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET,
-    BX_POLY_CROSS_RETURN_DEPTH);
+    BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH);
   for (unsigned n = 0; n < cross_top; n++) {
     const bx_poly_cross_return_frame_t *frame =
       &bx_poly_cross_return_stack[n];
@@ -4408,7 +4413,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   Bit64u import_depth = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH_OFFSET);
   if (import_top64 > import_depth ||
-      import_depth != BX_POLY_IMPORT_RETURN_DEPTH) {
+      import_depth != BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH) {
     BX_INFO(("poly_state_import: reject import return top=%llu depth=%llu",
       (unsigned long long) import_top64,
       (unsigned long long) import_depth));
@@ -4516,7 +4521,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   Bit64u cross_depth = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET);
   if (cross_top64 > cross_depth ||
-      cross_depth != BX_POLY_CROSS_RETURN_DEPTH) {
+      cross_depth != BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH) {
     BX_INFO(("poly_state_import: reject cross return top=%llu depth=%llu",
       (unsigned long long) cross_top64,
       (unsigned long long) cross_depth));
@@ -15736,13 +15741,13 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 3) {
       RAX = BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET;
       RBX = BX_POLY_STATE_XSAVE_CROSS_RETURN_BYTES;
-      RCX = BX_POLY_CROSS_RETURN_DEPTH;
+      RCX = BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH;
       RDX = BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAME_BYTES;
     }
     else if (ECX == 4) {
       RAX = BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET;
       RBX = BX_POLY_STATE_XSAVE_IMPORT_RETURN_BYTES;
-      RCX = BX_POLY_IMPORT_RETURN_DEPTH;
+      RCX = BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH;
       RDX = BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAME_BYTES;
     }
     else {
