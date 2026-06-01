@@ -6397,23 +6397,65 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   {
     Bit32u sha_op = insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+    Bit32u sha3_ternary_op =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 10) | (0x1f << 16));
+    Bit32u xar_op =
+      insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x3f << 10) | (0x1f << 16));
     Bit32u sha_unary_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
     Bit32u sha_su0_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u ra = (insn >> 10) & 0x1f;
     Bit32u rm = (insn >> 16) & 0x1f;
     const char *op_name = 0;
     Bit64u dst_lo = 0, dst_hi = 0, src_lo = 0, src_hi = 0;
     Bit64u src2_lo = 0, src2_hi = 0, result_lo = 0, result_hi = 0;
 
-    if (sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
+    if (sha3_ternary_op == 0xce000000 || sha3_ternary_op == 0xce200000 ||
+        sha_op == 0xce608c00 || xar_op == 0xce800000 ||
+        sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
         sha_op == 0x5e002000 || sha_op == 0x5e003000 ||
         sha_unary_op == 0x5e280800 || sha_unary_op == 0x5e281800 ||
         sha_op == 0x5e004000 || sha_op == 0x5e005000 ||
         sha_op == 0x5e006000 || sha_su0_op == 0x5e282800 ||
         sha_op == 0xce608000 || sha_op == 0xce608400 ||
         sha_op == 0xce608800 || sha_su0_op == 0xcec08000) {
-      if (sha_op == 0xce608000 || sha_op == 0xce608400) {
+      if (sha3_ternary_op == 0xce000000 ||
+          sha3_ternary_op == 0xce200000) {
+        bool bcax = sha3_ternary_op == 0xce200000;
+        Bit64u src3_lo = 0, src3_hi = 0;
+        op_name = bcax ? "bcax" : "eor3";
+        if (!read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi) ||
+            !read_poly_aarch64_fp128_reg(ra, &src3_lo, &src3_hi))
+          return false;
+        if (bcax) {
+          result_lo = src_lo ^ (src2_lo & ~src3_lo);
+          result_hi = src_hi ^ (src2_hi & ~src3_hi);
+        }
+        else {
+          result_lo = src_lo ^ src2_lo ^ src3_lo;
+          result_hi = src_hi ^ src2_hi ^ src3_hi;
+        }
+      }
+      else if (sha_op == 0xce608c00) {
+        op_name = "rax1";
+        if (!read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        result_lo = src_lo ^ bx_poly_rotate_left(src2_lo, 64, 1);
+        result_hi = src_hi ^ bx_poly_rotate_left(src2_hi, 64, 1);
+      }
+      else if (xar_op == 0xce800000) {
+        Bit32u rotate = (insn >> 10) & 0x3f;
+        op_name = "xar";
+        if (!read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        result_lo = bx_poly_rotate_right(src_lo ^ src2_lo, 64, rotate);
+        result_hi = bx_poly_rotate_right(src_hi ^ src2_hi, 64, rotate);
+      }
+      else if (sha_op == 0xce608000 || sha_op == 0xce608400) {
         bool part1 = sha_op == 0xce608000;
         op_name = part1 ? "sha512h" : "sha512h2";
         if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
