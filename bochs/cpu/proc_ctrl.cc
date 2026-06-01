@@ -5731,10 +5731,10 @@ bool BX_CPU_C::enter_poly_cross_call(Bit32u caller_mode, Bit32u callee_mode,
 {
   if (bx_poly_cross_return_top >= BX_POLY_CROSS_RETURN_DEPTH)
     return false;
-  if (!bx_poly_valid_control_address(return_rip,
+  if (!bx_poly_valid_frontend_target(caller_mode, return_rip,
         BX_CPU_THIS_PTR linaddr_width)) {
-    BX_INFO(("poly_raw: reject cross call non-canonical return=%llx",
-      (unsigned long long) return_rip));
+    BX_INFO(("poly_raw: reject cross call invalid return mode=%u return=%llx",
+      caller_mode, (unsigned long long) return_rip));
     return false;
   }
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip, callee_mode,
@@ -6281,10 +6281,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
 {
   if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
     return false;
-  if (!bx_poly_valid_control_address(return_rip,
+  if (!bx_poly_valid_frontend_target(mode, return_rip,
         BX_CPU_THIS_PTR linaddr_width)) {
-    BX_INFO(("poly_raw: reject direct x86 call non-canonical return=%llx",
-      (unsigned long long) return_rip));
+    BX_INFO(("poly_raw: reject direct x86 call invalid return mode=%u return=%llx",
+      mode, (unsigned long long) return_rip));
     return false;
   }
   if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip,
@@ -6618,7 +6618,7 @@ void BX_CPU_C::poly_sysexit_return_to_user(void)
 bool BX_CPU_C::handle_poly_import_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip)
 {
-  if (!bx_poly_valid_control_address(return_rip,
+  if (!bx_poly_valid_frontend_target(mode, return_rip,
         BX_CPU_THIS_PTR linaddr_width))
     return false;
 
