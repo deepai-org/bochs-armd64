@@ -12850,16 +12850,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         BX_DEBUG(("poly_op: x86 landing pad"));
         return true;
       }
-      if (op == 0x10)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_AARCH64,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
-          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
-      if (op == 0x11)
-        return enter_poly_abi_call(BX_POLY_MODE_RAW_RISCV,
-          (bx_address) R10, (bx_address) R11, false,
-          BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
-          BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
+      if (op == 0x10 || op == 0x11) {
+        BX_INFO(("poly_ud: reject removed frontend-specific pcall opcode=0x%02x; use signature PCALL",
+          op));
+        return false;
+      }
       if (op == 0x12 || op == 0x13) {
         BX_INFO(("poly_ud: reject SRET-specific pcall opcode=0x%02x; use signature PCALL with SRET ABI slot",
           op));
