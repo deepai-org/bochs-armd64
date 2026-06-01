@@ -1067,6 +1067,11 @@ static bool bx_poly_valid_landing_policy(Bit64u policy)
 static bool bx_poly_valid_control_address(Bit64u address,
   unsigned linaddr_width)
 {
+  if (linaddr_width < 48)
+    linaddr_width = 48;
+  if (linaddr_width > 57)
+    linaddr_width = 57;
+
   return address == 0 ||
     IsCanonicalToWidth((bx_address) address, linaddr_width);
 }
