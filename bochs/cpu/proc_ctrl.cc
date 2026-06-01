@@ -5187,14 +5187,16 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
       mapped =
         write_poly_aarch64_fp32_reg(0, (Bit32u) fp_args[0]) &&
         write_poly_aarch64_fp32_reg(1, (Bit32u) (fp_args[0] >> 32)) &&
-        write_poly_aarch64_fp32_reg(2, (Bit32u) fp_args[1]);
+        write_poly_aarch64_fp32_reg(2, (Bit32u) fp_args[1]) &&
+        write_poly_aarch64_fp32_reg(3, (Bit32u) fp_args[2]);
     }
     else if (mapped && arg_kind == BX_POLY_ARG_KIND_AARCH64_HFA4_F32) {
       mapped =
         write_poly_aarch64_fp32_reg(0, (Bit32u) fp_args[0]) &&
         write_poly_aarch64_fp32_reg(1, (Bit32u) (fp_args[0] >> 32)) &&
         write_poly_aarch64_fp32_reg(2, (Bit32u) fp_args[1]) &&
-        write_poly_aarch64_fp32_reg(3, (Bit32u) (fp_args[1] >> 32));
+        write_poly_aarch64_fp32_reg(3, (Bit32u) (fp_args[1] >> 32)) &&
+        write_poly_aarch64_fp32_reg(4, (Bit32u) fp_args[2]);
     }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
