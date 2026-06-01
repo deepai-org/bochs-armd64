@@ -1686,6 +1686,125 @@ static void bx_poly_aes_mix_vector(Bit64u source_lo, Bit64u source_hi,
   bx_poly_aes_store(state, result_lo, result_hi);
 }
 
+static Bit8u bx_poly_aes_get_byte64(Bit64u value, Bit32u byte)
+{
+  return (Bit8u) ((value >> (byte * 8)) & 0xff);
+}
+
+static void bx_poly_aes_set_byte64(Bit64u *value, Bit32u byte, Bit8u data)
+{
+  *value &= ~(BX_CONST64(0xff) << (byte * 8));
+  *value |= ((Bit64u) data) << (byte * 8);
+}
+
+static Bit32u bx_poly_aes_mix_column_word(Bit32u value, bool inverse)
+{
+  Bit8u s0 = (Bit8u) (value & 0xff);
+  Bit8u s1 = (Bit8u) ((value >> 8) & 0xff);
+  Bit8u s2 = (Bit8u) ((value >> 16) & 0xff);
+  Bit8u s3 = (Bit8u) ((value >> 24) & 0xff);
+  Bit8u b0, b1, b2, b3;
+
+  if (inverse) {
+    b0 = bx_poly_aes_gf_mul(0x0e, s0) ^ bx_poly_aes_gf_mul(0x0b, s1) ^
+         bx_poly_aes_gf_mul(0x0d, s2) ^ bx_poly_aes_gf_mul(0x09, s3);
+    b1 = bx_poly_aes_gf_mul(0x09, s0) ^ bx_poly_aes_gf_mul(0x0e, s1) ^
+         bx_poly_aes_gf_mul(0x0b, s2) ^ bx_poly_aes_gf_mul(0x0d, s3);
+    b2 = bx_poly_aes_gf_mul(0x0d, s0) ^ bx_poly_aes_gf_mul(0x09, s1) ^
+         bx_poly_aes_gf_mul(0x0e, s2) ^ bx_poly_aes_gf_mul(0x0b, s3);
+    b3 = bx_poly_aes_gf_mul(0x0b, s0) ^ bx_poly_aes_gf_mul(0x0d, s1) ^
+         bx_poly_aes_gf_mul(0x09, s2) ^ bx_poly_aes_gf_mul(0x0e, s3);
+  }
+  else {
+    b0 = bx_poly_aes_gf_mul(0x02, s0) ^ bx_poly_aes_gf_mul(0x03, s1) ^
+         s2 ^ s3;
+    b1 = s0 ^ bx_poly_aes_gf_mul(0x02, s1) ^
+         bx_poly_aes_gf_mul(0x03, s2) ^ s3;
+    b2 = s0 ^ s1 ^ bx_poly_aes_gf_mul(0x02, s2) ^
+         bx_poly_aes_gf_mul(0x03, s3);
+    b3 = bx_poly_aes_gf_mul(0x03, s0) ^ s1 ^ s2 ^
+         bx_poly_aes_gf_mul(0x02, s3);
+  }
+
+  return ((Bit32u) b0) | ((Bit32u) b1 << 8) |
+         ((Bit32u) b2 << 16) | ((Bit32u) b3 << 24);
+}
+
+static Bit32u bx_poly_aes_subword(Bit32u value)
+{
+  Bit32u result = 0;
+  for (Bit32u byte = 0; byte < 4; byte++) {
+    Bit8u input = (Bit8u) ((value >> (byte * 8)) & 0xff);
+    result |= ((Bit32u) bx_poly_aes_sbox[input]) << (byte * 8);
+  }
+  return result;
+}
+
+static Bit64u bx_poly_aes_apply_sbox64(Bit64u value, bool inverse)
+{
+  Bit64u result = 0;
+  for (Bit32u byte = 0; byte < 8; byte++) {
+    Bit8u input = bx_poly_aes_get_byte64(value, byte);
+    bx_poly_aes_set_byte64(&result, byte,
+      inverse ? bx_poly_aes_inverse_sbox[input] : bx_poly_aes_sbox[input]);
+  }
+  return result;
+}
+
+static Bit64u bx_poly_riscv_aes_shiftrows64(Bit64u rs2, Bit64u rs1,
+    bool inverse)
+{
+  Bit64u result = 0;
+
+  if (inverse) {
+    bx_poly_aes_set_byte64(&result, 7, bx_poly_aes_get_byte64(rs2, 3));
+    bx_poly_aes_set_byte64(&result, 6, bx_poly_aes_get_byte64(rs2, 6));
+    bx_poly_aes_set_byte64(&result, 5, bx_poly_aes_get_byte64(rs1, 1));
+    bx_poly_aes_set_byte64(&result, 4, bx_poly_aes_get_byte64(rs1, 4));
+    bx_poly_aes_set_byte64(&result, 3, bx_poly_aes_get_byte64(rs1, 7));
+    bx_poly_aes_set_byte64(&result, 2, bx_poly_aes_get_byte64(rs2, 2));
+    bx_poly_aes_set_byte64(&result, 1, bx_poly_aes_get_byte64(rs2, 5));
+    bx_poly_aes_set_byte64(&result, 0, bx_poly_aes_get_byte64(rs1, 0));
+  }
+  else {
+    bx_poly_aes_set_byte64(&result, 7, bx_poly_aes_get_byte64(rs1, 3));
+    bx_poly_aes_set_byte64(&result, 6, bx_poly_aes_get_byte64(rs2, 6));
+    bx_poly_aes_set_byte64(&result, 5, bx_poly_aes_get_byte64(rs2, 1));
+    bx_poly_aes_set_byte64(&result, 4, bx_poly_aes_get_byte64(rs1, 4));
+    bx_poly_aes_set_byte64(&result, 3, bx_poly_aes_get_byte64(rs2, 7));
+    bx_poly_aes_set_byte64(&result, 2, bx_poly_aes_get_byte64(rs2, 2));
+    bx_poly_aes_set_byte64(&result, 1, bx_poly_aes_get_byte64(rs1, 5));
+    bx_poly_aes_set_byte64(&result, 0, bx_poly_aes_get_byte64(rs1, 0));
+  }
+
+  return result;
+}
+
+static Bit64u bx_poly_riscv_aes64_round(Bit64u rs2, Bit64u rs1,
+    bool inverse, bool mix)
+{
+  Bit64u result = bx_poly_aes_apply_sbox64(
+    bx_poly_riscv_aes_shiftrows64(rs2, rs1, inverse), inverse);
+
+  if (mix) {
+    Bit32u low = bx_poly_aes_mix_column_word((Bit32u) result, inverse);
+    Bit32u high = bx_poly_aes_mix_column_word((Bit32u) (result >> 32),
+      inverse);
+    result = ((Bit64u) high << 32) | low;
+  }
+
+  return result;
+}
+
+static Bit32u bx_poly_riscv_aes_rcon(Bit32u round)
+{
+  static const Bit32u rcon[10] = {
+    0x00000001, 0x00000002, 0x00000004, 0x00000008, 0x00000010,
+    0x00000020, 0x00000040, 0x00000080, 0x0000001b, 0x00000036
+  };
+  return round < 10 ? rcon[round] : 0;
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -11659,6 +11778,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u base = 0;
     Bit64s imm12 = bx_poly_sign_extend(insn >> 20, 12);
     Bit32u shamt = (insn >> 20) & 0x3f;
+    Bit32u funct7 = (insn >> 25) & 0x7f;
     Bit32u shift_top = (insn >> 26) & 0x3f;
     Bit32u imm_raw = (insn >> 20) & 0xfff;
     Bit64u result = 0;
@@ -11667,7 +11787,26 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     if (!read_poly_riscv_reg(rs1, &base))
       return false;
 
-    if (funct3 == 0x0) {
+    if (funct3 == 0x1 && imm_raw == 0x300) {
+      op_name = "aes64im";
+      Bit32u low = bx_poly_aes_mix_column_word((Bit32u) base, true);
+      Bit32u high = bx_poly_aes_mix_column_word((Bit32u) (base >> 32), true);
+      result = ((Bit64u) high << 32) | low;
+    }
+    else if (funct3 == 0x1 && funct7 == 0x18 &&
+             ((imm_raw >> 4) & 0x1f) == 0x11) {
+      Bit32u round = imm_raw & 0xf;
+      if (round > 10)
+        return false;
+      op_name = "aes64ks1i";
+      Bit32u tmp1 = (Bit32u) (base >> 32);
+      Bit32u tmp2 = round == 10 ? tmp1 :
+        (Bit32u) bx_poly_rotate_right(tmp1, 32, 8);
+      Bit32u word = bx_poly_aes_subword(tmp2) ^
+        bx_poly_riscv_aes_rcon(round);
+      result = ((Bit64u) word << 32) | word;
+    }
+    else if (funct3 == 0x0) {
       op_name = "addi";
       result = (Bit64u) ((Bit64s) base + imm12);
     }
@@ -12010,6 +12149,28 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     else if (funct7 == 0x10 && funct3 == 0x6) {
       op_name = "sh3add";
       result = (left << 3) + right;
+    }
+    else if (funct7 == 0x19 && funct3 == 0x0) {
+      op_name = "aes64es";
+      result = bx_poly_riscv_aes64_round(right, left, false, false);
+    }
+    else if (funct7 == 0x1b && funct3 == 0x0) {
+      op_name = "aes64esm";
+      result = bx_poly_riscv_aes64_round(right, left, false, true);
+    }
+    else if (funct7 == 0x1d && funct3 == 0x0) {
+      op_name = "aes64ds";
+      result = bx_poly_riscv_aes64_round(right, left, true, false);
+    }
+    else if (funct7 == 0x1f && funct3 == 0x0) {
+      op_name = "aes64dsm";
+      result = bx_poly_riscv_aes64_round(right, left, true, true);
+    }
+    else if (funct7 == 0x3f && funct3 == 0x0) {
+      op_name = "aes64ks2";
+      Bit32u w0 = (Bit32u) (left >> 32) ^ (Bit32u) right;
+      Bit32u w1 = w0 ^ (Bit32u) (right >> 32);
+      result = ((Bit64u) w1 << 32) | w0;
     }
 
     if (op_name != 0) {
