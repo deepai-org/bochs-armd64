@@ -1983,6 +1983,86 @@ static void bx_poly_sha256_schedule1(Bit64u dst_lo, Bit64u dst_hi,
   bx_poly_store_u32x4(result, result_lo, result_hi);
 }
 
+static Bit32u bx_poly_sha_parity(Bit32u x, Bit32u y, Bit32u z)
+{
+  return x ^ y ^ z;
+}
+
+static void bx_poly_sha1_hash(Bit64u dst_lo, Bit64u dst_hi,
+    Bit32u y, Bit64u w_lo, Bit64u w_hi, Bit32u function_kind,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u x[4], w[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, x);
+  bx_poly_load_u32x4(w_lo, w_hi, w);
+
+  for (Bit32u e = 0; e < 4; e++) {
+    Bit32u t = 0;
+    switch (function_kind) {
+    case 0:
+      t = bx_poly_sha_choose(x[1], x[2], x[3]);
+      break;
+    case 1:
+      t = bx_poly_sha_parity(x[1], x[2], x[3]);
+      break;
+    default:
+      t = bx_poly_sha_majority(x[1], x[2], x[3]);
+      break;
+    }
+
+    y += (Bit32u) bx_poly_rotate_left(x[0], 32, 5) + t + w[e];
+    x[1] = (Bit32u) bx_poly_rotate_left(x[1], 32, 30);
+    Bit32u old_x[4] = { x[0], x[1], x[2], x[3] };
+    x[0] = y;
+    x[1] = old_x[0];
+    x[2] = old_x[1];
+    x[3] = old_x[2];
+    y = old_x[3];
+  }
+
+  bx_poly_store_u32x4(x, result_lo, result_hi);
+}
+
+static void bx_poly_sha1_schedule0(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u src2_lo, Bit64u src2_hi,
+    Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], src2[4], mixed[4], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  bx_poly_load_u32x4(src2_lo, src2_hi, src2);
+  mixed[0] = dst[2];
+  mixed[1] = dst[3];
+  mixed[2] = src[0];
+  mixed[3] = src[1];
+
+  for (Bit32u i = 0; i < 4; i++)
+    result[i] = mixed[i] ^ dst[i] ^ src2[i];
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
+static void bx_poly_sha1_schedule1(Bit64u dst_lo, Bit64u dst_hi,
+    Bit64u src_lo, Bit64u src_hi, Bit64u *result_lo, Bit64u *result_hi)
+{
+  Bit32u dst[4], src[4], t[4], result[4];
+
+  bx_poly_load_u32x4(dst_lo, dst_hi, dst);
+  bx_poly_load_u32x4(src_lo, src_hi, src);
+  t[0] = dst[0] ^ src[1];
+  t[1] = dst[1] ^ src[2];
+  t[2] = dst[2] ^ src[3];
+  t[3] = dst[3];
+
+  for (Bit32u i = 0; i < 4; i++)
+    result[i] = (Bit32u) bx_poly_rotate_left(t[i], 32, 1);
+  result[3] ^= (Bit32u) bx_poly_rotate_left(t[0], 32, 2);
+
+  bx_poly_store_u32x4(result, result_lo, result_hi);
+}
+
 static Bit64u bx_poly_or_combine_bytes(Bit64u value)
 {
   Bit64u result = 0;
@@ -6212,6 +6292,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   {
     Bit32u sha_op = insn & ~(Bit32u)(0x1f | (0x1f << 5) | (0x1f << 16));
+    Bit32u sha_unary_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
     Bit32u sha_su0_op = insn & ~(Bit32u)(0x1f | (0x1f << 5));
     Bit32u rd = insn & 0x1f;
     Bit32u rn = (insn >> 5) & 0x1f;
@@ -6220,9 +6301,51 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u dst_lo = 0, dst_hi = 0, src_lo = 0, src_hi = 0;
     Bit64u src2_lo = 0, src2_hi = 0, result_lo = 0, result_hi = 0;
 
-    if (sha_op == 0x5e004000 || sha_op == 0x5e005000 ||
+    if (sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
+        sha_op == 0x5e002000 || sha_op == 0x5e003000 ||
+        sha_unary_op == 0x5e280800 || sha_unary_op == 0x5e281800 ||
+        sha_op == 0x5e004000 || sha_op == 0x5e005000 ||
         sha_op == 0x5e006000 || sha_su0_op == 0x5e282800) {
-      if (sha_su0_op == 0x5e282800) {
+      if (sha_op == 0x5e000000 || sha_op == 0x5e001000 ||
+          sha_op == 0x5e002000) {
+        Bit32u function_kind = (sha_op >> 12) & 3;
+        op_name = function_kind == 0 ? "sha1c" :
+          (function_kind == 1 ? "sha1p" : "sha1m");
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        Bit32u y = (Bit32u) bx_poly_get_vector_element(src_lo, src_hi, 32, 0);
+        bx_poly_sha1_hash(dst_lo, dst_hi, y, src2_lo, src2_hi,
+          function_kind, &result_lo, &result_hi);
+      }
+      else if (sha_unary_op == 0x5e280800) {
+        op_name = "sha1h";
+        if (!read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
+          return false;
+        Bit32u value = (Bit32u) bx_poly_get_vector_element(src_lo, src_hi,
+          32, 0);
+        bx_poly_set_vector_element(&result_lo, &result_hi, 32, 0,
+          bx_poly_rotate_left(value, 32, 30));
+      }
+      else if (sha_op == 0x5e003000) {
+        op_name = "sha1su0";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi) ||
+            !read_poly_aarch64_fp128_reg(rm, &src2_lo, &src2_hi))
+          return false;
+        bx_poly_sha1_schedule0(dst_lo, dst_hi, src_lo, src_hi,
+          src2_lo, src2_hi, &result_lo, &result_hi);
+      }
+      else if (sha_unary_op == 0x5e281800) {
+        op_name = "sha1su1";
+        if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
+            !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
+          return false;
+        bx_poly_sha1_schedule1(dst_lo, dst_hi, src_lo, src_hi,
+          &result_lo, &result_hi);
+      }
+      else if (sha_su0_op == 0x5e282800) {
         op_name = "sha256su0";
         if (!read_poly_aarch64_fp128_reg(rd, &dst_lo, &dst_hi) ||
             !read_poly_aarch64_fp128_reg(rn, &src_lo, &src_hi))
