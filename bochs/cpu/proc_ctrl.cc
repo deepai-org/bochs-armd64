@@ -4664,14 +4664,21 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   Bit64u header1 = read_virtual_qword(seg, base + 8);
   Bit32u magic = (Bit32u) header0;
   Bit32u layout_version = (Bit32u) ((header0 >> 32) & 0xffff);
+  Bit32u header_bytes = (Bit32u) ((header0 >> 48) & 0xffff);
   Bit32u total_bytes = (Bit32u) header1;
   Bit32u saved_mode = (Bit32u) (header1 >> 32);
+  Bit64u header_flags =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 16);
   if (magic != BX_POLY_STATE_XSAVE_MAGIC ||
       layout_version != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
+      header_bytes != BX_POLY_STATE_XSAVE_HEADER_BYTES ||
       total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH ||
-      !bx_poly_valid_frontend_mode(saved_mode)) {
-    BX_INFO(("poly_state_import: reject magic=%08x version=%u bytes=%u mode=%u",
-      magic, layout_version, total_bytes, saved_mode));
+      !bx_poly_valid_frontend_mode(saved_mode) ||
+      header_flags != bx_poly_xsave_arch_flags()) {
+    BX_INFO(("poly_state_import: reject magic=%08x version=%u header=%u bytes=%u mode=%u flags=%llx expected=%llx",
+      magic, layout_version, header_bytes, total_bytes, saved_mode,
+      (unsigned long long) header_flags,
+      (unsigned long long) bx_poly_xsave_arch_flags()));
     return false;
   }
 
