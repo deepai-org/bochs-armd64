@@ -4909,6 +4909,13 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     }
   }
   else {
+    if (imported_trap_number > 0xffffffff ||
+        imported_trap_selector > 0xffffffff) {
+      BX_INFO(("poly_state_import: reject trap packet number=%llx selector=%llx",
+        (unsigned long long) imported_trap_number,
+        (unsigned long long) imported_trap_selector));
+      return false;
+    }
     if (!bx_poly_valid_frontend_target(imported_trap_mode,
           (bx_address) imported_trap_pc, BX_CPU_THIS_PTR linaddr_width) ||
         !bx_poly_valid_frontend_target(imported_trap_mode,
