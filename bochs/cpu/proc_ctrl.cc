@@ -4522,6 +4522,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         n, frame->mode, (unsigned long long) frame->import_id));
       return false;
     }
+    if (!bx_poly_valid_frontend_target(frame->mode, frame->rip,
+          BX_CPU_THIS_PTR linaddr_width) ||
+        !bx_poly_valid_control_address(frame->rsp,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      BX_INFO(("poly_state_import: reject import return frame %u pc=%llx sp=%llx mode=%u",
+        n, (unsigned long long) frame->rip,
+        (unsigned long long) frame->rsp, frame->mode));
+      return false;
+    }
     for (unsigned alias = 0; alias < 6; alias++)
       frame->alias[alias] =
         read_virtual_qword(seg, frame_base + 40 + alias * 8);
@@ -4627,6 +4636,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         n, frame->caller_mode, frame->callee_mode, frame->bridge_kind));
       return false;
     }
+    if (!bx_poly_valid_frontend_target(frame->caller_mode, frame->return_rip,
+          BX_CPU_THIS_PTR linaddr_width) ||
+        !bx_poly_valid_control_address(frame->return_rsp,
+          BX_CPU_THIS_PTR linaddr_width)) {
+      BX_INFO(("poly_state_import: reject cross return frame %u pc=%llx sp=%llx caller=%u",
+        n, (unsigned long long) frame->return_rip,
+        (unsigned long long) frame->return_rsp, frame->caller_mode));
+      return false;
+    }
   }
   for (unsigned n = cross_top; n < BX_POLY_CROSS_RETURN_DEPTH; n++) {
     Bit32u frame_offset = BX_POLY_STATE_XSAVE_CROSS_RETURN_FRAMES_OFFSET +
@@ -4683,6 +4701,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
           caller_mode, target_mode, bridge_kind));
         return false;
       }
+      if (!bx_poly_valid_frontend_target(target_mode, return_pc,
+            BX_CPU_THIS_PTR linaddr_width) ||
+          transition_cookie != 0) {
+        BX_INFO(("poly_state_import: reject interrupted transition pc=%llx cookie=%llx target=%u",
+          (unsigned long long) return_pc,
+          (unsigned long long) transition_cookie, target_mode));
+        return false;
+      }
       imported_interrupted_raw_valid = true;
       imported_interrupted_raw_mode = target_mode;
       imported_interrupted_raw_rip = return_pc;
@@ -4692,6 +4718,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
             bridge_kind)) {
         BX_INFO(("poly_state_import: reject active transition caller=%u target=%u bridge=%u",
           caller_mode, target_mode, bridge_kind));
+        return false;
+      }
+      if (!bx_poly_valid_frontend_target(caller_mode, return_pc,
+            BX_CPU_THIS_PTR linaddr_width) ||
+          !bx_poly_valid_control_address(transition_cookie,
+            BX_CPU_THIS_PTR linaddr_width)) {
+        BX_INFO(("poly_state_import: reject active transition pc=%llx sp=%llx caller=%u",
+          (unsigned long long) return_pc,
+          (unsigned long long) transition_cookie, caller_mode));
         return false;
       }
       imported_transition_frame.return_rip = return_pc;
@@ -4707,6 +4742,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
             bridge_kind)) {
         BX_INFO(("poly_state_import: reject active transition summary caller=%u target=%u bridge=%u",
           caller_mode, target_mode, bridge_kind));
+        return false;
+      }
+      if (!bx_poly_valid_frontend_target(caller_mode, return_pc,
+            BX_CPU_THIS_PTR linaddr_width) ||
+          !bx_poly_valid_control_address(transition_cookie,
+            BX_CPU_THIS_PTR linaddr_width)) {
+        BX_INFO(("poly_state_import: reject active transition summary pc=%llx sp=%llx caller=%u",
+          (unsigned long long) return_pc,
+          (unsigned long long) transition_cookie, caller_mode));
         return false;
       }
       Bit64u return_rsp = transition_cookie;
