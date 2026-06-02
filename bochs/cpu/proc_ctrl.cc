@@ -5260,11 +5260,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     frame->saved_source_reg2 =
       read_virtual_qword(seg, frame_base + 120);
     if (!IsCanonical(frame->saved_x86_fsbase) ||
-        !IsCanonical(frame->target_x86_fsbase)) {
-      BX_INFO(("poly_state_import: reject import return frame %u fsbase saved=%llx target=%llx",
+        !IsCanonical(frame->target_x86_fsbase) ||
+        !IsCanonical(frame->saved_aarch64_tls_base) ||
+        !IsCanonical(frame->saved_riscv_tls_base)) {
+      BX_INFO(("poly_state_import: reject import return frame %u tls saved_x86=%llx target_x86=%llx aarch64=%llx riscv=%llx",
         n,
         (unsigned long long) frame->saved_x86_fsbase,
-        (unsigned long long) frame->target_x86_fsbase));
+        (unsigned long long) frame->target_x86_fsbase,
+        (unsigned long long) frame->saved_aarch64_tls_base,
+        (unsigned long long) frame->saved_riscv_tls_base));
       return false;
     }
   }
