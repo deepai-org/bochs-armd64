@@ -8848,6 +8848,80 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if ((insn & 0xbfa07c00) == 0x08207c00) {
+    Bit32u size_code = (insn >> 30) & 0x3;
+    Bit32u rs = (insn >> 16) & 0x1f;
+    Bit32u rn = (insn >> 5) & 0x1f;
+    Bit32u rt = insn & 0x1f;
+    Bit32u size = 0;
+    Bit64u base = 0;
+    Bit64u expected0 = 0, expected1 = 0;
+    Bit64u desired0 = 0, desired1 = 0;
+    Bit64u old0 = 0, old1 = 0;
+    bool success = false;
+
+    if (size_code == 0x0)
+      size = 4;
+    else if (size_code == 0x1)
+      size = 8;
+    else
+      return false;
+
+    if ((rs & 1) || (rt & 1) || rs > 28 || rt > 28)
+      return false;
+
+    if (rn == 31)
+      base = RSP;
+    else if (!read_poly_aarch64_reg(rn, &base))
+      return false;
+    if (!read_poly_aarch64_reg(rs, &expected0) ||
+        !read_poly_aarch64_reg(rs + 1, &expected1) ||
+        !read_poly_aarch64_reg(rt, &desired0) ||
+        !read_poly_aarch64_reg(rt + 1, &desired1))
+      return false;
+
+    bx_address addr = (bx_address) base;
+    if (size == 4) {
+      expected0 = (Bit32u) expected0;
+      expected1 = (Bit32u) expected1;
+      desired0 = (Bit32u) desired0;
+      desired1 = (Bit32u) desired1;
+      old0 = read_virtual_dword(BX_SEG_REG_DS, addr);
+      old1 = read_virtual_dword(BX_SEG_REG_DS, addr + 4);
+      success = old0 == expected0 && old1 == expected1;
+      if (success) {
+        write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) desired0);
+        write_virtual_dword(BX_SEG_REG_DS, addr + 4, (Bit32u) desired1);
+        bx_poly_invalidate_reservations_for_store(addr, 8);
+      }
+      if (!write_poly_aarch64_reg(rs, (Bit32u) old0) ||
+          !write_poly_aarch64_reg(rs + 1, (Bit32u) old1))
+        return false;
+    }
+    else {
+      old0 = read_virtual_qword(BX_SEG_REG_DS, addr);
+      old1 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+      success = old0 == expected0 && old1 == expected1;
+      if (success) {
+        write_virtual_qword(BX_SEG_REG_DS, addr, desired0);
+        write_virtual_qword(BX_SEG_REG_DS, addr + 8, desired1);
+        bx_poly_invalidate_reservations_for_store(addr, 16);
+      }
+      if (!write_poly_aarch64_reg(rs, old0) ||
+          !write_poly_aarch64_reg(rs + 1, old1))
+        return false;
+    }
+
+    RIP = next_rip;
+    BX_DEBUG(("poly_raw: emulated aarch64 lse casp %c%u,%c%u,%c%u,%c%u,[rn=%u] addr=%llx old=%llu:%llu desired=%llu:%llu %s",
+      size == 8 ? 'x' : 'w', rs, size == 8 ? 'x' : 'w', rs + 1,
+      size == 8 ? 'x' : 'w', rt, size == 8 ? 'x' : 'w', rt + 1, rn,
+      (unsigned long long) addr, (unsigned long long) old0,
+      (unsigned long long) old1, (unsigned long long) desired0,
+      (unsigned long long) desired1, success ? "success" : "fail"));
+    return true;
+  }
+
   {
     Bit32u fp_fma_op = insn & 0xffe08000;
     if (fp_fma_op == 0x1f000000 || fp_fma_op == 0x1f400000 ||
