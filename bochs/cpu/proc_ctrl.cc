@@ -494,7 +494,6 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_AR
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS = 26;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F64_RET = 27;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET = 28;
-static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE = 29;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
@@ -739,7 +738,6 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
     *register_map = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128;
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS:
-  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE:
     *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE;
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128:
@@ -5868,8 +5866,7 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F64_RET ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET;
 }
 
 static bool bx_poly_arg_kind_requires_memory_side_abi_work(Bit32u kind)
@@ -5892,7 +5889,6 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
   // bridge.
   if (kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
       kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
-      kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
       kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     return true;
@@ -6026,7 +6022,6 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32 ||
@@ -6092,8 +6087,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_poly_return_cookie_sret = sret_call;
   bx_poly_return_cookie_sret_ptr = sret_ptr;
   bx_poly_return_cookie_kind = return_kind;
-  if (source_tls_base ||
-      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE)
+  if (source_tls_base)
     bx_poly_set_runtime_tls_base((bx_address) R13);
   RSP = foreign_stack_rsp;
 
@@ -7268,7 +7262,6 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   const bool maps_fp64_window_to_x86 =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
-    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_SRET_X86_SYSV_REGS ||
@@ -7369,9 +7362,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   // native signature explicitly asks hardware to install process TLS for the
   // callee window; stack overflow args remain exposed through volatile R11.
   bx_address target_x86_fsbase = saved_x86_fsbase;
-  if ((source_tls_base ||
-       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE) &&
-      mode != BX_POLY_MODE_X86) {
+  if (source_tls_base && mode != BX_POLY_MODE_X86) {
     bx_address source_tls_base = bx_poly_tls_base_for_mode(mode);
     if (source_tls_base != 0)
       target_x86_fsbase = source_tls_base;
