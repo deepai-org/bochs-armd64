@@ -15291,6 +15291,15 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u break_id = 0;
     if (!read_poly_riscv_reg(17, &break_id))
       return false;
+    if (break_id > 0xffffffff) {
+      BX_INFO(("poly_raw: reject wide riscv break number=%llx",
+        (unsigned long long) break_id));
+      bx_poly_record_illegal_trap(bx_poly_current_mode, 0xffffffff,
+        4, pc, next_rip);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      return deliver_poly_architectural_trap(pc);
+    }
     return handle_poly_break_trap((Bit32u) break_id, 0, pc, next_rip);
   }
 
@@ -15679,6 +15688,15 @@ bool BX_CPU_C::execute_poly_raw_riscv_compressed(Bit16u insn, bx_address pc)
         Bit64u break_id = 0;
         if (!read_poly_riscv_reg(17, &break_id))
           return false;
+        if (break_id > 0xffffffff) {
+          BX_INFO(("poly_raw: reject wide riscv compressed break number=%llx",
+            (unsigned long long) break_id));
+          bx_poly_record_illegal_trap(bx_poly_current_mode, 0, 2, pc,
+            next_rip);
+          bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+            bx_poly_current_state_key(RSP));
+          return deliver_poly_architectural_trap(pc);
+        }
         return handle_poly_break_trap((Bit32u) break_id, 0, pc, next_rip);
       }
       if (high && rs2 == 0) {
