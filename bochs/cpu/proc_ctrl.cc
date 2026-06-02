@@ -523,6 +523,12 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_ARG = 
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET = 25;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA3_F64_RET = 26;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F64_RET = 27;
+static const Bit32u BX_POLY_X86_CTRL_PREFIX_0 = 0x0f;
+static const Bit32u BX_POLY_X86_CTRL_PREFIX_1 = 0x3a;
+static const Bit32u BX_POLY_X86_CTRL_PREFIX_2 = 0xfc;
+static const Bit32u BX_POLY_X86_CTRL_PREFIX_BYTES = 3;
+static const Bit32u BX_POLY_X86_CTRL_TOTAL_BYTES = 4;
+static const Bit32u BX_POLY_X86_CTRL_SUBOP_OFFSET = 3;
 static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
 static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
@@ -17056,6 +17062,14 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RBX = BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS;
       RCX = 0;
       RDX = 0;
+    }
+    else if (ECX == 32) {
+      RAX = BX_POLY_X86_CTRL_PREFIX_0 |
+            (BX_POLY_X86_CTRL_PREFIX_1 << 8) |
+            (BX_POLY_X86_CTRL_PREFIX_2 << 16);
+      RBX = BX_POLY_X86_CTRL_PREFIX_BYTES;
+      RCX = BX_POLY_X86_CTRL_TOTAL_BYTES;
+      RDX = BX_POLY_X86_CTRL_SUBOP_OFFSET;
     }
     else {
       RAX = 0;
