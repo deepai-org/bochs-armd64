@@ -70,7 +70,7 @@ struct bx_poly_trap_packet {
   Bit64u args[8];
 };
 
-struct bx_poly_trap_saved_regs {
+struct bx_poly_trap_saved_regs_t {
   bool valid;
   Bit32u mode;
   Bit64u rax;
@@ -108,7 +108,7 @@ struct bx_poly_trap_saved_regs {
   Bit32u riscv_frm;
 };
 
-static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
+static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs_t *regs)
 {
   regs->valid = false;
   regs->mode = BX_POLY_MODE_X86;
@@ -850,108 +850,224 @@ static void bx_poly_reset_abi_signature_slots(
     BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS);
 }
 
-static Bit32u bx_poly_current_mode = BX_POLY_MODE_X86;
-static bx_address bx_poly_raw_owner_cr3 = 0;
-static bx_address bx_poly_raw_owner_fsbase = 0;
-static bx_address bx_poly_raw_owner_stack_key = 0;
-static bool bx_poly_explicit_state_key_valid = false;
-static bx_address bx_poly_explicit_state_key = 0;
-static bx_address bx_poly_explicit_state_key_owner_cr3 = 0;
-static bx_address bx_poly_explicit_state_key_owner_fsbase = 0;
-static Bit64u bx_poly_mode_switch_count = 0;
-static Bit64u bx_poly_foreign_insn_count = 0;
-static Bit64u bx_poly_foreign_syscall_count = 0;
-static Bit64u bx_poly_foreign_break_count = 0;
-static Bit64u bx_poly_foreign_import_count = 0;
-static Bit32u bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
-static Bit32u bx_poly_last_syscall_number = 0;
-static Bit32u bx_poly_last_break_mode = BX_POLY_MODE_X86;
-static Bit32u bx_poly_last_break_number = 0;
-static bx_poly_trap_packet bx_poly_last_trap = {
-  BX_POLY_TRAP_NONE,
-  BX_POLY_MODE_X86,
-  0,
-  0,
-  0,
-  0,
-  { 0, 0, 0, 0, 0, 0, 0, 0 }
+struct bx_poly_cpu_runtime_state_t {
+  bx_poly_cpu_runtime_state_t()
+  {
+    reset();
+  }
+
+  void reset()
+  {
+    memset(this, 0, sizeof(*this));
+    current_mode = BX_POLY_MODE_X86;
+    last_syscall_mode = BX_POLY_MODE_X86;
+    last_break_mode = BX_POLY_MODE_X86;
+    return_cookie_mode = BX_POLY_MODE_X86;
+    return_cookie_kind = BX_POLY_RETURN_KIND_DEFAULT;
+    interrupted_raw_mode = BX_POLY_MODE_X86;
+    trap_vector_mode = BX_POLY_MODE_X86;
+    last_trap.reason = BX_POLY_TRAP_NONE;
+    last_trap.mode = BX_POLY_MODE_X86;
+    trap_saved_regs.mode = BX_POLY_MODE_X86;
+    bx_poly_reset_abi_signature_slots(abi_signature_slots);
+  }
+
+  Bit32u current_mode;
+  bx_address raw_owner_cr3;
+  bx_address raw_owner_fsbase;
+  bx_address raw_owner_stack_key;
+  bool explicit_state_key_valid;
+  bx_address explicit_state_key;
+  bx_address explicit_state_key_owner_cr3;
+  bx_address explicit_state_key_owner_fsbase;
+  Bit64u mode_switch_count;
+  Bit64u foreign_insn_count;
+  Bit64u foreign_syscall_count;
+  Bit64u foreign_break_count;
+  Bit64u foreign_import_count;
+  Bit32u last_syscall_mode;
+  Bit32u last_syscall_number;
+  Bit32u last_break_mode;
+  Bit32u last_break_number;
+  bx_poly_trap_packet last_trap;
+  bx_poly_trap_saved_regs_t trap_saved_regs;
+  bool return_cookie_valid;
+  Bit32u return_cookie_mode;
+  bx_address return_cookie_rip;
+  bx_address return_cookie_rsp;
+  bool return_cookie_sret;
+  bx_address return_cookie_sret_ptr;
+  Bit32u return_cookie_kind;
+  bx_poly_return_cookie_frame_t return_cookie_stack[BX_POLY_RETURN_COOKIE_DEPTH];
+  unsigned return_cookie_top;
+  bx_poly_abi_signature_slot_t abi_signature_slots[
+    BX_POLY_ABI_SIGNATURE_SLOT_COUNT];
+  bx_poly_cross_return_frame_t cross_return_stack[
+    BX_POLY_CROSS_RETURN_DEPTH];
+  unsigned cross_return_top;
+  bx_poly_import_x86_return_frame_t import_x86_return_stack[
+    BX_POLY_IMPORT_RETURN_DEPTH];
+  unsigned import_x86_return_top;
+  bool interrupted_raw_valid;
+  Bit32u interrupted_raw_mode;
+  bx_address interrupted_raw_rip;
+  bx_address aarch64_tls_base;
+  bx_address riscv_tls_base;
+  Bit64u landing_policy_flags;
+  bx_address trap_vector;
+  Bit32u trap_vector_mode;
+  Bit64u aarch64_x[32];
+  bool aarch64_x_valid[32];
+  Bit64u aarch64_fp[32];
+  Bit64u aarch64_fp_hi[32];
+  Bit32u aarch64_nzcv;
+  Bit32u aarch64_fpcr;
+  Bit32u aarch64_fpsr;
+  bool aarch64_reservation_valid;
+  bx_address aarch64_reservation_addr;
+  Bit32u aarch64_reservation_size;
+  Bit64u riscv_x[32];
+  bool riscv_x_valid[32];
+  Bit64u riscv_fp[32];
+  Bit64u riscv_fp_hi[32];
+  Bit32u riscv_fflags;
+  Bit32u riscv_frm;
+  bool riscv_reservation_valid;
+  bx_address riscv_reservation_addr;
+  Bit32u riscv_reservation_size;
+  bx_address monitor_packet_addr;
 };
-static bx_poly_trap_saved_regs bx_poly_trap_saved_regs = {
-  false,
-  BX_POLY_MODE_X86
-};
-static bool bx_poly_return_cookie_valid = false;
-static Bit32u bx_poly_return_cookie_mode = BX_POLY_MODE_X86;
-static bx_address bx_poly_return_cookie_rip = 0;
-static bx_address bx_poly_return_cookie_rsp = 0;
-static bool bx_poly_return_cookie_sret = false;
-static bx_address bx_poly_return_cookie_sret_ptr = 0;
-static Bit32u bx_poly_return_cookie_kind = BX_POLY_RETURN_KIND_DEFAULT;
-static bx_poly_return_cookie_frame_t
-  bx_poly_return_cookie_stack[BX_POLY_RETURN_COOKIE_DEPTH];
-static unsigned bx_poly_return_cookie_top = 0;
-static bx_poly_abi_signature_slot_t bx_poly_abi_signature_slots[
-  BX_POLY_ABI_SIGNATURE_SLOT_COUNT] = {
-  { BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE,
-    BX_POLY_ABI_REGISTER_MAP_EXCHANGE },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS,
-    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128,
-    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_I128 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_VEC128_U32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_U32_F32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_COMPACT_F32_U32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_FP64 },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_FP32 },
-  { BX_POLY_ABI_SIGNATURE_KIND_SRET_X86_SYSV_REGS,
-    BX_POLY_ABI_REGISTER_MAP_SRET_X86_SYSV_TO_NATIVE },
-  { BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FP128_RET,
-    BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_FP128_RET },
-  { BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS,
-    BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET }
-};
-static bx_poly_cross_return_frame_t bx_poly_cross_return_stack[BX_POLY_CROSS_RETURN_DEPTH];
-static unsigned bx_poly_cross_return_top = 0;
-static bx_poly_import_x86_return_frame_t
-  bx_poly_import_x86_return_stack[BX_POLY_IMPORT_RETURN_DEPTH];
-static unsigned bx_poly_import_x86_return_top = 0;
-static bool bx_poly_interrupted_raw_valid = false;
-static Bit32u bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
-static bx_address bx_poly_interrupted_raw_rip = 0;
-static bx_address bx_poly_aarch64_tls_base = 0;
-static bx_address bx_poly_riscv_tls_base = 0;
-static Bit64u bx_poly_landing_policy_flags = 0;
-static bx_address bx_poly_trap_vector = 0;
-static Bit32u bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
-static Bit64u bx_poly_aarch64_x[32];
-static bool bx_poly_aarch64_x_valid[32];
-static Bit64u bx_poly_aarch64_fp[32];
-static Bit64u bx_poly_aarch64_fp_hi[32];
-static Bit32u bx_poly_aarch64_nzcv = 0;
-static Bit32u bx_poly_aarch64_fpcr = 0;
-static Bit32u bx_poly_aarch64_fpsr = 0;
-static bool bx_poly_aarch64_reservation_valid = false;
-static bx_address bx_poly_aarch64_reservation_addr = 0;
-static Bit32u bx_poly_aarch64_reservation_size = 0;
-static Bit64u bx_poly_riscv_x[32];
-static bool bx_poly_riscv_x_valid[32];
-static Bit64u bx_poly_riscv_fp[32];
-static Bit64u bx_poly_riscv_fp_hi[32];
-static Bit32u bx_poly_riscv_fflags = 0;
-static Bit32u bx_poly_riscv_frm = 0;
-static bool bx_poly_riscv_reservation_valid = false;
-static bx_address bx_poly_riscv_reservation_addr = 0;
-static Bit32u bx_poly_riscv_reservation_size = 0;
-static bx_address bx_poly_monitor_packet_addr = 0;
+
+static bx_poly_cpu_runtime_state_t bx_poly_cpu_runtime_states[
+  BX_MAX_SMP_THREADS_SUPPORTED];
+
+static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
+{
+  return bx_poly_cpu_runtime_states[BX_CPU_ID];
+}
+
+#define bx_poly_current_mode \
+  (bx_poly_cpu_runtime_state().current_mode)
+#define bx_poly_raw_owner_cr3 \
+  (bx_poly_cpu_runtime_state().raw_owner_cr3)
+#define bx_poly_raw_owner_fsbase \
+  (bx_poly_cpu_runtime_state().raw_owner_fsbase)
+#define bx_poly_raw_owner_stack_key \
+  (bx_poly_cpu_runtime_state().raw_owner_stack_key)
+#define bx_poly_explicit_state_key_valid \
+  (bx_poly_cpu_runtime_state().explicit_state_key_valid)
+#define bx_poly_explicit_state_key \
+  (bx_poly_cpu_runtime_state().explicit_state_key)
+#define bx_poly_explicit_state_key_owner_cr3 \
+  (bx_poly_cpu_runtime_state().explicit_state_key_owner_cr3)
+#define bx_poly_explicit_state_key_owner_fsbase \
+  (bx_poly_cpu_runtime_state().explicit_state_key_owner_fsbase)
+#define bx_poly_mode_switch_count \
+  (bx_poly_cpu_runtime_state().mode_switch_count)
+#define bx_poly_foreign_insn_count \
+  (bx_poly_cpu_runtime_state().foreign_insn_count)
+#define bx_poly_foreign_syscall_count \
+  (bx_poly_cpu_runtime_state().foreign_syscall_count)
+#define bx_poly_foreign_break_count \
+  (bx_poly_cpu_runtime_state().foreign_break_count)
+#define bx_poly_foreign_import_count \
+  (bx_poly_cpu_runtime_state().foreign_import_count)
+#define bx_poly_last_syscall_mode \
+  (bx_poly_cpu_runtime_state().last_syscall_mode)
+#define bx_poly_last_syscall_number \
+  (bx_poly_cpu_runtime_state().last_syscall_number)
+#define bx_poly_last_break_mode \
+  (bx_poly_cpu_runtime_state().last_break_mode)
+#define bx_poly_last_break_number \
+  (bx_poly_cpu_runtime_state().last_break_number)
+#define bx_poly_last_trap \
+  (bx_poly_cpu_runtime_state().last_trap)
+#define bx_poly_trap_saved_regs \
+  (bx_poly_cpu_runtime_state().trap_saved_regs)
+#define bx_poly_return_cookie_valid \
+  (bx_poly_cpu_runtime_state().return_cookie_valid)
+#define bx_poly_return_cookie_mode \
+  (bx_poly_cpu_runtime_state().return_cookie_mode)
+#define bx_poly_return_cookie_rip \
+  (bx_poly_cpu_runtime_state().return_cookie_rip)
+#define bx_poly_return_cookie_rsp \
+  (bx_poly_cpu_runtime_state().return_cookie_rsp)
+#define bx_poly_return_cookie_sret \
+  (bx_poly_cpu_runtime_state().return_cookie_sret)
+#define bx_poly_return_cookie_sret_ptr \
+  (bx_poly_cpu_runtime_state().return_cookie_sret_ptr)
+#define bx_poly_return_cookie_kind \
+  (bx_poly_cpu_runtime_state().return_cookie_kind)
+#define bx_poly_return_cookie_stack \
+  (bx_poly_cpu_runtime_state().return_cookie_stack)
+#define bx_poly_return_cookie_top \
+  (bx_poly_cpu_runtime_state().return_cookie_top)
+#define bx_poly_abi_signature_slots \
+  (bx_poly_cpu_runtime_state().abi_signature_slots)
+#define bx_poly_cross_return_stack \
+  (bx_poly_cpu_runtime_state().cross_return_stack)
+#define bx_poly_cross_return_top \
+  (bx_poly_cpu_runtime_state().cross_return_top)
+#define bx_poly_import_x86_return_stack \
+  (bx_poly_cpu_runtime_state().import_x86_return_stack)
+#define bx_poly_import_x86_return_top \
+  (bx_poly_cpu_runtime_state().import_x86_return_top)
+#define bx_poly_interrupted_raw_valid \
+  (bx_poly_cpu_runtime_state().interrupted_raw_valid)
+#define bx_poly_interrupted_raw_mode \
+  (bx_poly_cpu_runtime_state().interrupted_raw_mode)
+#define bx_poly_interrupted_raw_rip \
+  (bx_poly_cpu_runtime_state().interrupted_raw_rip)
+#define bx_poly_aarch64_tls_base \
+  (bx_poly_cpu_runtime_state().aarch64_tls_base)
+#define bx_poly_riscv_tls_base \
+  (bx_poly_cpu_runtime_state().riscv_tls_base)
+#define bx_poly_landing_policy_flags \
+  (bx_poly_cpu_runtime_state().landing_policy_flags)
+#define bx_poly_trap_vector \
+  (bx_poly_cpu_runtime_state().trap_vector)
+#define bx_poly_trap_vector_mode \
+  (bx_poly_cpu_runtime_state().trap_vector_mode)
+#define bx_poly_aarch64_x \
+  (bx_poly_cpu_runtime_state().aarch64_x)
+#define bx_poly_aarch64_x_valid \
+  (bx_poly_cpu_runtime_state().aarch64_x_valid)
+#define bx_poly_aarch64_fp \
+  (bx_poly_cpu_runtime_state().aarch64_fp)
+#define bx_poly_aarch64_fp_hi \
+  (bx_poly_cpu_runtime_state().aarch64_fp_hi)
+#define bx_poly_aarch64_nzcv \
+  (bx_poly_cpu_runtime_state().aarch64_nzcv)
+#define bx_poly_aarch64_fpcr \
+  (bx_poly_cpu_runtime_state().aarch64_fpcr)
+#define bx_poly_aarch64_fpsr \
+  (bx_poly_cpu_runtime_state().aarch64_fpsr)
+#define bx_poly_aarch64_reservation_valid \
+  (bx_poly_cpu_runtime_state().aarch64_reservation_valid)
+#define bx_poly_aarch64_reservation_addr \
+  (bx_poly_cpu_runtime_state().aarch64_reservation_addr)
+#define bx_poly_aarch64_reservation_size \
+  (bx_poly_cpu_runtime_state().aarch64_reservation_size)
+#define bx_poly_riscv_x \
+  (bx_poly_cpu_runtime_state().riscv_x)
+#define bx_poly_riscv_x_valid \
+  (bx_poly_cpu_runtime_state().riscv_x_valid)
+#define bx_poly_riscv_fp \
+  (bx_poly_cpu_runtime_state().riscv_fp)
+#define bx_poly_riscv_fp_hi \
+  (bx_poly_cpu_runtime_state().riscv_fp_hi)
+#define bx_poly_riscv_fflags \
+  (bx_poly_cpu_runtime_state().riscv_fflags)
+#define bx_poly_riscv_frm \
+  (bx_poly_cpu_runtime_state().riscv_frm)
+#define bx_poly_riscv_reservation_valid \
+  (bx_poly_cpu_runtime_state().riscv_reservation_valid)
+#define bx_poly_riscv_reservation_addr \
+  (bx_poly_cpu_runtime_state().riscv_reservation_addr)
+#define bx_poly_riscv_reservation_size \
+  (bx_poly_cpu_runtime_state().riscv_reservation_size)
+#define bx_poly_monitor_packet_addr \
+  (bx_poly_cpu_runtime_state().monitor_packet_addr)
 
 enum {
   BX_POLY_AARCH64_NZCV_MASK = 0xf,
@@ -1020,7 +1136,7 @@ struct bx_poly_reg_state_t {
   Bit32u last_break_mode;
   Bit32u last_break_number;
   bx_poly_trap_packet last_trap;
-  struct bx_poly_trap_saved_regs trap_saved_regs;
+  bx_poly_trap_saved_regs_t trap_saved_regs;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1185,14 +1301,49 @@ bool BX_CPU_C::bx_poly_require_landing_target(unsigned seg, bx_address target,
   return false;
 }
 
-static bx_poly_reg_state_t bx_poly_reg_states[BX_POLY_REG_STATE_SLOTS];
-static bx_poly_thread_key_state_t
-  bx_poly_thread_key_states[BX_POLY_REG_STATE_SLOTS];
-static bool bx_poly_loaded_reg_state_valid = false;
-static bx_address bx_poly_loaded_reg_state_cr3 = 0;
-static bx_address bx_poly_loaded_reg_state_fsbase = 0;
-static bx_address bx_poly_loaded_reg_state_stack_key = 0;
-static Bit64u bx_poly_reg_state_age = 1;
+struct bx_poly_cpu_bank_state_t {
+  bx_poly_cpu_bank_state_t()
+  {
+    reset();
+  }
+
+  void reset()
+  {
+    memset(this, 0, sizeof(*this));
+    reg_state_age = 1;
+  }
+
+  bx_poly_reg_state_t reg_states[BX_POLY_REG_STATE_SLOTS];
+  bx_poly_thread_key_state_t thread_key_states[BX_POLY_REG_STATE_SLOTS];
+  bool loaded_reg_state_valid;
+  bx_address loaded_reg_state_cr3;
+  bx_address loaded_reg_state_fsbase;
+  bx_address loaded_reg_state_stack_key;
+  Bit64u reg_state_age;
+};
+
+static bx_poly_cpu_bank_state_t bx_poly_cpu_bank_states[
+  BX_MAX_SMP_THREADS_SUPPORTED];
+
+static inline bx_poly_cpu_bank_state_t& bx_poly_cpu_bank_state()
+{
+  return bx_poly_cpu_bank_states[BX_CPU_ID];
+}
+
+#define bx_poly_reg_states \
+  (bx_poly_cpu_bank_state().reg_states)
+#define bx_poly_thread_key_states \
+  (bx_poly_cpu_bank_state().thread_key_states)
+#define bx_poly_loaded_reg_state_valid \
+  (bx_poly_cpu_bank_state().loaded_reg_state_valid)
+#define bx_poly_loaded_reg_state_cr3 \
+  (bx_poly_cpu_bank_state().loaded_reg_state_cr3)
+#define bx_poly_loaded_reg_state_fsbase \
+  (bx_poly_cpu_bank_state().loaded_reg_state_fsbase)
+#define bx_poly_loaded_reg_state_stack_key \
+  (bx_poly_cpu_bank_state().loaded_reg_state_stack_key)
+#define bx_poly_reg_state_age \
+  (bx_poly_cpu_bank_state().reg_state_age)
 
 static double bx_poly_fp64_from_bits(Bit64u bits)
 {
@@ -4442,7 +4593,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     BX_POLY_CROSS_RETURN_DEPTH] = {};
   bx_poly_import_x86_return_frame_t
     import_return_frames[BX_POLY_IMPORT_RETURN_DEPTH] = {};
-  struct bx_poly_trap_saved_regs imported_trap_restore;
+  bx_poly_trap_saved_regs_t imported_trap_restore;
   bx_poly_clear_trap_saved_regs(&imported_trap_restore);
   Bit64u tls_flags = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET);
@@ -15229,7 +15380,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
   Bit32u trap_mode = delivered_trap.mode;
   bx_address trap_vector = bx_poly_trap_vector;
   Bit32u trap_vector_mode = bx_poly_trap_vector_mode;
-  struct bx_poly_trap_saved_regs saved_regs;
+  bx_poly_trap_saved_regs_t saved_regs;
 
   bx_poly_clear_trap_saved_regs(&saved_regs);
   bx_poly_clear_trap_packet(&bx_poly_last_trap);
