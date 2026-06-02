@@ -492,6 +492,7 @@ static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_AR
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS = 26;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F64_RET = 27;
 static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET = 28;
+static const Bit32u BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE = 29;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_EXCHANGE = 0;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE = 1;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128 = 2;
@@ -668,6 +669,9 @@ struct bx_poly_import_x86_return_frame_t {
   Bit64u alias[6];
   bx_address saved_x86_fsbase;
   bx_address target_x86_fsbase;
+  bx_address saved_aarch64_tls_base;
+  bx_address saved_riscv_tls_base;
+  Bit64u saved_source_reg2;
 };
 
 struct bx_poly_return_cookie_frame_t {
@@ -698,6 +702,7 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
     *register_map = BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_NATIVE_I128;
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS:
+  case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE:
     *register_map = BX_POLY_ABI_REGISTER_MAP_NATIVE;
     return true;
   case BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128:
@@ -3446,6 +3451,9 @@ static void bx_poly_reset_import_x86_return_frame(
     frame->alias[n] = 0;
   frame->saved_x86_fsbase = 0;
   frame->target_x86_fsbase = 0;
+  frame->saved_aarch64_tls_base = 0;
+  frame->saved_riscv_tls_base = 0;
+  frame->saved_source_reg2 = 0;
 }
 
 static void bx_poly_reset_current_xstate(void)
@@ -4462,6 +4470,12 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
         frame->alias[alias]);
     write_virtual_qword(seg, frame_base + 88, frame->saved_x86_fsbase);
     write_virtual_qword(seg, frame_base + 96, frame->target_x86_fsbase);
+    write_virtual_qword(seg, frame_base + 104,
+      frame->saved_aarch64_tls_base);
+    write_virtual_qword(seg, frame_base + 112,
+      frame->saved_riscv_tls_base);
+    write_virtual_qword(seg, frame_base + 120,
+      frame->saved_source_reg2);
   }
 
   write_virtual_qword(seg,
@@ -5167,6 +5181,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         read_virtual_qword(seg, frame_base + 40 + alias * 8);
     frame->saved_x86_fsbase = read_virtual_qword(seg, frame_base + 88);
     frame->target_x86_fsbase = read_virtual_qword(seg, frame_base + 96);
+    frame->saved_aarch64_tls_base =
+      read_virtual_qword(seg, frame_base + 104);
+    frame->saved_riscv_tls_base =
+      read_virtual_qword(seg, frame_base + 112);
+    frame->saved_source_reg2 =
+      read_virtual_qword(seg, frame_base + 120);
     if (!IsCanonical(frame->saved_x86_fsbase) ||
         !IsCanonical(frame->target_x86_fsbase)) {
       BX_INFO(("poly_state_import: reject import return frame %u fsbase saved=%llx target=%llx",
@@ -5175,9 +5195,6 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         (unsigned long long) frame->target_x86_fsbase));
       return false;
     }
-    if (!reserved_qwords_are_zero(
-          frame_base + 104 - base, 24, "import return frame"))
-      return false;
   }
   for (unsigned n = import_top; n < BX_POLY_IMPORT_RETURN_DEPTH; n++) {
     Bit32u frame_offset = BX_POLY_STATE_XSAVE_IMPORT_RETURN_FRAMES_OFFSET +
@@ -5710,7 +5727,8 @@ static bool bx_poly_valid_abi_signature_kind(Bit32u kind)
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F32_ARG ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_SRET_REGS ||
     kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA3_F64_RET ||
-    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET;
+    kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_AARCH64_HFA4_F64_RET ||
+    kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE;
 }
 
 static bool bx_poly_arg_kind_requires_memory_side_abi_work(Bit32u kind)
@@ -5733,6 +5751,7 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
   // bridge.
   if (kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE ||
       kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+      kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
       kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128) {
     *bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     return true;
@@ -5866,6 +5885,7 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   else if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP64 ||
       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_FP32 ||
@@ -6922,6 +6942,8 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
   if (frame.target_x86_fsbase != 0 || frame.saved_x86_fsbase != 0)
     MSR_FSBASE = frame.saved_x86_fsbase;
   bx_poly_current_mode = return_mode;
+  bx_poly_aarch64_tls_base = frame.saved_aarch64_tls_base;
+  bx_poly_riscv_tls_base = frame.saved_riscv_tls_base;
   bx_poly_prepare_tls_for_mode(return_mode);
   RIP = return_rip;
   RSP = return_rsp;
@@ -6934,6 +6956,12 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
     RCX = frame.alias[3];
     R8 = frame.alias[4];
     R9 = frame.alias[5];
+  }
+  if (import_id == BX_POLY_DIRECT_X86_IMPORT_ID) {
+    if (return_mode == BX_POLY_MODE_RAW_AARCH64)
+      write_poly_aarch64_reg(2, frame.saved_source_reg2);
+    else if (return_mode == BX_POLY_MODE_RAW_RISCV)
+      write_poly_riscv_reg(12, frame.saved_source_reg2);
   }
 
   bool mapped = false;
@@ -7088,6 +7116,7 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   const bool maps_fp64_window_to_x86 =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS ||
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_I128 ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_I128 ||
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_SRET_X86_SYSV_REGS ||
@@ -7176,11 +7205,15 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
 
   bx_address foreign_rsp = RSP;
   bx_address saved_x86_fsbase = MSR_FSBASE;
+  // Direct imports normally run ordinary x86_64 code on x86 TLS. A TLS-aware
+  // native signature explicitly asks hardware to install process TLS for the
+  // callee window; stack overflow args remain exposed through volatile R11.
   bx_address target_x86_fsbase = saved_x86_fsbase;
-  if (mode != BX_POLY_MODE_X86) {
-    bx_address foreign_tls_base = bx_poly_tls_base_for_mode(mode);
-    if (foreign_tls_base != 0)
-      target_x86_fsbase = foreign_tls_base;
+  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE &&
+      mode != BX_POLY_MODE_X86) {
+    bx_address source_tls_base = bx_poly_tls_base_for_mode(mode);
+    if (source_tls_base != 0)
+      target_x86_fsbase = source_tls_base;
   }
   bx_address x86_stack_base = bx_poly_return_cookie_valid ?
     bx_poly_return_cookie_rsp : RSP;
@@ -7234,6 +7267,9 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   }
   frame->saved_x86_fsbase = saved_x86_fsbase;
   frame->target_x86_fsbase = target_x86_fsbase;
+  frame->saved_aarch64_tls_base = bx_poly_aarch64_tls_base;
+  frame->saved_riscv_tls_base = bx_poly_riscv_tls_base;
+  frame->saved_source_reg2 = args[2];
 
   // User-space ABI thunks need the source stack for overflow arguments.
   // R11 is volatile in the x86_64 SysV ABI, so exposing it here does not add
@@ -7323,8 +7359,6 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     (unsigned long long) return_rip));
   bx_poly_current_mode = BX_POLY_MODE_X86;
   MSR_FSBASE = target_x86_fsbase;
-  if (mode != BX_POLY_MODE_X86 && target_x86_fsbase != 0)
-    R13 = target_x86_fsbase;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   RIP = target_rip;
@@ -8668,6 +8702,100 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       BX_DEBUG(("poly_raw: emulated aarch64 %s w%u,%c%u,[rn=%u] addr=%llx %s",
         acquire_release ? "stlxr" : "stxr", rs, size == 8 ? 'x' : 'w', rt,
         rn, (unsigned long long) addr, success ? "success" : "fail"));
+      return true;
+    }
+  }
+
+  {
+    Bit32u pair_exclusive_op = insn & 0x3fe00000;
+    Bit32u size_code = (insn >> 30) & 0x3;
+    if ((pair_exclusive_op == 0x08600000 ||
+         pair_exclusive_op == 0x08200000) &&
+        (size_code == 0x2 || size_code == 0x3)) {
+      Bit32u rt = insn & 0x1f;
+      Bit32u rn = (insn >> 5) & 0x1f;
+      Bit32u rt2 = (insn >> 10) & 0x1f;
+      Bit32u rs = (insn >> 16) & 0x1f;
+      Bit32u op21 = (insn >> 21) & 0x7;
+      bool is_load = op21 == 0x3;
+      bool is_store = op21 == 0x1;
+      bool acquire_release = (insn & 0x00008000) != 0;
+      Bit32u element_size = 0;
+      Bit64u base = 0;
+
+      if (size_code == 0x2)
+        element_size = 4;
+      else if (size_code == 0x3)
+        element_size = 8;
+
+      if (!is_load && !is_store)
+        return false;
+
+      if (rn == 31)
+        base = RSP;
+      else if (!read_poly_aarch64_reg(rn, &base))
+        return false;
+
+      bx_address addr = (bx_address) base;
+      Bit32u reservation_size = element_size * 2;
+
+      if (is_load) {
+        Bit64u value0 = 0, value1 = 0;
+        if (rs != 31)
+          return false;
+        if (element_size == 4) {
+          value0 = read_virtual_dword(BX_SEG_REG_DS, addr);
+          value1 = read_virtual_dword(BX_SEG_REG_DS, addr + 4);
+        }
+        else {
+          value0 = read_virtual_qword(BX_SEG_REG_DS, addr);
+          value1 = read_virtual_qword(BX_SEG_REG_DS, addr + 8);
+        }
+        bx_poly_aarch64_reservation_valid = true;
+        bx_poly_aarch64_reservation_addr = addr;
+        bx_poly_aarch64_reservation_size = reservation_size;
+        if (!write_poly_aarch64_reg(rt, element_size == 4 ? (Bit32u) value0 : value0) ||
+            !write_poly_aarch64_reg(rt2, element_size == 4 ? (Bit32u) value1 : value1))
+          return false;
+        RIP = next_rip;
+        BX_DEBUG(("poly_raw: emulated aarch64 %s %c%u,%c%u,[rn=%u] addr=%llx value=%llu:%llu",
+          acquire_release ? "ldaxp" : "ldxp",
+          element_size == 8 ? 'x' : 'w', rt,
+          element_size == 8 ? 'x' : 'w', rt2, rn,
+          (unsigned long long) addr, (unsigned long long) value0,
+          (unsigned long long) value1));
+        return true;
+      }
+
+      Bit64u value0 = 0, value1 = 0;
+      bool success = bx_poly_aarch64_reservation_valid &&
+        bx_poly_aarch64_reservation_addr == addr &&
+        bx_poly_aarch64_reservation_size == reservation_size;
+      if (!read_poly_aarch64_reg(rt, &value0) ||
+          !read_poly_aarch64_reg(rt2, &value1))
+        return false;
+      if (success) {
+        if (element_size == 4) {
+          write_virtual_dword(BX_SEG_REG_DS, addr, (Bit32u) value0);
+          write_virtual_dword(BX_SEG_REG_DS, addr + 4, (Bit32u) value1);
+        }
+        else {
+          write_virtual_qword(BX_SEG_REG_DS, addr, value0);
+          write_virtual_qword(BX_SEG_REG_DS, addr + 8, value1);
+        }
+        bx_poly_invalidate_reservations_for_store(addr, reservation_size);
+      }
+      bx_poly_aarch64_reservation_valid = false;
+      bx_poly_aarch64_reservation_addr = 0;
+      bx_poly_aarch64_reservation_size = 0;
+      if (!write_poly_aarch64_reg(rs, success ? 0 : 1))
+        return false;
+      RIP = next_rip;
+      BX_DEBUG(("poly_raw: emulated aarch64 %s w%u,%c%u,%c%u,[rn=%u] addr=%llx %s",
+        acquire_release ? "stlxp" : "stxp", rs,
+        element_size == 8 ? 'x' : 'w', rt,
+        element_size == 8 ? 'x' : 'w', rt2, rn,
+        (unsigned long long) addr, success ? "success" : "fail"));
       return true;
     }
   }
