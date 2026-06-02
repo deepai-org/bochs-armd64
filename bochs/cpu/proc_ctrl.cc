@@ -151,6 +151,18 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs *regs)
   }
 }
 
+static void bx_poly_clear_trap_packet(bx_poly_trap_packet *trap)
+{
+  trap->reason = BX_POLY_TRAP_NONE;
+  trap->mode = BX_POLY_MODE_X86;
+  trap->number = 0;
+  trap->selector = 0;
+  trap->pc = 0;
+  trap->next_pc = 0;
+  for (unsigned n = 0; n < sizeof(trap->args) / sizeof(trap->args[0]); n++)
+    trap->args[n] = 0;
+}
+
 static inline Bit32u BX_POLY_AARCH64_CTRL(Bit32u subop)
 {
   return 0xd503201fU | ((subop & 0x7fU) << 5);
@@ -837,7 +849,7 @@ static bx_poly_trap_packet bx_poly_last_trap = {
   0,
   0,
   0,
-  { 0, 0, 0, 0, 0, 0 }
+  { 0, 0, 0, 0, 0, 0, 0, 0 }
 };
 static bx_poly_trap_saved_regs bx_poly_trap_saved_regs = {
   false,
@@ -3237,14 +3249,7 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_last_syscall_number = 0;
   bx_poly_last_break_mode = BX_POLY_MODE_X86;
   bx_poly_last_break_number = 0;
-  bx_poly_last_trap.reason = BX_POLY_TRAP_NONE;
-  bx_poly_last_trap.mode = BX_POLY_MODE_X86;
-  bx_poly_last_trap.number = 0;
-  bx_poly_last_trap.selector = 0;
-  bx_poly_last_trap.pc = 0;
-  bx_poly_last_trap.next_pc = 0;
-  for (unsigned n = 0; n < 8; n++)
-    bx_poly_last_trap.args[n] = 0;
+  bx_poly_clear_trap_packet(&bx_poly_last_trap);
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   bx_poly_reset_aarch64_regs();
   bx_poly_reset_riscv_regs();
@@ -3358,14 +3363,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].last_syscall_number = 0;
   bx_poly_reg_states[victim].last_break_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].last_break_number = 0;
-  bx_poly_reg_states[victim].last_trap.reason = BX_POLY_TRAP_NONE;
-  bx_poly_reg_states[victim].last_trap.mode = BX_POLY_MODE_X86;
-  bx_poly_reg_states[victim].last_trap.number = 0;
-  bx_poly_reg_states[victim].last_trap.selector = 0;
-  bx_poly_reg_states[victim].last_trap.pc = 0;
-  bx_poly_reg_states[victim].last_trap.next_pc = 0;
-  for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
-    bx_poly_reg_states[victim].last_trap.args[n] = 0;
+  bx_poly_clear_trap_packet(&bx_poly_reg_states[victim].last_trap);
   bx_poly_clear_trap_saved_regs(&bx_poly_reg_states[victim].trap_saved_regs);
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
   bx_poly_reg_states[victim].aarch64_fpcr = 0;
@@ -3719,9 +3717,10 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_STATE_KEY;
 }
 
-static Bit64u bx_poly_trap_packet_flags_for(bool trap_return_restore)
+static Bit64u bx_poly_trap_packet_flags_for(const bx_poly_trap_packet *trap,
+  bool trap_return_restore)
 {
-  if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE)
+  if (trap->reason == BX_POLY_TRAP_NONE)
     return 0;
   Bit64u flags = BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
     BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS;
@@ -3737,13 +3736,14 @@ static Bit64u bx_poly_trap_packet_flags_for(bool trap_return_restore)
 
 static Bit64u bx_poly_trap_packet_flags(void)
 {
-  return bx_poly_trap_packet_flags_for(bx_poly_trap_saved_regs.valid);
+  return bx_poly_trap_packet_flags_for(&bx_poly_last_trap,
+    bx_poly_trap_saved_regs.valid);
 }
 
 static Bit64u bx_poly_xsave_trap_packet_flags(void)
 {
   // The XSAVE area does not carry the hidden monitor-register restore snapshot.
-  return bx_poly_trap_packet_flags_for(false);
+  return bx_poly_trap_packet_flags_for(&bx_poly_last_trap, false);
 }
 
 static bool bx_poly_valid_abi_signature_kind(Bit32u kind);
@@ -14885,13 +14885,20 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 
 bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
 {
-  Bit32u trap_mode = bx_poly_last_trap.mode;
+  bx_poly_trap_packet delivered_trap = bx_poly_last_trap;
+  Bit32u trap_mode = delivered_trap.mode;
   bx_address trap_vector = bx_poly_trap_vector;
   Bit32u trap_vector_mode = bx_poly_trap_vector_mode;
   struct bx_poly_trap_saved_regs saved_regs;
 
   bx_poly_clear_trap_saved_regs(&saved_regs);
+  bx_poly_clear_trap_packet(&bx_poly_last_trap);
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
+  bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP));
   saved_regs.valid =
     trap_mode == BX_POLY_MODE_RAW_AARCH64 || trap_mode == BX_POLY_MODE_RAW_RISCV;
   saved_regs.mode = trap_mode;
@@ -14960,97 +14967,99 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
 
   if (!bx_poly_valid_frontend_mode(trap_vector_mode)) {
     BX_INFO(("poly_ud: architectural trap has invalid vector mode=%u reason=%u source_mode=%u",
-      trap_vector_mode, bx_poly_last_trap.reason, trap_mode));
+      trap_vector_mode, delivered_trap.reason, trap_mode));
     trap_vector = 0;
   }
 
   if (bx_poly_monitor_packet_addr != 0) {
     bx_address packet = bx_poly_monitor_packet_addr;
     write_virtual_qword(BX_SEG_REG_DS, packet,
-      (Bit64u) bx_poly_last_trap.reason |
-      ((Bit64u) bx_poly_last_trap.mode << 32));
-    write_virtual_qword(BX_SEG_REG_DS, packet + 8, bx_poly_last_trap.number);
-    write_virtual_qword(BX_SEG_REG_DS, packet + 16, bx_poly_last_trap.selector);
-    write_virtual_qword(BX_SEG_REG_DS, packet + 24, bx_poly_last_trap.pc);
-    write_virtual_qword(BX_SEG_REG_DS, packet + 32, bx_poly_last_trap.next_pc);
+      (Bit64u) delivered_trap.reason |
+      ((Bit64u) delivered_trap.mode << 32));
+    write_virtual_qword(BX_SEG_REG_DS, packet + 8, delivered_trap.number);
+    write_virtual_qword(BX_SEG_REG_DS, packet + 16, delivered_trap.selector);
+    write_virtual_qword(BX_SEG_REG_DS, packet + 24, delivered_trap.pc);
+    write_virtual_qword(BX_SEG_REG_DS, packet + 32, delivered_trap.next_pc);
     write_virtual_qword(BX_SEG_REG_DS, packet + 40,
-      bx_poly_trap_packet_flags_for(saved_regs.valid));
+      bx_poly_trap_packet_flags_for(&delivered_trap,
+        trap_vector != 0 && saved_regs.valid));
     write_virtual_qword(BX_SEG_REG_DS, packet + 48, 0);
     write_virtual_qword(BX_SEG_REG_DS, packet + 56, 0);
     for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
       write_virtual_qword(BX_SEG_REG_DS, packet + 64 + n * 8,
-        bx_poly_last_trap.args[n]);
+        delivered_trap.args[n]);
   }
 
-  bx_poly_trap_saved_regs = saved_regs;
-  bx_poly_current_mode = trap_vector_mode;
-  bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
-
   if (trap_vector != 0) {
+    bx_poly_last_trap = delivered_trap;
+    bx_poly_trap_saved_regs = saved_regs;
+    bx_poly_current_mode = trap_vector_mode;
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+      bx_poly_current_state_key(RSP));
+
     if (trap_vector_mode == BX_POLY_MODE_X86) {
-      RAX = bx_poly_last_trap.reason;
-      RBX = bx_poly_last_trap.mode;
-      RCX = bx_poly_last_trap.number;
-      RDX = bx_poly_last_trap.pc;
-      RSI = bx_poly_last_trap.selector;
-      RDI = bx_poly_last_trap.args[0];
-      R8 = bx_poly_last_trap.args[1];
-      R9 = bx_poly_last_trap.args[2];
-      R10 = bx_poly_last_trap.args[3];
-      R11 = bx_poly_last_trap.args[4];
-      R12 = bx_poly_last_trap.args[5];
-      R13 = bx_poly_last_trap.args[6];
-      R14 = bx_poly_last_trap.args[7];
+      RAX = delivered_trap.reason;
+      RBX = delivered_trap.mode;
+      RCX = delivered_trap.number;
+      RDX = delivered_trap.pc;
+      RSI = delivered_trap.selector;
+      RDI = delivered_trap.args[0];
+      R8 = delivered_trap.args[1];
+      R9 = delivered_trap.args[2];
+      R10 = delivered_trap.args[3];
+      R11 = delivered_trap.args[4];
+      R12 = delivered_trap.args[5];
+      R13 = delivered_trap.args[6];
+      R14 = delivered_trap.args[7];
     }
     else if (trap_vector_mode == BX_POLY_MODE_RAW_AARCH64) {
-      write_poly_aarch64_reg(0, bx_poly_last_trap.reason);
-      write_poly_aarch64_reg(1, bx_poly_last_trap.mode);
-      write_poly_aarch64_reg(2, bx_poly_last_trap.number);
-      write_poly_aarch64_reg(3, bx_poly_last_trap.pc);
-      write_poly_aarch64_reg(4, bx_poly_last_trap.selector);
-      write_poly_aarch64_reg(5, bx_poly_last_trap.args[0]);
-      write_poly_aarch64_reg(6, bx_poly_last_trap.args[1]);
-      write_poly_aarch64_reg(7, bx_poly_last_trap.args[2]);
-      write_poly_aarch64_reg(8, bx_poly_last_trap.args[3]);
-      write_poly_aarch64_reg(9, bx_poly_last_trap.args[4]);
-      write_poly_aarch64_reg(10, bx_poly_last_trap.args[5]);
-      write_poly_aarch64_reg(11, bx_poly_last_trap.args[6]);
-      write_poly_aarch64_reg(12, bx_poly_last_trap.args[7]);
+      write_poly_aarch64_reg(0, delivered_trap.reason);
+      write_poly_aarch64_reg(1, delivered_trap.mode);
+      write_poly_aarch64_reg(2, delivered_trap.number);
+      write_poly_aarch64_reg(3, delivered_trap.pc);
+      write_poly_aarch64_reg(4, delivered_trap.selector);
+      write_poly_aarch64_reg(5, delivered_trap.args[0]);
+      write_poly_aarch64_reg(6, delivered_trap.args[1]);
+      write_poly_aarch64_reg(7, delivered_trap.args[2]);
+      write_poly_aarch64_reg(8, delivered_trap.args[3]);
+      write_poly_aarch64_reg(9, delivered_trap.args[4]);
+      write_poly_aarch64_reg(10, delivered_trap.args[5]);
+      write_poly_aarch64_reg(11, delivered_trap.args[6]);
+      write_poly_aarch64_reg(12, delivered_trap.args[7]);
     }
     else {
-      write_poly_riscv_reg(10, bx_poly_last_trap.reason);
-      write_poly_riscv_reg(11, bx_poly_last_trap.mode);
-      write_poly_riscv_reg(12, bx_poly_last_trap.number);
-      write_poly_riscv_reg(13, bx_poly_last_trap.pc);
-      write_poly_riscv_reg(14, bx_poly_last_trap.selector);
-      write_poly_riscv_reg(15, bx_poly_last_trap.args[0]);
-      write_poly_riscv_reg(16, bx_poly_last_trap.args[1]);
-      write_poly_riscv_reg(17, bx_poly_last_trap.args[2]);
-      write_poly_riscv_reg(5, bx_poly_last_trap.args[3]);
-      write_poly_riscv_reg(6, bx_poly_last_trap.args[4]);
-      write_poly_riscv_reg(7, bx_poly_last_trap.args[5]);
-      write_poly_riscv_reg(28, bx_poly_last_trap.args[6]);
-      write_poly_riscv_reg(29, bx_poly_last_trap.args[7]);
+      write_poly_riscv_reg(10, delivered_trap.reason);
+      write_poly_riscv_reg(11, delivered_trap.mode);
+      write_poly_riscv_reg(12, delivered_trap.number);
+      write_poly_riscv_reg(13, delivered_trap.pc);
+      write_poly_riscv_reg(14, delivered_trap.selector);
+      write_poly_riscv_reg(15, delivered_trap.args[0]);
+      write_poly_riscv_reg(16, delivered_trap.args[1]);
+      write_poly_riscv_reg(17, delivered_trap.args[2]);
+      write_poly_riscv_reg(5, delivered_trap.args[3]);
+      write_poly_riscv_reg(6, delivered_trap.args[4]);
+      write_poly_riscv_reg(7, delivered_trap.args[5]);
+      write_poly_riscv_reg(28, delivered_trap.args[6]);
+      write_poly_riscv_reg(29, delivered_trap.args[7]);
     }
     RIP = trap_vector;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_INFO(("poly_ud: architectural trap vector=%llx reason=%u source_mode=%u target_mode=%u pc=%llx next=%llx",
-      (unsigned long long) trap_vector, bx_poly_last_trap.reason, trap_mode,
+      (unsigned long long) trap_vector, delivered_trap.reason, trap_mode,
       trap_vector_mode,
-      (unsigned long long) bx_poly_last_trap.pc,
-      (unsigned long long) bx_poly_last_trap.next_pc));
+      (unsigned long long) delivered_trap.pc,
+      (unsigned long long) delivered_trap.next_pc));
     return true;
   }
 
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
-  unsigned vector = bx_poly_last_trap.reason == BX_POLY_TRAP_BREAK ?
+  unsigned vector = delivered_trap.reason == BX_POLY_TRAP_BREAK ?
     BX_BP_EXCEPTION : BX_UD_EXCEPTION;
   BX_INFO(("poly_ud: architectural trap exit without installed vector reason=%u source_mode=%u pc=%llx vector=%u",
-    bx_poly_last_trap.reason, trap_mode, (unsigned long long) fallback_pc,
+    delivered_trap.reason, trap_mode, (unsigned long long) fallback_pc,
     vector));
   RIP = fallback_pc;
   exception(vector, 0);
