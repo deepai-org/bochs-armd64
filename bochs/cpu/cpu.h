@@ -1520,13 +1520,14 @@ public: // for now...
   BX_SMF void xsave_poly_state(bxInstruction_c *i, bx_address offset);
   BX_SMF void xrstor_poly_state(bxInstruction_c *i, bx_address offset);
   BX_SMF void xrstor_init_poly_state(void);
-  BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u = 2, bool = true);
+  BX_SMF bool enter_poly_abi_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u = 2, bool = true, bool = false);
   BX_SMF bool enter_poly_abi_signature_call(Bit32u, bx_address, bx_address, bool, Bit32u, Bit32u, Bit32u);
   BX_SMF bool return_poly_abi_call(Bit32u, bx_address);
   BX_SMF bool enter_poly_cross_call(Bit32u, Bit32u, bx_address, bx_address, Bit32u);
   BX_SMF bool return_poly_cross_call(Bit32u, bx_address);
   BX_SMF bool handle_poly_import_call(Bit32u, bx_address, bx_address);
-  BX_SMF bool enter_poly_x86_direct_call(Bit32u, bx_address, bx_address, Bit32u);
+  BX_SMF bool enter_poly_x86_direct_call(Bit32u, bx_address, bx_address, Bit32u,
+    const Bit64u * = 0, const Bit64u * = 0, const Bit32u * = 0);
   BX_SMF bool return_poly_import_x86_call(void);
   BX_SMF bool handle_poly_x86_ret_cookie(bx_address);
   BX_SMF void poly_interrupt_enter(void);

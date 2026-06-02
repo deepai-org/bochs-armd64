@@ -523,6 +523,7 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F32_ARG = 
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_NATIVE_SRET = 25;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA3_F64_RET = 26;
 static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F64_RET = 27;
+static const Bit32u BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE = (1U << 31);
 static const Bit32u BX_POLY_X86_CTRL_PREFIX_0 = 0x0f;
 static const Bit32u BX_POLY_X86_CTRL_PREFIX_1 = 0x3a;
 static const Bit32u BX_POLY_X86_CTRL_PREFIX_2 = 0xfc;
@@ -834,11 +835,27 @@ static bool bx_poly_register_map_for_abi_signature_kind(Bit32u kind,
   }
 }
 
-static bool bx_poly_set_abi_signature_slot(
-    bx_poly_abi_signature_slot_t *slot, Bit32u kind)
+static bool bx_poly_valid_abi_signature_register_map(Bit32u kind,
+    Bit32u register_map)
 {
-  Bit32u register_map = 0;
-  if (!bx_poly_register_map_for_abi_signature_kind(kind, &register_map))
+  Bit32u expected_map = 0;
+  if (!bx_poly_register_map_for_abi_signature_kind(kind, &expected_map))
+    return false;
+  const Bit32u allowed_flags = BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE;
+  return (register_map & ~allowed_flags) == expected_map &&
+    (register_map & ~(expected_map | allowed_flags)) == 0;
+}
+
+static bool bx_poly_set_abi_signature_slot(
+    bx_poly_abi_signature_slot_t *slot, Bit32u kind,
+    Bit32u register_map = 0xffffffffU)
+{
+  Bit32u expected_map = 0;
+  if (!bx_poly_register_map_for_abi_signature_kind(kind, &expected_map))
+    return false;
+  if (register_map == 0xffffffffU)
+    register_map = expected_map;
+  if (!bx_poly_valid_abi_signature_register_map(kind, register_map))
     return false;
   slot->kind = kind;
   slot->register_map = register_map;
@@ -853,10 +870,23 @@ static bool bx_poly_decode_abi_signature_value(Bit64u value, Bit32u *kind)
   if (!bx_poly_register_map_for_abi_signature_kind(decoded_kind,
         &expected_map))
     return false;
-  if (supplied_map != 0 && supplied_map != expected_map)
+  if (supplied_map != 0 &&
+      !bx_poly_valid_abi_signature_register_map(decoded_kind, supplied_map))
     return false;
   *kind = decoded_kind;
   return true;
+}
+
+static Bit32u bx_poly_decode_abi_signature_register_map(Bit64u value,
+    Bit32u kind)
+{
+  Bit32u supplied_map = (Bit32u) (value >> 32);
+  Bit32u expected_map = 0;
+  if (!bx_poly_register_map_for_abi_signature_kind(kind, &expected_map))
+    return 0;
+  if (supplied_map == 0)
+    return expected_map;
+  return supplied_map;
 }
 
 static void bx_poly_reset_abi_signature_slots(
@@ -1254,8 +1284,10 @@ static void bx_poly_set_runtime_tls_base(bx_address value)
 
 static void bx_poly_capture_tls_base_for_mode(Bit32u mode)
 {
-  if (mode == BX_POLY_MODE_RAW_RISCV && bx_poly_riscv_x_valid[4])
-    bx_poly_riscv_tls_base = bx_poly_riscv_x[4];
+  (void) mode;
+  // Frontend TLS is explicit architectural control state. Do not infer it from
+  // ABI GPRs while saving/exporting; ordinary precompiled code may legally use
+  // those registers as data.
 }
 
 static void bx_poly_prepare_tls_for_mode(Bit32u mode)
@@ -4088,7 +4120,7 @@ static bool bx_poly_write_exchange_window(Bit32u lane, Bit64u value)
 bool BX_CPU_C::read_poly_aarch64_reg(Bit32u reg, Bit64u *value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
+    bx_poly_current_state_key(RSP), false);
 
   if (reg < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT)
     return bx_poly_read_exchange_window(reg, value);
@@ -4109,7 +4141,7 @@ bool BX_CPU_C::read_poly_aarch64_reg(Bit32u reg, Bit64u *value)
 bool BX_CPU_C::write_poly_aarch64_reg(Bit32u reg, Bit64u value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
+    bx_poly_current_state_key(RSP), false);
 
   if (reg < BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT) {
     if (!bx_poly_write_exchange_window(reg, value))
@@ -4135,7 +4167,7 @@ bool BX_CPU_C::write_poly_aarch64_reg(Bit32u reg, Bit64u value)
 bool BX_CPU_C::read_poly_riscv_reg(Bit32u reg, Bit64u *value)
 {
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-    bx_poly_current_state_key(RSP));
+    bx_poly_current_state_key(RSP), false);
 
   if (reg >= 10 && reg < 10 + BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT)
     return bx_poly_read_exchange_window(reg - 10, value);
@@ -4158,7 +4190,8 @@ bool BX_CPU_C::read_poly_riscv_reg(Bit32u reg, Bit64u *value)
 
 bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
 {
-  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, bx_poly_current_state_key(RSP));
+  bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+    bx_poly_current_state_key(RSP), false);
 
   if (reg >= 10 && reg < 10 + BX_POLY_ABI_BRIDGE_GPR_ARG_COUNT) {
     if (!bx_poly_write_exchange_window(reg - 10, value))
@@ -4811,10 +4844,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 16);
   bx_address imported_riscv_tls_base =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24);
-  if (!bx_poly_valid_control_address(imported_aarch64_tls_base,
-        BX_CPU_THIS_PTR linaddr_width) ||
-      !bx_poly_valid_control_address(imported_riscv_tls_base,
-        BX_CPU_THIS_PTR linaddr_width)) {
+  if ((imported_aarch64_tls_base != 0 &&
+       !bx_poly_valid_control_address(imported_aarch64_tls_base,
+         BX_CPU_THIS_PTR linaddr_width)) ||
+      (imported_riscv_tls_base != 0 &&
+       !bx_poly_valid_control_address(imported_riscv_tls_base,
+         BX_CPU_THIS_PTR linaddr_width))) {
     BX_INFO(("poly_state_import: reject frontend TLS bases aarch64=%llx riscv=%llx",
       (unsigned long long) imported_aarch64_tls_base,
       (unsigned long long) imported_riscv_tls_base));
@@ -5340,12 +5375,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       base + BX_POLY_STATE_XSAVE_ABI_SIGNATURE_SLOTS_OFFSET + n * 8);
     Bit32u kind = (Bit32u) slot_value;
     Bit32u register_map = (Bit32u) (slot_value >> 32);
-    Bit32u expected_register_map = 0;
-    if (!bx_poly_register_map_for_abi_signature_kind(kind,
-          &expected_register_map) ||
-        register_map != expected_register_map) {
-      BX_INFO(("poly_state_import: reject ABI signature slot=%u kind=%u map=%u expected=%u",
-        n, kind, register_map, expected_register_map));
+    if (!bx_poly_valid_abi_signature_register_map(kind, register_map)) {
+      BX_INFO(("poly_state_import: reject ABI signature slot=%u kind=%u map=%u",
+        n, kind, register_map));
       return false;
     }
     abi_signature_slots[n].kind = kind;
@@ -5908,7 +5940,7 @@ static bool bx_poly_cross_bridge_for_abi_signature_kind(Bit32u kind,
 
 bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_address return_rip, bool sret_call, Bit32u return_kind, Bit32u arg_kind,
-  Bit32u source_kind, bool copy_foreign_stack_args)
+  Bit32u source_kind, bool copy_foreign_stack_args, bool source_tls_base)
 {
   if (!copy_foreign_stack_args &&
       bx_poly_arg_kind_requires_memory_side_abi_work(arg_kind)) {
@@ -6067,7 +6099,9 @@ bool BX_CPU_C::enter_poly_abi_call(Bit32u mode, bx_address target_rip,
   bx_poly_return_cookie_sret = sret_call;
   bx_poly_return_cookie_sret_ptr = sret_ptr;
   bx_poly_return_cookie_kind = return_kind;
-  bx_poly_set_runtime_tls_base((bx_address) R13);
+  if (source_tls_base ||
+      source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE)
+    bx_poly_set_runtime_tls_base((bx_address) R13);
   RSP = foreign_stack_rsp;
 
   bool mapped = false;
@@ -6267,6 +6301,9 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
   }
 
   Bit32u source_kind = bx_poly_abi_signature_slots[slot].kind;
+  const bool source_tls_base =
+    (bx_poly_abi_signature_slots[slot].register_map &
+      BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
   if (!bx_poly_valid_abi_signature_kind(source_kind)) {
     BX_INFO(("poly_ud: reject ABI signature slot=%u kind=%u",
       slot, source_kind));
@@ -6405,7 +6442,7 @@ bool BX_CPU_C::enter_poly_abi_signature_call(Bit32u mode,
   // switch frontend state and apply register aliases. Memory-side ABI work
   // stays in explicit loader/runtime thunks.
   return enter_poly_abi_call(mode, target_rip, return_rip, sret_call,
-    return_kind, arg_kind, source_kind, false);
+    return_kind, arg_kind, source_kind, false, source_tls_base);
 }
 
 bool BX_CPU_C::return_poly_abi_call(Bit32u mode, bx_address target_rip)
@@ -7204,7 +7241,8 @@ bool BX_CPU_C::handle_poly_x86_ret_cookie(bx_address target_rip)
 }
 
 bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
-  bx_address return_rip, Bit32u source_kind)
+  bx_address return_rip, Bit32u source_kind, const Bit64u *pre_fp_args,
+  const Bit64u *pre_fp_args_hi, const Bit32u *pre_fp32_args)
 {
   if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
     return false;
@@ -7248,6 +7286,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR32_RET;
   const bool maps_fpair32_arg_to_x86 =
     source_kind == BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS_FPAIR32_ARG;
+  const bool maps_vec128_window_to_x86 =
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32;
   bool mapped = true;
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
     for (Bit32u n = 0; mapped && n < 8; n++)
@@ -7273,24 +7313,34 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     }
   }
   else if (mode == BX_POLY_MODE_RAW_RISCV) {
-    for (Bit32u n = 0; mapped && n < 8; n++)
-      mapped = read_poly_riscv_reg(10 + n, &args[n]);
-    if (mapped && maps_fp64_window_to_x86) {
+    // Capture live FP exchange-window lanes before GPR accessors can bind and
+    // restore a saved raw bank. A PCALL snapshots the architectural register
+    // window atomically; stale synthetic state must not overwrite arguments.
+    if (maps_fp64_window_to_x86) {
       for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
-        fp_args[n] = bx_poly_riscv_fp[10 + n];
-        fp_args_hi[n] = bx_poly_riscv_fp_hi[10 + n];
+        fp_args[n] = pre_fp_args ? pre_fp_args[n] :
+          BX_READ_XMM_REG_LO_QWORD(n);
+        fp_args_hi[n] = pre_fp_args_hi ? pre_fp_args_hi[n] :
+          BX_READ_XMM_REG_HI_QWORD(n);
       }
     }
-    if (mapped && (maps_fp32_window_to_x86 || maps_fpair32_arg_to_x86)) {
-      for (Bit32u n = 0; mapped && n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
-        fp32_args[n] = (Bit32u) bx_poly_riscv_fp[10 + n];
+    if (maps_fp32_window_to_x86 || maps_fpair32_arg_to_x86) {
+      for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++)
+        fp32_args[n] = pre_fp32_args ? pre_fp32_args[n] :
+          BX_READ_XMM_REG_LO_DWORD(n);
     }
-    if (mapped &&
-        source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_VEC128_U32)
-      mapped = read_poly_riscv_reg(10, &vec_args_lo[0]) &&
-        read_poly_riscv_reg(11, &vec_args_hi[0]) &&
-        read_poly_riscv_reg(12, &vec_args_lo[1]) &&
-        read_poly_riscv_reg(13, &vec_args_hi[1]);
+    for (Bit32u n = 0; mapped && n < 8; n++)
+      mapped = read_poly_riscv_reg(10 + n, &args[n]);
+    if (mapped && maps_vec128_window_to_x86) {
+      vec_args_lo[0] = pre_fp_args ? pre_fp_args[0] :
+        BX_READ_XMM_REG_LO_QWORD(0);
+      vec_args_hi[0] = pre_fp_args_hi ? pre_fp_args_hi[0] :
+        BX_READ_XMM_REG_HI_QWORD(0);
+      vec_args_lo[1] = pre_fp_args ? pre_fp_args[1] :
+        BX_READ_XMM_REG_LO_QWORD(1);
+      vec_args_hi[1] = pre_fp_args_hi ? pre_fp_args_hi[1] :
+        BX_READ_XMM_REG_HI_QWORD(1);
+    }
     if (mapped &&
         (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32 ||
          source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32))
@@ -12101,7 +12151,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return true;
     }
     bx_poly_set_abi_signature_slot(
-      &bx_poly_abi_signature_slots[slot_id], kind);
+      &bx_poly_abi_signature_slots[slot_id], kind,
+      bx_poly_decode_abi_signature_register_map(value, kind));
     write_poly_aarch64_reg(0, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -13467,7 +13518,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return true;
     }
     bx_poly_set_abi_signature_slot(
-      &bx_poly_abi_signature_slots[slot_id], kind);
+      &bx_poly_abi_signature_slots[slot_id], kind,
+      bx_poly_decode_abi_signature_register_map(value, kind));
     write_poly_riscv_reg(10, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -13558,6 +13610,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   }
 
   if (insn == BX_POLY_RISCV_CTRL_CALL_MODE) {
+    Bit64u pre_fp_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit64u pre_fp_args_hi[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit32u pre_fp32_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+      pre_fp_args[n] = BX_READ_XMM_REG_LO_QWORD(n);
+      pre_fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
+      pre_fp32_args[n] = BX_READ_XMM_REG_LO_DWORD(n);
+    }
     Bit64u target = 0;
     Bit64u frontend = 0;
     Bit64u return_rip = 0;
@@ -13580,7 +13640,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip,
-        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
+        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS,
+        pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
       (bx_address) target, (bx_address) return_rip,
@@ -13591,6 +13652,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   if (bx_poly_riscv_ctrl_slot(insn,
         BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE,
         &riscv_signature_imm_slot)) {
+    Bit64u pre_fp_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit64u pre_fp_args_hi[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit32u pre_fp32_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+      pre_fp_args[n] = BX_READ_XMM_REG_LO_QWORD(n);
+      pre_fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
+      pre_fp32_args[n] = BX_READ_XMM_REG_LO_DWORD(n);
+    }
     Bit64u target = 0;
     Bit64u frontend = 0;
     Bit64u return_rip = 0;
@@ -13616,7 +13685,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
-        (bx_address) target, (bx_address) return_rip, source_kind);
+        (bx_address) target, (bx_address) return_rip, source_kind,
+        pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -13631,6 +13701,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   }
 
   if (insn == BX_POLY_RISCV_CTRL_CALL_SIG_MODE) {
+    Bit64u pre_fp_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit64u pre_fp_args_hi[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    Bit32u pre_fp32_args[BX_POLY_ABI_BRIDGE_FP_ARG_COUNT] = {};
+    for (Bit32u n = 0; n < BX_POLY_ABI_BRIDGE_FP_ARG_COUNT; n++) {
+      pre_fp_args[n] = BX_READ_XMM_REG_LO_QWORD(n);
+      pre_fp_args_hi[n] = BX_READ_XMM_REG_HI_QWORD(n);
+      pre_fp32_args[n] = BX_READ_XMM_REG_LO_DWORD(n);
+    }
     Bit64u target = 0;
     Bit64u frontend = 0;
     Bit64u return_rip = 0;
@@ -13665,7 +13743,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
-        (bx_address) target, (bx_address) return_rip, source_kind);
+        (bx_address) target, (bx_address) return_rip, source_kind,
+        pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -16670,7 +16749,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           return true;
         }
         bx_poly_set_abi_signature_slot(&bx_poly_abi_signature_slots[slot],
-          kind);
+          kind, bx_poly_decode_abi_signature_register_map(RDX, kind));
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
         RAX = 0;
         RIP = next_rip;
