@@ -337,7 +337,10 @@ int BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_p
 
 #if BX_SUPPORT_X86_64
   if (! IsCanonicalAccess(laddr, xlate_rw, user)) {
-    BX_ERROR(("access_read_linear(): canonical failure"));
+    BX_ERROR(("access_read_linear(): canonical failure laddr=%llx len=%u rip=%llx rsp=%llx fsbase=%llx",
+      (unsigned long long) laddr, len,
+      (unsigned long long) RIP, (unsigned long long) RSP,
+      (unsigned long long) MSR_FSBASE));
     return -1;
   }
 #endif
@@ -380,7 +383,10 @@ int BX_CPU_C::access_read_linear(bx_address laddr, unsigned len, unsigned curr_p
     if (! long64_mode()) laddr2 &= 0xffffffff; /* handle linear address wrap in legacy mode */
     else {
       if (! IsCanonicalAccess(laddr2, xlate_rw, user)) {
-        BX_ERROR(("access_read_linear(): canonical failure for second half of page split access"));
+        BX_ERROR(("access_read_linear(): canonical failure for second half of page split access laddr=%llx laddr2=%llx len=%u rip=%llx rsp=%llx fsbase=%llx",
+          (unsigned long long) laddr, (unsigned long long) laddr2, len,
+          (unsigned long long) RIP, (unsigned long long) RSP,
+          (unsigned long long) MSR_FSBASE));
         return -1;
       }
     }
