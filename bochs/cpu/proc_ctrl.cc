@@ -896,6 +896,12 @@ static Bit32u bx_poly_decode_abi_signature_register_map(Bit64u value,
   return supplied_map;
 }
 
+static Bit64u bx_poly_encode_abi_signature_slot(
+    const bx_poly_abi_signature_slot_t &slot)
+{
+  return (Bit64u) slot.kind | ((Bit64u) slot.register_map << 32);
+}
+
 static void bx_poly_reset_abi_signature_slots(
     bx_poly_abi_signature_slot_t *slots)
 {
@@ -12165,7 +12171,8 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       return true;
     }
     write_poly_aarch64_reg(0,
-      bx_poly_abi_signature_slots[slot_id].kind);
+      bx_poly_encode_abi_signature_slot(
+        bx_poly_abi_signature_slots[slot_id]));
     RIP = next_rip;
     BX_DEBUG(("poly_raw: aarch64 ABI signature get slot=%llu",
       (unsigned long long) slot));
@@ -13530,7 +13537,8 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return true;
     }
     write_poly_riscv_reg(10,
-      bx_poly_abi_signature_slots[slot_id].kind);
+      bx_poly_encode_abi_signature_slot(
+        bx_poly_abi_signature_slots[slot_id]));
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv ABI signature get slot=%llu",
       (unsigned long long) slot));
@@ -16763,7 +16771,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             (unsigned long long) requested_slot));
           return true;
         }
-        RAX = bx_poly_abi_signature_slots[slot].kind;
+        RAX = bx_poly_encode_abi_signature_slot(
+          bx_poly_abi_signature_slots[slot]);
         RIP = next_rip;
         BX_INFO(("poly_ud: ABI signature get slot=%u kind=%llu",
           slot, (unsigned long long) RAX));
