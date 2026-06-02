@@ -3735,6 +3735,13 @@ static Bit64u bx_poly_trap_packet_flags(void)
   return flags;
 }
 
+static Bit64u bx_poly_xsave_trap_packet_flags(void)
+{
+  // The XSAVE area does not carry the hidden monitor-register restore snapshot.
+  return bx_poly_trap_packet_flags() &
+    ~((Bit64u) BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE);
+}
+
 static bool bx_poly_valid_abi_signature_kind(Bit32u kind);
 
 static bool bx_poly_read_exchange_window(Bit32u lane, Bit64u *value)
@@ -4111,7 +4118,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32,
     bx_poly_last_trap.next_pc);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 40,
-    bx_poly_trap_packet_flags());
+    bx_poly_xsave_trap_packet_flags());
 
   for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
     write_virtual_qword(seg,
@@ -4448,6 +4455,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       return false;
     }
     if ((imported_trap_flags & ~trap_flags_supported) != 0 ||
+        ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE) != 0) ||
         ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY) != 0 &&
          imported_trap_vector == 0) ||
         ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY) != 0 &&
@@ -4838,6 +4846,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_trap_vector = (bx_address) imported_trap_vector;
   bx_poly_trap_vector_mode = (Bit32u) imported_trap_vector_mode;
   bx_poly_monitor_packet_addr = (bx_address) imported_monitor_packet;
+  bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
 
   bx_poly_last_trap.reason = imported_trap_reason;
   bx_poly_last_trap.mode = imported_trap_mode;
