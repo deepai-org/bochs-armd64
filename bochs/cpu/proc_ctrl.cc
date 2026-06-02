@@ -6958,10 +6958,14 @@ bool BX_CPU_C::return_poly_import_x86_call(void)
     R9 = frame.alias[5];
   }
   if (import_id == BX_POLY_DIRECT_X86_IMPORT_ID) {
-    if (return_mode == BX_POLY_MODE_RAW_AARCH64)
-      write_poly_aarch64_reg(2, frame.saved_source_reg2);
-    else if (return_mode == BX_POLY_MODE_RAW_RISCV)
-      write_poly_riscv_reg(12, frame.saved_source_reg2);
+    if (!frame.alias_valid && return_mode == BX_POLY_MODE_RAW_AARCH64) {
+      for (Bit32u n = 2; n < 8; n++)
+        write_poly_aarch64_reg(n, frame.alias[n - 2]);
+    }
+    else if (!frame.alias_valid && return_mode == BX_POLY_MODE_RAW_RISCV) {
+      for (Bit32u n = 2; n < 8; n++)
+        write_poly_riscv_reg(10 + n, frame.alias[n - 2]);
+    }
   }
 
   bool mapped = false;
@@ -7264,6 +7268,10 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     frame->alias[3] = RCX;
     frame->alias[4] = R8;
     frame->alias[5] = R9;
+  }
+  else {
+    for (Bit32u n = 2; n < 8; n++)
+      frame->alias[n - 2] = args[n];
   }
   frame->saved_x86_fsbase = saved_x86_fsbase;
   frame->target_x86_fsbase = target_x86_fsbase;
