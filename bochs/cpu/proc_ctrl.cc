@@ -12125,11 +12125,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     if (!read_poly_aarch64_reg(16, &target) ||
         !read_poly_aarch64_reg(17, &frontend))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-      BX_INFO(("poly_raw: reject aarch64 generic switch frontend=%u",
-        frontend_id));
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+      BX_INFO(("poly_raw: reject aarch64 generic switch frontend=%llx",
+        (unsigned long long) frontend));
       return false;
     }
     if (!bx_poly_require_landing_target(BX_SEG_REG_CS, (bx_address) target,
@@ -12160,12 +12161,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(17, &frontend) ||
         !read_poly_aarch64_reg(18, &return_rip))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_AARCH64) {
-      BX_INFO(("poly_raw: reject aarch64 generic call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject aarch64 generic call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
     if (target_mode == BX_POLY_MODE_X86) {
@@ -12192,12 +12194,13 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(17, &frontend) ||
         !read_poly_aarch64_reg(18, &return_rip))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_AARCH64) {
-      BX_INFO(("poly_raw: reject aarch64 immediate signature call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject aarch64 immediate signature call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -12233,15 +12236,18 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(18, &return_rip) ||
         !read_poly_aarch64_reg(19, &signature_slot))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
+    Bit32u signature_slot_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_AARCH64) {
-      BX_INFO(("poly_raw: reject aarch64 generic signature call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject aarch64 generic signature call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
-    if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+    if (!bx_poly_u32_from_u64(signature_slot, &signature_slot_id) ||
+        signature_slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
       BX_INFO(("poly_raw: reject aarch64 generic signature call slot=%llu",
         (unsigned long long) signature_slot));
       return false;
@@ -12249,7 +12255,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
-      bx_poly_abi_signature_slots[(Bit32u) signature_slot].kind;
+      bx_poly_abi_signature_slots[signature_slot_id].kind;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
             (bx_address) target, (bx_address) return_rip))
@@ -13479,11 +13485,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     if (!read_poly_riscv_reg(5, &target) ||
         !read_poly_riscv_reg(6, &frontend))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-      BX_INFO(("poly_raw: reject riscv generic switch frontend=%u",
-        frontend_id));
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+      BX_INFO(("poly_raw: reject riscv generic switch frontend=%llx",
+        (unsigned long long) frontend));
       return false;
     }
     if (!bx_poly_require_landing_target(BX_SEG_REG_CS, (bx_address) target,
@@ -13514,12 +13521,13 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(6, &frontend) ||
         !read_poly_riscv_reg(7, &return_rip))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_RISCV) {
-      BX_INFO(("poly_raw: reject riscv generic call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject riscv generic call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
     if (target_mode == BX_POLY_MODE_X86) {
@@ -13546,12 +13554,13 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(6, &frontend) ||
         !read_poly_riscv_reg(7, &return_rip))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_RISCV) {
-      BX_INFO(("poly_raw: reject riscv immediate signature call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject riscv immediate signature call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -13587,15 +13596,18 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(7, &return_rip) ||
         !read_poly_riscv_reg(28, &signature_slot))
       return false;
-    Bit32u frontend_id = (Bit32u) frontend;
+    Bit32u frontend_id = 0;
+    Bit32u signature_slot_id = 0;
     Bit32u target_mode = BX_POLY_MODE_X86;
-    if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
+    if (!bx_poly_u32_from_u64(frontend, &frontend_id) ||
+        !bx_poly_frontend_id_to_mode(frontend_id, &target_mode) ||
         target_mode == BX_POLY_MODE_RAW_RISCV) {
-      BX_INFO(("poly_raw: reject riscv generic signature call frontend=%u mode=%u",
-        frontend_id, target_mode));
+      BX_INFO(("poly_raw: reject riscv generic signature call frontend=%llx mode=%u",
+        (unsigned long long) frontend, target_mode));
       return false;
     }
-    if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+    if (!bx_poly_u32_from_u64(signature_slot, &signature_slot_id) ||
+        signature_slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
       BX_INFO(("poly_raw: reject riscv generic signature call slot=%llu",
         (unsigned long long) signature_slot));
       return false;
@@ -13603,7 +13615,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
-      bx_poly_abi_signature_slots[(Bit32u) signature_slot].kind;
+      bx_poly_abi_signature_slots[signature_slot_id].kind;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
             (bx_address) target, (bx_address) return_rip))
