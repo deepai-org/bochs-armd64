@@ -5339,6 +5339,10 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
 
   bx_poly_cross_return_top = 0;
+  bx_poly_clear_return_cookie();
+  bx_poly_return_cookie_top = 0;
+  for (unsigned n = 0; n < BX_POLY_RETURN_COOKIE_DEPTH; n++)
+    bx_poly_reset_return_cookie_frame(&bx_poly_return_cookie_stack[n]);
   bx_poly_clear_import_x86_return_stack();
   bx_poly_interrupted_raw_valid = false;
   bx_poly_interrupted_raw_mode = BX_POLY_MODE_X86;
