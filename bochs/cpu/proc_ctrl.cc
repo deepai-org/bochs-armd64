@@ -4400,12 +4400,62 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET);
   Bit32u imported_trap_reason = (Bit32u) imported_trap0;
   Bit32u imported_trap_mode = (Bit32u) (imported_trap0 >> 32);
+  Bit64u imported_trap_number =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 8);
+  Bit64u imported_trap_selector =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 16);
+  Bit64u imported_trap_pc =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 24);
+  Bit64u imported_trap_next_pc =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32);
+  Bit64u imported_trap_flags =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 40);
   if (!bx_poly_valid_trap_reason(imported_trap_reason) ||
       !bx_poly_valid_trap_source_mode(imported_trap_reason,
         imported_trap_mode)) {
     BX_INFO(("poly_state_import: reject trap reason=%u mode=%u",
       imported_trap_reason, imported_trap_mode));
     return false;
+  }
+  const Bit64u trap_flags_supported =
+    BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY |
+    BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
+    BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE |
+    BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS |
+    BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY;
+  if (imported_trap_reason == BX_POLY_TRAP_NONE) {
+    if (imported_trap_number != 0 || imported_trap_selector != 0 ||
+        imported_trap_pc != 0 || imported_trap_next_pc != 0 ||
+        imported_trap_flags != 0) {
+      BX_INFO(("poly_state_import: reject inactive trap packet number=%llx selector=%llx pc=%llx next=%llx flags=%llx",
+        (unsigned long long) imported_trap_number,
+        (unsigned long long) imported_trap_selector,
+        (unsigned long long) imported_trap_pc,
+        (unsigned long long) imported_trap_next_pc,
+        (unsigned long long) imported_trap_flags));
+      return false;
+    }
+  }
+  else {
+    if (!bx_poly_valid_frontend_target(imported_trap_mode,
+          (bx_address) imported_trap_pc, BX_CPU_THIS_PTR linaddr_width) ||
+        !bx_poly_valid_frontend_target(imported_trap_mode,
+          (bx_address) imported_trap_next_pc, BX_CPU_THIS_PTR linaddr_width)) {
+      BX_INFO(("poly_state_import: reject trap packet pc=%llx next=%llx mode=%u",
+        (unsigned long long) imported_trap_pc,
+        (unsigned long long) imported_trap_next_pc,
+        imported_trap_mode));
+      return false;
+    }
+    if ((imported_trap_flags & ~trap_flags_supported) != 0 ||
+        ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY) != 0 &&
+         imported_trap_vector == 0) ||
+        ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_MONITOR_MEMORY) != 0 &&
+         imported_monitor_packet == 0)) {
+      BX_INFO(("poly_state_import: reject trap packet flags=%llx",
+        (unsigned long long) imported_trap_flags));
+      return false;
+    }
   }
   for (unsigned n = 0; n < 32; n++) {
     aarch64_gpr[n] = read_virtual_qword(seg,
@@ -4791,14 +4841,10 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
   bx_poly_last_trap.reason = imported_trap_reason;
   bx_poly_last_trap.mode = imported_trap_mode;
-  bx_poly_last_trap.number = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 8);
-  bx_poly_last_trap.selector = (Bit32u)
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 16);
-  bx_poly_last_trap.pc =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 24);
-  bx_poly_last_trap.next_pc =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32);
+  bx_poly_last_trap.number = (Bit32u) imported_trap_number;
+  bx_poly_last_trap.selector = (Bit32u) imported_trap_selector;
+  bx_poly_last_trap.pc = (bx_address) imported_trap_pc;
+  bx_poly_last_trap.next_pc = (bx_address) imported_trap_next_pc;
   for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
     bx_poly_last_trap.args[n] = read_virtual_qword(seg,
       base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
