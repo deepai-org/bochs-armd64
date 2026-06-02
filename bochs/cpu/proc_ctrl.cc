@@ -16845,22 +16845,22 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RDX = 0;
     }
     else if (ECX == 1) {
-      RAX = 0;
-      RBX = 0;
-      RCX = 0;
-      RDX = 0;
+      RAX = BX_POLY_X86_CTRL_TRAP_VECTOR_SET;
+      RBX = BX_POLY_X86_CTRL_TRAP_VECTOR_GET;
+      RCX = BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_SET;
+      RDX = BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_GET;
     }
     else if (ECX == 2) {
-      RAX = 0;
-      RBX = 0;
-      RCX = 0;
-      RDX = 0;
+      RAX = BX_POLY_X86_CTRL_STATE_KEY_SET;
+      RBX = BX_POLY_X86_CTRL_STATE_KEY_GET;
+      RCX = BX_POLY_X86_CTRL_STATE_EXPORT;
+      RDX = BX_POLY_X86_CTRL_STATE_IMPORT;
     }
     else if (ECX == 3) {
-      RAX = 0;
-      RBX = 0;
-      RCX = 0;
-      RDX = 0;
+      RAX = BX_POLY_X86_CTRL_ABI_SIGNATURE_SET;
+      RBX = BX_POLY_X86_CTRL_ABI_SIGNATURE_GET;
+      RCX = BX_POLY_X86_CTRL_MONITOR_PACKET_SET;
+      RDX = BX_POLY_X86_CTRL_MONITOR_PACKET_GET;
     }
     else if (ECX == 4) {
       RAX = BX_POLY_AARCH64_CTRL_TRAP_RETURN;
