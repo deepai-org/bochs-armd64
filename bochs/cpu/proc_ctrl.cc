@@ -4669,16 +4669,26 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   Bit32u saved_mode = (Bit32u) (header1 >> 32);
   Bit64u header_flags =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 16);
+  Bit64u header_foreign_pc =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+  Bit64u header_foreign_tls =
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 32);
   if (magic != BX_POLY_STATE_XSAVE_MAGIC ||
       layout_version != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
       header_bytes != BX_POLY_STATE_XSAVE_HEADER_BYTES ||
       total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH ||
       !bx_poly_valid_frontend_mode(saved_mode) ||
-      header_flags != bx_poly_xsave_arch_flags()) {
-    BX_INFO(("poly_state_import: reject magic=%08x version=%u header=%u bytes=%u mode=%u flags=%llx expected=%llx",
+      header_flags != bx_poly_xsave_arch_flags() ||
+      !bx_poly_valid_control_address(header_foreign_pc,
+        BX_CPU_THIS_PTR linaddr_width) ||
+      !bx_poly_valid_control_address(header_foreign_tls,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_state_import: reject magic=%08x version=%u header=%u bytes=%u mode=%u flags=%llx expected=%llx pc=%llx tls=%llx",
       magic, layout_version, header_bytes, total_bytes, saved_mode,
       (unsigned long long) header_flags,
-      (unsigned long long) bx_poly_xsave_arch_flags()));
+      (unsigned long long) bx_poly_xsave_arch_flags(),
+      (unsigned long long) header_foreign_pc,
+      (unsigned long long) header_foreign_tls));
     return false;
   }
 
@@ -4733,6 +4743,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 16);
   bx_address imported_riscv_tls_base =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET + 24);
+  if (!bx_poly_valid_control_address(imported_aarch64_tls_base,
+        BX_CPU_THIS_PTR linaddr_width) ||
+      !bx_poly_valid_control_address(imported_riscv_tls_base,
+        BX_CPU_THIS_PTR linaddr_width)) {
+    BX_INFO(("poly_state_import: reject frontend TLS bases aarch64=%llx riscv=%llx",
+      (unsigned long long) imported_aarch64_tls_base,
+      (unsigned long long) imported_riscv_tls_base));
+    return false;
+  }
   Bit64u imported_landing_policy = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_LANDING_POLICY_OFFSET);
   Bit64u imported_landing_supported = read_virtual_qword(seg,
