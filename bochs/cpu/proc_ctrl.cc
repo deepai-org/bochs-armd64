@@ -1274,8 +1274,21 @@ static bool bx_poly_valid_trap_vector_target(Bit64u vector, Bit32u mode,
 static bool bx_poly_valid_monitor_packet_target(Bit64u packet,
   unsigned linaddr_width)
 {
-  return bx_poly_valid_control_address(packet, linaddr_width) &&
-    (packet == 0 || (packet & 0x7) == 0);
+  if (!bx_poly_valid_control_address(packet, linaddr_width))
+    return false;
+  if (packet == 0)
+    return true;
+  if ((packet & 0x7) != 0)
+    return false;
+
+  const Bit64u packet_last_byte =
+    (Bit64u) BX_POLY_STATE_XSAVE_TRAP_PACKET_BYTES +
+    (Bit64u) BX_POLY_STATE_XSAVE_TRAP_ARGS_BYTES - 1;
+  if (packet + packet_last_byte < packet)
+    return false;
+
+  return bx_poly_valid_control_address(packet + packet_last_byte,
+    linaddr_width);
 }
 
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
