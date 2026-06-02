@@ -1103,6 +1103,14 @@ static bool bx_poly_valid_frontend_target(Bit32u mode, bx_address target,
     bx_poly_frontend_target_aligned(mode, target);
 }
 
+static bool bx_poly_valid_trap_vector_target(Bit64u vector, Bit32u mode,
+  unsigned linaddr_width)
+{
+  return bx_poly_valid_control_address(vector, linaddr_width) &&
+    (vector == 0 ||
+     bx_poly_frontend_target_aligned(mode, (bx_address) vector));
+}
+
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
   Bit32u mode)
 {
@@ -4398,8 +4406,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       (unsigned long long) imported_trap_vector_mode));
     return false;
   }
-  if (!bx_poly_valid_control_address(imported_trap_vector,
-        BX_CPU_THIS_PTR linaddr_width) ||
+  if (!bx_poly_valid_trap_vector_target(imported_trap_vector,
+        (Bit32u) imported_trap_vector_mode, BX_CPU_THIS_PTR linaddr_width) ||
       !bx_poly_valid_control_address(imported_monitor_packet,
         BX_CPU_THIS_PTR linaddr_width)) {
     BX_INFO(("poly_state_import: reject control addresses vector=%llx packet=%llx",
@@ -10957,7 +10965,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     Bit64u vector = 0;
     if (!read_poly_aarch64_reg(0, &vector))
       return false;
-    if (!bx_poly_valid_control_address(vector,
+    if (!bx_poly_valid_trap_vector_target(vector, bx_poly_trap_vector_mode,
           BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
@@ -10988,6 +10996,12 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     if (!read_poly_aarch64_reg(0, &mode))
       return false;
     if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
+          (Bit32u) mode, BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
@@ -12279,7 +12293,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u vector = 0;
     if (!read_poly_riscv_reg(10, &vector))
       return false;
-    if (!bx_poly_valid_control_address(vector,
+    if (!bx_poly_valid_trap_vector_target(vector, bx_poly_trap_vector_mode,
           BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
@@ -12310,6 +12324,12 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     if (!read_poly_riscv_reg(10, &mode))
       return false;
     if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
+      RIP = next_rip;
+      return true;
+    }
+    if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
+          (Bit32u) mode, BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
@@ -15402,10 +15422,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == 0x20)
         return return_poly_import_x86_call();
       if (op == 0x60) {
-        if (!bx_poly_valid_control_address(RAX,
+        if (!bx_poly_valid_trap_vector_target(RAX, bx_poly_trap_vector_mode,
               BX_CPU_THIS_PTR linaddr_width)) {
-          BX_INFO(("poly_ud: reject non-canonical trap vector=%llx",
-            (unsigned long long) RAX));
+          BX_INFO(("poly_ud: reject trap vector target=%llx mode=%u",
+            (unsigned long long) RAX, bx_poly_trap_vector_mode));
           RAX = (Bit64u) (Bit64s) -22;
           RIP = next_rip;
           return true;
@@ -15434,6 +15454,15 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         if (!bx_poly_valid_frontend_mode((Bit32u) RAX)) {
           BX_INFO(("poly_ud: reject trap vector mode=%llu",
             (unsigned long long) RAX));
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          return true;
+        }
+        if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
+              (Bit32u) RAX, BX_CPU_THIS_PTR linaddr_width)) {
+          BX_INFO(("poly_ud: reject trap vector mode=%llu target=%llx",
+            (unsigned long long) RAX,
+            (unsigned long long) bx_poly_trap_vector));
           RAX = (Bit64u) -22;
           RIP = next_rip;
           return true;
