@@ -635,6 +635,14 @@ static inline bool bx_poly_import_delivers_trap(Bit64u import_id)
   return import_id < BX_POLY_IMPORT_TRAP_SLOT_COUNT;
 }
 
+static bool bx_poly_u32_from_u64(Bit64u value, Bit32u *result)
+{
+  if (value > 0xffffffff)
+    return false;
+  *result = (Bit32u) value;
+  return true;
+}
+
 static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
 {
   return size == 8 ? BX_CONST64(0xffffffffffffffff) :
@@ -16279,9 +16287,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
     bx_address next_rip = PREV_RIP + 4;
       if (op == BX_POLY_X86_CTRL_PENTER_MODE) {
         Bit32u target_mode = BX_POLY_MODE_X86;
-        Bit32u frontend_id = (Bit32u) R15;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-          BX_INFO(("poly_ud: reject generic frontend id=%u", frontend_id));
+        Bit32u frontend_id = 0;
+        if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
+            !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+          BX_INFO(("poly_ud: reject generic frontend id=%llx",
+            (unsigned long long) R15));
           return false;
         }
         if (!bx_poly_valid_frontend_target(target_mode, next_rip,
@@ -16310,11 +16320,13 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return true;
       }
       if (op == BX_POLY_X86_CTRL_PSWITCH_MODE) {
-        Bit32u frontend_id = (Bit32u) R15;
+        Bit32u frontend_id = 0;
         Bit32u target_mode = BX_POLY_MODE_X86;
         bx_address target_rip = (bx_address) RBX;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-          BX_INFO(("poly_ud: reject generic switch frontend=%u", frontend_id));
+        if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
+            !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+          BX_INFO(("poly_ud: reject generic switch frontend=%llx",
+            (unsigned long long) R15));
           return false;
         }
         if (!bx_poly_require_landing_target(BX_SEG_REG_CS, target_rip,
@@ -16372,21 +16384,24 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return false;
       }
       if (op == BX_POLY_X86_CTRL_PCALL_SIG_MODE) {
-        Bit32u frontend_id = (Bit32u) R15;
+        Bit32u frontend_id = 0;
+        Bit32u signature_slot = 0;
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-          BX_INFO(("poly_ud: reject generic pcall frontend=%u", frontend_id));
+        if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
+            !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+          BX_INFO(("poly_ud: reject generic pcall frontend=%llx",
+            (unsigned long long) R15));
+          return false;
+        }
+        if (!bx_poly_u32_from_u64(R12, &signature_slot) ||
+            signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+          BX_INFO(("poly_ud: reject generic pcall signature slot=%llx",
+            (unsigned long long) R12));
           return false;
         }
         if (target_mode == BX_POLY_MODE_X86) {
           bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
             bx_poly_current_state_key(RSP), false);
-          Bit32u signature_slot = (Bit32u) R12;
-          if (signature_slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
-            BX_INFO(("poly_ud: reject generic pcall signature slot=%u",
-              signature_slot));
-            return false;
-          }
           Bit32u source_kind =
             bx_poly_abi_signature_slots[signature_slot].kind;
           return enter_poly_x86_direct_call(BX_POLY_MODE_X86,
@@ -16399,17 +16414,18 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return enter_poly_abi_signature_call(target_mode,
           (bx_address) RBX, (bx_address) R11, false,
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
-          (Bit32u) R12);
+          signature_slot);
       }
       if (op >= BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE &&
           op < BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE +
             BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
         Bit8u signature_slot = op - BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE;
-        Bit32u frontend_id = (Bit32u) R15;
+        Bit32u frontend_id = 0;
         Bit32u target_mode = BX_POLY_MODE_X86;
-        if (!bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
-          BX_INFO(("poly_ud: reject subopcode pcall frontend=%u",
-            frontend_id));
+        if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
+            !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
+          BX_INFO(("poly_ud: reject subopcode pcall frontend=%llx",
+            (unsigned long long) R15));
           return false;
         }
         if (target_mode == BX_POLY_MODE_X86) {
@@ -16461,7 +16477,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == BX_POLY_X86_CTRL_TRAP_RETURN)
         return return_poly_architectural_trap();
       if (op == 0x63) {
-        if (!bx_poly_valid_frontend_mode((Bit32u) RAX)) {
+        Bit32u trap_vector_mode = 0;
+        if (!bx_poly_u32_from_u64(RAX, &trap_vector_mode) ||
+            !bx_poly_valid_frontend_mode(trap_vector_mode)) {
           BX_INFO(("poly_ud: reject trap vector mode=%llu",
             (unsigned long long) RAX));
           RAX = (Bit64u) -22;
@@ -16469,7 +16487,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           return true;
         }
         if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
-              (Bit32u) RAX, BX_CPU_THIS_PTR linaddr_width)) {
+              trap_vector_mode, BX_CPU_THIS_PTR linaddr_width)) {
           BX_INFO(("poly_ud: reject trap vector mode=%llu target=%llx",
             (unsigned long long) RAX,
             (unsigned long long) bx_poly_trap_vector));
@@ -16477,7 +16495,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           RIP = next_rip;
           return true;
         }
-        bx_poly_trap_vector_mode = (Bit32u) RAX;
+        bx_poly_trap_vector_mode = trap_vector_mode;
         bx_address stack_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
           stack_key);
@@ -16580,17 +16598,19 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return true;
       }
       if (op == 0x69) {
-        Bit32u slot = (Bit32u) RAX;
+        Bit64u requested_slot = RAX;
+        Bit32u slot = 0;
         Bit32u kind = 0;
         bx_address stack_key = bx_poly_current_state_key(RSP);
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key,
           false);
-        if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
+        if (!bx_poly_u32_from_u64(RAX, &slot) ||
+            slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
             !bx_poly_decode_abi_signature_value(RDX, &kind)) {
           RAX = (Bit64u) -22;
           RIP = next_rip;
-          BX_INFO(("poly_ud: reject ABI signature set slot=%u value=%llx",
-            slot, (unsigned long long) RDX));
+          BX_INFO(("poly_ud: reject ABI signature set slot=%llx value=%llx",
+            (unsigned long long) requested_slot, (unsigned long long) RDX));
           return true;
         }
         bx_poly_set_abi_signature_slot(&bx_poly_abi_signature_slots[slot],
@@ -16603,13 +16623,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         return true;
       }
       if (op == 0x6a) {
-        Bit32u slot = (Bit32u) RAX;
+        Bit64u requested_slot = RAX;
+        Bit32u slot = 0;
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
           bx_poly_current_state_key(RSP), false);
-        if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+        if (!bx_poly_u32_from_u64(RAX, &slot) ||
+            slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
           RAX = (Bit64u) -22;
           RIP = next_rip;
-          BX_INFO(("poly_ud: reject ABI signature get slot=%u", slot));
+          BX_INFO(("poly_ud: reject ABI signature get slot=%llx",
+            (unsigned long long) requested_slot));
           return true;
         }
         RAX = bx_poly_abi_signature_slots[slot].kind;
