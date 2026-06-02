@@ -526,7 +526,21 @@ static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_MODE = 0x2d;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE = 0x30;
+static const Bit32u BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS = 0x40;
+static const Bit32u BX_POLY_X86_CTRL_STATUS_LAST = 0x45;
+static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_SET = 0x60;
+static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_GET = 0x61;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_RETURN = 0x62;
+static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_SET = 0x63;
+static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_GET = 0x64;
+static const Bit32u BX_POLY_X86_CTRL_STATE_KEY_SET = 0x65;
+static const Bit32u BX_POLY_X86_CTRL_STATE_KEY_GET = 0x66;
+static const Bit32u BX_POLY_X86_CTRL_STATE_EXPORT = 0x67;
+static const Bit32u BX_POLY_X86_CTRL_STATE_IMPORT = 0x68;
+static const Bit32u BX_POLY_X86_CTRL_ABI_SIGNATURE_SET = 0x69;
+static const Bit32u BX_POLY_X86_CTRL_ABI_SIGNATURE_GET = 0x6a;
+static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_SET = 0x6b;
+static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_GET = 0x6c;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
 
@@ -16471,7 +16485,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       }
       if (op == 0x20)
         return return_poly_import_x86_call();
-      if (op == 0x60) {
+      if (op == BX_POLY_X86_CTRL_TRAP_VECTOR_SET) {
         if (!bx_poly_valid_trap_vector_target(RAX, bx_poly_trap_vector_mode,
               BX_CPU_THIS_PTR linaddr_width)) {
           BX_INFO(("poly_ud: reject trap vector target=%llx mode=%u",
@@ -16491,7 +16505,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_trap_vector));
         return true;
       }
-      if (op == 0x61) {
+      if (op == BX_POLY_X86_CTRL_TRAP_VECTOR_GET) {
         RAX = bx_poly_trap_vector;
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector get value=%llx",
@@ -16500,7 +16514,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       }
       if (op == BX_POLY_X86_CTRL_TRAP_RETURN)
         return return_poly_architectural_trap();
-      if (op == 0x63) {
+      if (op == BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_SET) {
         Bit32u trap_vector_mode = 0;
         if (!bx_poly_u32_from_u64(RAX, &trap_vector_mode) ||
             !bx_poly_valid_frontend_mode(trap_vector_mode)) {
@@ -16530,14 +16544,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_trap_vector_mode));
         return true;
       }
-      if (op == 0x64) {
+      if (op == BX_POLY_X86_CTRL_TRAP_VECTOR_MODE_GET) {
         RAX = bx_poly_trap_vector_mode;
         RIP = next_rip;
         BX_INFO(("poly_ud: trap vector mode get value=%llu",
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x6b) {
+      if (op == BX_POLY_X86_CTRL_MONITOR_PACKET_SET) {
         if (!bx_poly_valid_monitor_packet_target(RAX,
               BX_CPU_THIS_PTR linaddr_width)) {
           BX_INFO(("poly_ud: reject monitor packet address=%llx",
@@ -16557,14 +16571,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_monitor_packet_addr));
         return true;
       }
-      if (op == 0x6c) {
+      if (op == BX_POLY_X86_CTRL_MONITOR_PACKET_GET) {
         RAX = bx_poly_monitor_packet_addr;
         RIP = next_rip;
         BX_INFO(("poly_ud: monitor packet address get value=%llx",
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x65) {
+      if (op == BX_POLY_X86_CTRL_STATE_KEY_SET) {
         Bit32u saved_mode = bx_poly_current_mode;
         bx_address old_key = bx_poly_current_state_key(RSP);
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, old_key);
@@ -16580,14 +16594,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) bx_poly_explicit_state_key));
         return true;
       }
-      if (op == 0x66) {
+      if (op == BX_POLY_X86_CTRL_STATE_KEY_GET) {
         RAX = bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0;
         RIP = next_rip;
         BX_INFO(("poly_ud: explicit state key get value=%llx",
           (unsigned long long) RAX));
         return true;
       }
-      if (op == 0x67) {
+      if (op == BX_POLY_X86_CTRL_STATE_EXPORT) {
         bx_address buffer = (bx_address) RAX;
         if (!bx_poly_valid_xsave_state_buffer(buffer,
               BX_CPU_THIS_PTR linaddr_width))
@@ -16601,7 +16615,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) buffer));
         return true;
       }
-      if (op == 0x68) {
+      if (op == BX_POLY_X86_CTRL_STATE_IMPORT) {
         bx_address buffer = (bx_address) RAX;
         if (!bx_poly_valid_xsave_state_buffer(buffer,
               BX_CPU_THIS_PTR linaddr_width)) {
@@ -16621,7 +16635,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) buffer));
         return true;
       }
-      if (op == 0x69) {
+      if (op == BX_POLY_X86_CTRL_ABI_SIGNATURE_SET) {
         Bit64u requested_slot = RAX;
         Bit32u slot = 0;
         Bit32u kind = 0;
@@ -16646,7 +16660,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           slot, kind));
         return true;
       }
-      if (op == 0x6a) {
+      if (op == BX_POLY_X86_CTRL_ABI_SIGNATURE_GET) {
         Bit64u requested_slot = RAX;
         Bit32u slot = 0;
         bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -16690,8 +16704,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
-      if (op >= 0x40 && op <= 0x45) {
-        Bit8u status_id = op - 0x40;
+      if (op >= BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS &&
+          op <= BX_POLY_X86_CTRL_STATUS_LAST) {
+        Bit8u status_id = op - BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS;
         if (status_id == 0)
           RAX = bx_poly_mode_switch_count;
         else if (status_id == 2)
