@@ -15039,6 +15039,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
   }
 
   bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   unsigned vector = bx_poly_last_trap.reason == BX_POLY_TRAP_BREAK ?
     BX_BP_EXCEPTION : BX_UD_EXCEPTION;
   BX_INFO(("poly_ud: architectural trap exit without installed vector reason=%u source_mode=%u pc=%llx vector=%u",
@@ -15057,6 +15058,13 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     BX_INFO(("poly_ud: reject trap return reason=%u mode=%u next=%llx",
       bx_poly_last_trap.reason, bx_poly_last_trap.mode,
       (unsigned long long) bx_poly_last_trap.next_pc));
+    return false;
+  }
+  if (!bx_poly_trap_saved_regs.valid ||
+      bx_poly_trap_saved_regs.mode != bx_poly_last_trap.mode) {
+    BX_INFO(("poly_ud: reject trap return without live restore state reason=%u mode=%u saved_valid=%u saved_mode=%u",
+      bx_poly_last_trap.reason, bx_poly_last_trap.mode,
+      bx_poly_trap_saved_regs.valid ? 1 : 0, bx_poly_trap_saved_regs.mode));
     return false;
   }
 
