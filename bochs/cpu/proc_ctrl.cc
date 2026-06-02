@@ -1291,6 +1291,23 @@ static bool bx_poly_valid_monitor_packet_target(Bit64u packet,
     linaddr_width);
 }
 
+static bool bx_poly_valid_xsave_state_buffer(Bit64u buffer,
+  unsigned linaddr_width)
+{
+  if (!bx_poly_valid_control_address(buffer, linaddr_width))
+    return false;
+  if ((buffer & (BX_POLY_STATE_XSAVE_ALIGN_ARCH - 1)) != 0)
+    return false;
+
+  const Bit64u buffer_last_byte =
+    (Bit64u) BX_POLY_STATE_XSAVE_BYTES_ARCH - 1;
+  if (buffer + buffer_last_byte < buffer)
+    return false;
+
+  return bx_poly_valid_control_address(buffer + buffer_last_byte,
+    linaddr_width);
+}
+
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
   Bit32u mode)
 {
@@ -16474,6 +16491,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       }
       if (op == 0x67) {
         bx_address buffer = (bx_address) RAX;
+        if (!bx_poly_valid_xsave_state_buffer(buffer,
+              BX_CPU_THIS_PTR linaddr_width))
+          return false;
         if (!export_poly_xsave_state(BX_SEG_REG_DS, buffer))
           return false;
         bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -16485,6 +16505,11 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       }
       if (op == 0x68) {
         bx_address buffer = (bx_address) RAX;
+        if (!bx_poly_valid_xsave_state_buffer(buffer,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          exception(BX_UD_EXCEPTION, 0);
+          return true;
+        }
         if (!import_poly_xsave_state(BX_SEG_REG_DS, buffer)) {
           exception(BX_UD_EXCEPTION, 0);
           return true;
