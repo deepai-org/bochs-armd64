@@ -13213,6 +13213,15 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(6, &arg6) ||
         !read_poly_aarch64_reg(7, &arg7))
       return false;
+    if (syscall_value > 0xffffffff) {
+      BX_INFO(("poly_raw: reject wide aarch64 syscall number=%llx",
+        (unsigned long long) syscall_value));
+      bx_poly_record_illegal_trap(bx_poly_current_mode, 0xffffffff,
+        4, pc, next_rip);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      return deliver_poly_architectural_trap(pc);
+    }
     Bit32u syscall_reg = (Bit32u) syscall_value;
     return handle_poly_syscall_trap(syscall_reg, syscall_id, arg0, arg1,
       arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
@@ -15264,6 +15273,15 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(16, &arg6) ||
         !read_poly_riscv_reg(17, &arg7))
       return false;
+    if (syscall_value > 0xffffffff) {
+      BX_INFO(("poly_raw: reject wide riscv syscall number=%llx",
+        (unsigned long long) syscall_value));
+      bx_poly_record_illegal_trap(bx_poly_current_mode, 0xffffffff,
+        4, pc, next_rip);
+      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+        bx_poly_current_state_key(RSP));
+      return deliver_poly_architectural_trap(pc);
+    }
     Bit32u syscall_number = (Bit32u) syscall_value;
     return handle_poly_syscall_trap(syscall_number, 0, arg0, arg1, arg2,
       arg3, arg4, arg5, arg6, arg7, next_rip);
