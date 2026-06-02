@@ -1490,7 +1490,7 @@ public: // for now...
   BX_SMF void POLYRET(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF void POLYMODE(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
   BX_SMF bool handle_poly_opcode(bxInstruction_c *) BX_CPP_AttrRegparmN(1);
-  BX_SMF bool handle_poly_syscall_trap(Bit32u, Bit32u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
+  BX_SMF bool handle_poly_syscall_trap(Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, Bit64u, bx_address);
   BX_SMF bool handle_poly_break_trap(Bit32u, Bit32u, bx_address, bx_address);
   BX_SMF bool deliver_poly_architectural_trap(bx_address);
   BX_SMF bool return_poly_architectural_trap(void);
@@ -1527,7 +1527,8 @@ public: // for now...
   BX_SMF bool return_poly_cross_call(Bit32u, bx_address);
   BX_SMF bool handle_poly_import_call(Bit32u, bx_address, bx_address);
   BX_SMF bool enter_poly_x86_direct_call(Bit32u, bx_address, bx_address, Bit32u,
-    const Bit64u * = 0, const Bit64u * = 0, const Bit32u * = 0);
+    bool = false, const Bit64u * = 0, const Bit64u * = 0,
+    const Bit32u * = 0);
   BX_SMF bool return_poly_import_x86_call(void);
   BX_SMF bool handle_poly_x86_ret_cookie(bx_address);
   BX_SMF void poly_interrupt_enter(void);

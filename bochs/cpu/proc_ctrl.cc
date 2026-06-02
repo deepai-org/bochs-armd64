@@ -63,8 +63,8 @@ static const unsigned BX_POLY_TRAP_SAVED_XMM_COUNT = 16;
 struct bx_poly_trap_packet {
   Bit32u reason;
   Bit32u mode;
-  Bit32u number;
-  Bit32u selector;
+  Bit64u number;
+  Bit64u selector;
   bx_address pc;
   bx_address next_pc;
   Bit64u args[8];
@@ -971,9 +971,9 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u foreign_break_count;
   Bit64u foreign_import_count;
   Bit32u last_syscall_mode;
-  Bit32u last_syscall_number;
+  Bit64u last_syscall_number;
   Bit32u last_break_mode;
-  Bit32u last_break_number;
+  Bit64u last_break_number;
   bx_poly_trap_packet last_trap;
   bx_poly_trap_saved_regs_t trap_saved_regs;
   bool return_cookie_valid;
@@ -1217,9 +1217,9 @@ struct bx_poly_reg_state_t {
   Bit32u trap_vector_mode;
   bx_address monitor_packet_addr;
   Bit32u last_syscall_mode;
-  Bit32u last_syscall_number;
+  Bit64u last_syscall_number;
   Bit32u last_break_mode;
-  Bit32u last_break_number;
+  Bit64u last_break_number;
   bx_poly_trap_packet last_trap;
   bx_poly_trap_saved_regs_t trap_saved_regs;
   Bit64u aarch64_x[32];
@@ -2900,8 +2900,8 @@ static bool bx_poly_frontend_id_to_mode(Bit32u frontend_id, Bit32u *mode)
   }
 }
 
-static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u number,
-  Bit32u selector, bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1,
+static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode,
+  Bit64u number, Bit64u selector, bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1,
   Bit64u arg2, Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
   bx_poly_last_trap.reason = reason;
@@ -2920,7 +2920,7 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode, Bit32u
   bx_poly_last_trap.args[7] = arg7;
 }
 
-static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selector,
+static void bx_poly_record_syscall_trap(Bit32u mode, Bit64u number, Bit64u selector,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
   Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
@@ -2931,7 +2931,7 @@ static void bx_poly_record_syscall_trap(Bit32u mode, Bit32u number, Bit32u selec
     pc, next_pc, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
 }
 
-static void bx_poly_record_break_trap(Bit32u mode, Bit32u number, Bit32u selector,
+static void bx_poly_record_break_trap(Bit32u mode, Bit64u number, Bit64u selector,
   bx_address pc, bx_address next_pc, Bit64u arg0, Bit64u arg1, Bit64u arg2,
   Bit64u arg3, Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7)
 {
@@ -4984,13 +4984,6 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     }
   }
   else {
-    if (imported_trap_number > 0xffffffff ||
-        imported_trap_selector > 0xffffffff) {
-      BX_INFO(("poly_state_import: reject trap packet number=%llx selector=%llx",
-        (unsigned long long) imported_trap_number,
-        (unsigned long long) imported_trap_selector));
-      return false;
-    }
     if (!bx_poly_valid_frontend_target(imported_trap_mode,
           (bx_address) imported_trap_pc, BX_CPU_THIS_PTR linaddr_width) ||
         !bx_poly_valid_frontend_target(imported_trap_mode,
@@ -5709,8 +5702,8 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
   bx_poly_last_trap.reason = imported_trap_reason;
   bx_poly_last_trap.mode = imported_trap_mode;
-  bx_poly_last_trap.number = (Bit32u) imported_trap_number;
-  bx_poly_last_trap.selector = (Bit32u) imported_trap_selector;
+  bx_poly_last_trap.number = imported_trap_number;
+  bx_poly_last_trap.selector = imported_trap_selector;
   bx_poly_last_trap.pc = (bx_address) imported_trap_pc;
   bx_poly_last_trap.next_pc = (bx_address) imported_trap_next_pc;
   for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
@@ -7241,8 +7234,9 @@ bool BX_CPU_C::handle_poly_x86_ret_cookie(bx_address target_rip)
 }
 
 bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
-  bx_address return_rip, Bit32u source_kind, const Bit64u *pre_fp_args,
-  const Bit64u *pre_fp_args_hi, const Bit32u *pre_fp32_args)
+  bx_address return_rip, Bit32u source_kind, bool source_tls_base,
+  const Bit64u *pre_fp_args, const Bit64u *pre_fp_args_hi,
+  const Bit32u *pre_fp32_args)
 {
   if (target_rip >= (bx_address) BX_POLY_IMPORT_CALL_BASE)
     return false;
@@ -7331,20 +7325,16 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     }
     for (Bit32u n = 0; mapped && n < 8; n++)
       mapped = read_poly_riscv_reg(10 + n, &args[n]);
-    if (mapped && maps_vec128_window_to_x86) {
-      vec_args_lo[0] = pre_fp_args ? pre_fp_args[0] :
-        BX_READ_XMM_REG_LO_QWORD(0);
-      vec_args_hi[0] = pre_fp_args_hi ? pre_fp_args_hi[0] :
-        BX_READ_XMM_REG_HI_QWORD(0);
-      vec_args_lo[1] = pre_fp_args ? pre_fp_args[1] :
-        BX_READ_XMM_REG_LO_QWORD(1);
-      vec_args_hi[1] = pre_fp_args_hi ? pre_fp_args_hi[1] :
-        BX_READ_XMM_REG_HI_QWORD(1);
-    }
     if (mapped &&
         (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_U32_F32 ||
          source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32))
       mapped = read_poly_riscv_fp32_reg(10, &compact_fp_arg);
+    if (mapped && maps_vec128_window_to_x86) {
+      vec_args_lo[0] = args[0];
+      vec_args_hi[0] = args[1];
+      vec_args_lo[1] = args[2];
+      vec_args_hi[1] = args[3];
+    }
   }
   else if (mode == BX_POLY_MODE_X86) {
     if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE) {
@@ -7379,7 +7369,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   // native signature explicitly asks hardware to install process TLS for the
   // callee window; stack overflow args remain exposed through volatile R11.
   bx_address target_x86_fsbase = saved_x86_fsbase;
-  if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE &&
+  if ((source_tls_base ||
+       source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_TLS_BASE) &&
       mode != BX_POLY_MODE_X86) {
     bx_address source_tls_base = bx_poly_tls_base_for_mode(mode);
     if (source_tls_base != 0)
@@ -12265,7 +12256,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
         (bx_address) target, (bx_address) return_rip,
-        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS);
+        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, target_mode,
       (bx_address) target, (bx_address) return_rip,
@@ -12296,12 +12287,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
       bx_poly_abi_signature_slots[aarch64_signature_imm_slot].kind;
+    const bool source_tls_base =
+      (bx_poly_abi_signature_slots[aarch64_signature_imm_slot].register_map &
+        BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
-        (bx_address) target, (bx_address) return_rip, source_kind);
+        (bx_address) target, (bx_address) return_rip, source_kind,
+        source_tls_base);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -12345,12 +12340,16 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
       bx_poly_abi_signature_slots[signature_slot_id].kind;
+    const bool source_tls_base =
+      (bx_poly_abi_signature_slots[signature_slot_id].register_map &
+        BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_AARCH64,
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_AARCH64,
-        (bx_address) target, (bx_address) return_rip, source_kind);
+        (bx_address) target, (bx_address) return_rip, source_kind,
+        source_tls_base);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -13316,17 +13315,7 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
         !read_poly_aarch64_reg(6, &arg6) ||
         !read_poly_aarch64_reg(7, &arg7))
       return false;
-    if (syscall_value > 0xffffffff) {
-      BX_INFO(("poly_raw: reject wide aarch64 syscall number=%llx",
-        (unsigned long long) syscall_value));
-      bx_poly_record_illegal_trap(bx_poly_current_mode, 0xffffffff,
-        4, pc, next_rip);
-      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-        bx_poly_current_state_key(RSP));
-      return deliver_poly_architectural_trap(pc);
-    }
-    Bit32u syscall_reg = (Bit32u) syscall_value;
-    return handle_poly_syscall_trap(syscall_reg, syscall_id, arg0, arg1,
+    return handle_poly_syscall_trap(syscall_value, syscall_id, arg0, arg1,
       arg2, arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
@@ -13640,7 +13629,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip,
-        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS,
+        BX_POLY_ABI_SIGNATURE_KIND_X86_SYSV_REGS, false,
         pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     return enter_poly_cross_call(BX_POLY_MODE_RAW_RISCV, target_mode,
@@ -13680,13 +13669,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
       bx_poly_abi_signature_slots[riscv_signature_imm_slot].kind;
+    const bool source_tls_base =
+      (bx_poly_abi_signature_slots[riscv_signature_imm_slot].register_map &
+        BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip, source_kind,
-        pre_fp_args, pre_fp_args_hi, pre_fp32_args);
+        source_tls_base, pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -13738,13 +13730,16 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       bx_poly_current_state_key(RSP));
     Bit32u source_kind =
       bx_poly_abi_signature_slots[signature_slot_id].kind;
+    const bool source_tls_base =
+      (bx_poly_abi_signature_slots[signature_slot_id].register_map &
+        BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
     if (target_mode == BX_POLY_MODE_X86) {
       if (handle_poly_import_call(BX_POLY_MODE_RAW_RISCV,
             (bx_address) target, (bx_address) return_rip))
         return true;
       return enter_poly_x86_direct_call(BX_POLY_MODE_RAW_RISCV,
         (bx_address) target, (bx_address) return_rip, source_kind,
-        pre_fp_args, pre_fp_args_hi, pre_fp32_args);
+        source_tls_base, pre_fp_args, pre_fp_args_hi, pre_fp32_args);
     }
     Bit32u bridge_kind = BX_POLY_CROSS_BRIDGE_DEFAULT;
     if (!bx_poly_cross_bridge_for_abi_signature_kind(source_kind,
@@ -15416,17 +15411,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         !read_poly_riscv_reg(16, &arg6) ||
         !read_poly_riscv_reg(17, &arg7))
       return false;
-    if (syscall_value > 0xffffffff) {
-      BX_INFO(("poly_raw: reject wide riscv syscall number=%llx",
-        (unsigned long long) syscall_value));
-      bx_poly_record_illegal_trap(bx_poly_current_mode, 0xffffffff,
-        4, pc, next_rip);
-      bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-        bx_poly_current_state_key(RSP));
-      return deliver_poly_architectural_trap(pc);
-    }
-    Bit32u syscall_number = (Bit32u) syscall_value;
-    return handle_poly_syscall_trap(syscall_number, 0, arg0, arg1, arg2,
+    return handle_poly_syscall_trap(syscall_value, 0, arg0, arg1, arg2,
       arg3, arg4, arg5, arg6, arg7, next_rip);
   }
 
@@ -16330,8 +16315,8 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   return true;
 }
 
-bool BX_CPU_C::handle_poly_syscall_trap(Bit32u syscall_number,
-  Bit32u trap_selector, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
+bool BX_CPU_C::handle_poly_syscall_trap(Bit64u syscall_number,
+  Bit64u trap_selector, Bit64u arg0, Bit64u arg1, Bit64u arg2, Bit64u arg3,
   Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7, bx_address next_rip)
 {
   // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
@@ -16539,8 +16524,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             bx_poly_current_state_key(RSP), false);
           Bit32u source_kind =
             bx_poly_abi_signature_slots[signature_slot].kind;
+          const bool source_tls_base =
+            (bx_poly_abi_signature_slots[signature_slot].register_map &
+              BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
           return enter_poly_x86_direct_call(BX_POLY_MODE_X86,
-            (bx_address) RBX, (bx_address) R11, source_kind);
+            (bx_address) RBX, (bx_address) R11, source_kind,
+            source_tls_base);
         }
         if (!bx_poly_is_raw_mode(target_mode)) {
           BX_INFO(("poly_ud: reject generic pcall mode=%u", target_mode));
@@ -16568,8 +16557,12 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             bx_poly_current_state_key(RSP), false);
           Bit32u source_kind =
             bx_poly_abi_signature_slots[signature_slot].kind;
+          const bool source_tls_base =
+            (bx_poly_abi_signature_slots[signature_slot].register_map &
+              BX_POLY_ABI_REGISTER_MAP_FLAG_TLS_BASE) != 0;
           return enter_poly_x86_direct_call(BX_POLY_MODE_X86,
-            (bx_address) RBX, (bx_address) R11, source_kind);
+            (bx_address) RBX, (bx_address) R11, source_kind,
+            source_tls_base);
         }
         if (!bx_poly_is_raw_mode(target_mode)) {
           BX_INFO(("poly_ud: reject subopcode pcall mode=%u", target_mode));
