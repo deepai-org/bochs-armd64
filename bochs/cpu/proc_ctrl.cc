@@ -11958,20 +11958,22 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET) {
     Bit64u mode = 0;
+    Bit32u mode_id = 0;
     if (!read_poly_aarch64_reg(0, &mode))
       return false;
-    if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+    if (!bx_poly_u32_from_u64(mode, &mode_id) ||
+        !bx_poly_valid_frontend_mode(mode_id)) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
-          (Bit32u) mode, BX_CPU_THIS_PTR linaddr_width)) {
+          mode_id, BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
-    bx_poly_trap_vector_mode = (Bit32u) mode;
+    bx_poly_trap_vector_mode = mode_id;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -12054,18 +12056,20 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
   if (insn == BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_SET) {
     Bit64u slot = 0;
     Bit64u value = 0;
+    Bit32u slot_id = 0;
     Bit32u kind = 0;
     if (!read_poly_aarch64_reg(0, &slot) ||
         !read_poly_aarch64_reg(1, &value))
       return false;
-    if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
+    if (!bx_poly_u32_from_u64(slot, &slot_id) ||
+        slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
         !bx_poly_decode_abi_signature_value(value, &kind)) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     bx_poly_set_abi_signature_slot(
-      &bx_poly_abi_signature_slots[(Bit32u) slot], kind);
+      &bx_poly_abi_signature_slots[slot_id], kind);
     write_poly_aarch64_reg(0, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -12077,15 +12081,17 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_AARCH64_CTRL_ABI_SIGNATURE_GET) {
     Bit64u slot = 0;
+    Bit32u slot_id = 0;
     if (!read_poly_aarch64_reg(0, &slot))
       return false;
-    if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+    if (!bx_poly_u32_from_u64(slot, &slot_id) ||
+        slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
       write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     write_poly_aarch64_reg(0,
-      bx_poly_abi_signature_slots[(Bit32u) slot].kind);
+      bx_poly_abi_signature_slots[slot_id].kind);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: aarch64 ABI signature get slot=%llu",
       (unsigned long long) slot));
@@ -13318,20 +13324,22 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET) {
     Bit64u mode = 0;
+    Bit32u mode_id = 0;
     if (!read_poly_riscv_reg(10, &mode))
       return false;
-    if (!bx_poly_valid_frontend_mode((Bit32u) mode)) {
+    if (!bx_poly_u32_from_u64(mode, &mode_id) ||
+        !bx_poly_valid_frontend_mode(mode_id)) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     if (!bx_poly_valid_trap_vector_target(bx_poly_trap_vector,
-          (Bit32u) mode, BX_CPU_THIS_PTR linaddr_width)) {
+          mode_id, BX_CPU_THIS_PTR linaddr_width)) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
-    bx_poly_trap_vector_mode = (Bit32u) mode;
+    bx_poly_trap_vector_mode = mode_id;
     bx_address stack_key = bx_poly_current_state_key(RSP);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -13414,18 +13422,20 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
   if (insn == BX_POLY_RISCV_CTRL_ABI_SIGNATURE_SET) {
     Bit64u slot = 0;
     Bit64u value = 0;
+    Bit32u slot_id = 0;
     Bit32u kind = 0;
     if (!read_poly_riscv_reg(10, &slot) ||
         !read_poly_riscv_reg(11, &value))
       return false;
-    if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
+    if (!bx_poly_u32_from_u64(slot, &slot_id) ||
+        slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT ||
         !bx_poly_decode_abi_signature_value(value, &kind)) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     bx_poly_set_abi_signature_slot(
-      &bx_poly_abi_signature_slots[(Bit32u) slot], kind);
+      &bx_poly_abi_signature_slots[slot_id], kind);
     write_poly_riscv_reg(10, 0);
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
@@ -13437,15 +13447,17 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_RISCV_CTRL_ABI_SIGNATURE_GET) {
     Bit64u slot = 0;
+    Bit32u slot_id = 0;
     if (!read_poly_riscv_reg(10, &slot))
       return false;
-    if (slot >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
+    if (!bx_poly_u32_from_u64(slot, &slot_id) ||
+        slot_id >= BX_POLY_ABI_SIGNATURE_SLOT_COUNT) {
       write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
       RIP = next_rip;
       return true;
     }
     write_poly_riscv_reg(10,
-      bx_poly_abi_signature_slots[(Bit32u) slot].kind);
+      bx_poly_abi_signature_slots[slot_id].kind);
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv ABI signature get slot=%llu",
       (unsigned long long) slot));
