@@ -7363,9 +7363,9 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   // callee window; stack overflow args remain exposed through volatile R11.
   bx_address target_x86_fsbase = saved_x86_fsbase;
   if (source_tls_base && mode != BX_POLY_MODE_X86) {
-    bx_address source_tls_base = bx_poly_tls_base_for_mode(mode);
-    if (source_tls_base != 0)
-      target_x86_fsbase = source_tls_base;
+    bx_address source_tls_addr = bx_poly_tls_base_for_mode(mode);
+    if (source_tls_addr != 0)
+      target_x86_fsbase = source_tls_addr;
   }
   bx_address x86_stack_base = bx_poly_return_cookie_valid ?
     bx_poly_return_cookie_rsp : RSP;
