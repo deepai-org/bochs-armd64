@@ -524,6 +524,7 @@ static const Bit32u BX_POLY_ABI_REGISTER_MAP_X86_SYSV_TO_AARCH64_HFA4_F64_RET = 
 static const Bit32u BX_POLY_X86_CTRL_PENTER_MODE = 0x03;
 static const Bit32u BX_POLY_X86_CTRL_PSWITCH_MODE = 0x04;
 static const Bit32u BX_POLY_X86_CTRL_LANDING = 0x05;
+static const Bit32u BX_POLY_X86_CTRL_IMPORT_RETURN = 0x20;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_MODE = 0x2d;
 static const Bit32u BX_POLY_X86_CTRL_PCALL_SIG_IMM_BASE = 0x30;
 static const Bit32u BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS = 0x40;
@@ -16483,7 +16484,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           BX_POLY_RETURN_KIND_DEFAULT, BX_POLY_ARG_KIND_DEFAULT,
           signature_slot);
       }
-      if (op == 0x20)
+      if (op == BX_POLY_X86_CTRL_IMPORT_RETURN)
         return return_poly_import_x86_call();
       if (op == BX_POLY_X86_CTRL_TRAP_VECTOR_SET) {
         if (!bx_poly_valid_trap_vector_target(RAX, bx_poly_trap_vector_mode,
