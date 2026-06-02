@@ -563,8 +563,8 @@ static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit32u BX_POLY_IMPORT_SELECTOR_COUNT = 256;
 static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_SELECTOR_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
-// Keep suspended x86 helper frames and active foreign frames from colliding
-// when libc helpers use deep stack frames beneath the x86 return cookie.
+// Keep suspended x86 thunk frames and active foreign frames from colliding
+// when runtime callees use deep stack frames beneath the x86 return cookie.
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x4000);
 static const Bit32u BX_POLY_FOREIGN_STACK_ARG_QWORDS = 8;
 
