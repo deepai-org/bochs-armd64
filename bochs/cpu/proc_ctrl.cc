@@ -4898,6 +4898,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         (unsigned long long) imported_trap_flags));
       return false;
     }
+    for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++) {
+      Bit64u arg = read_virtual_qword(seg,
+        base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
+      if (arg != 0) {
+        BX_INFO(("poly_state_import: reject inactive trap arg%u=%llx",
+          n, (unsigned long long) arg));
+        return false;
+      }
+    }
   }
   else {
     if (!bx_poly_valid_frontend_target(imported_trap_mode,
