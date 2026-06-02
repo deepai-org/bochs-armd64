@@ -12103,6 +12103,23 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
+  if (insn == 0xd65f0bff || insn == 0xd65f0fff) {
+    Bit64u ret_addr = 0;
+    const char *op_name = insn == 0xd65f0bff ? "retaa" : "retab";
+    if (!read_poly_aarch64_reg(30, &ret_addr))
+      return false;
+    if (return_poly_cross_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
+      return true;
+    if (return_poly_abi_call(BX_POLY_MODE_RAW_AARCH64, (bx_address) ret_addr))
+      return true;
+    if (!commit_poly_raw_branch_target(BX_POLY_MODE_RAW_AARCH64, insn, 4,
+          pc, next_rip, (bx_address) ret_addr, op_name))
+      return false;
+    BX_DEBUG(("poly_raw: emulated aarch64 %s target=%llx",
+      op_name, (unsigned long long) ret_addr));
+    return true;
+  }
+
   {
     Bit32u pair_op = insn & 0xffc00000;
     bool is_load = false;
