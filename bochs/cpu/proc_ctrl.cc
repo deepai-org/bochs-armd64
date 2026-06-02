@@ -6561,13 +6561,16 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
     frame->return_map = BX_POLY_X86_RETURN_MAP_COMPACT_U32_F32;
   if (source_kind == BX_POLY_ABI_SIGNATURE_KIND_NATIVE_REGS_COMPACT_F32_U32)
     frame->return_map = BX_POLY_X86_RETURN_MAP_COMPACT_F32_U32;
-  frame->alias_valid = true;
-  frame->alias[0] = RDI;
-  frame->alias[1] = RSI;
-  frame->alias[2] = RDX;
-  frame->alias[3] = RCX;
-  frame->alias[4] = R8;
-  frame->alias[5] = R9;
+  frame->alias_valid =
+    source_kind == BX_POLY_ABI_SIGNATURE_KIND_EXCHANGE;
+  if (frame->alias_valid) {
+    frame->alias[0] = RDI;
+    frame->alias[1] = RSI;
+    frame->alias[2] = RDX;
+    frame->alias[3] = RCX;
+    frame->alias[4] = R8;
+    frame->alias[5] = R9;
+  }
   frame->saved_x86_fsbase = saved_x86_fsbase;
   frame->target_x86_fsbase = target_x86_fsbase;
 
