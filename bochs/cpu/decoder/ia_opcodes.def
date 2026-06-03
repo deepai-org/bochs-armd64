@@ -100,7 +100,6 @@
  */
 
 bx_define_opcode(BX_IA_ERROR, "error", "error", &BX_CPU_C::BxError, &BX_CPU_C::BxError, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
-bx_define_opcode(BX_IA_POLYMODE, "polymode", "polymode", &BX_CPU_C::POLYMODE, &BX_CPU_C::POLYMODE, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
 #if BX_SUPPORT_HANDLERS_CHAINING_SPEEDUPS
 bx_define_opcode(BX_INSERTED_OPCODE, "error", "error", &BX_CPU_C::BxError, &BX_CPU_C::BxError, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, 0)
 #endif
@@ -2896,6 +2895,8 @@ bx_define_opcode(BX_IA_ERETS, "erets", "erets", NULL, &BX_CPU_C::ERETS, BX_ISA_F
 bx_define_opcode(BX_IA_ERETU, "eretu", "eretu", NULL, &BX_CPU_C::ERETU, BX_ISA_FRED, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
 bx_define_opcode(BX_IA_LKGS_Ew, "lkgs", "lkgs", &BX_CPU_C::LKGS_Ew, &BX_CPU_C::LKGS_Ew, BX_ISA_FRED, OP_Ew, OP_NONE, OP_NONE, OP_NONE, 0)
 #endif
+
+bx_define_opcode(BX_IA_POLYMODE, "polymode", "polymode", &BX_CPU_C::POLYMODE, &BX_CPU_C::POLYMODE, 0, OP_NONE, OP_NONE, OP_NONE, OP_NONE, BX_TRACE_END)
 
 #if BX_SUPPORT_EVEX
 #include "ia_opcodes_evex.def"
