@@ -7653,7 +7653,7 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
     bx_poly_save_current_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    bx_poly_loaded_reg_state_valid = false;
+    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     RIP = bx_poly_spill_resume_rip;
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
     BX_DEBUG(("poly_raw: auto-spill enter mode=%u old_rip=%llx resume=%llx reason=%u vector=%u count=%llu bytes=%llu cycles=%llu",
@@ -7672,7 +7672,7 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
 
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-  bx_poly_loaded_reg_state_valid = false;
+  bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   BX_DEBUG(("poly_raw: interrupt enter mode=%u rip=%llx",
     bx_poly_interrupted_raw_mode, (unsigned long long) bx_poly_interrupted_raw_rip));
 }
