@@ -4277,6 +4277,11 @@ bool BX_CPU_C::write_poly_riscv_reg(Bit32u reg, Bit64u value)
     bx_poly_riscv_x[2] = value;
     bx_poly_riscv_x_valid[2] = true;
     return true;
+  case 4:
+    bx_poly_riscv_tls_base = (bx_address) value;
+    bx_poly_riscv_x[4] = value;
+    bx_poly_riscv_x_valid[4] = true;
+    return true;
   default:
     if (reg < 32) {
       bx_poly_riscv_x[reg] = value;
@@ -16537,7 +16542,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             (unsigned long long) R15));
           return false;
         }
-        if (bx_poly_prestore_target_valid) {
+        const bool prestore_resume = bx_poly_prestore_target_valid;
+        if (prestore_resume) {
           if (target_mode != bx_poly_prestore_target_mode) {
             BX_INFO(("poly_ud: reject prestore enter mode=%u pending=%u",
               target_mode, bx_poly_prestore_target_mode));
@@ -16555,7 +16561,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         bx_poly_prestore_target_valid = false;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
-        bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
+        if (!prestore_resume)
+          bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
         bx_poly_mode_switch_count++;
         // A frontend switch changes the decoder, not the architectural thread
         // state. New per-thread Poly state is zero-initialized when allocated; an
