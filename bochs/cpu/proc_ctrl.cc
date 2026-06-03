@@ -560,7 +560,10 @@ static const Bit32u BX_POLY_X86_CTRL_FOREIGN_INSN_COUNT_STATUS = 0x42;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_SYSCALL_COUNT_STATUS = 0x43;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS = 0x44;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS = 0x45;
-static const Bit32u BX_POLY_X86_CTRL_STATUS_LAST = 0x45;
+static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS = 0x46;
+static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS = 0x47;
+static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS = 0x48;
+static const Bit32u BX_POLY_X86_CTRL_STATUS_LAST = 0x48;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_SET = 0x60;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_GET = 0x61;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_RETURN = 0x62;
@@ -612,6 +615,8 @@ static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit32u BX_POLY_IMPORT_SELECTOR_COUNT = 256;
 static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_SELECTOR_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
+static const Bit64u BX_POLY_AUTO_SPILL_FIXED_CYCLES = 64;
+static const Bit64u BX_POLY_AUTO_SPILL_BYTE_CYCLES = 1;
 // Keep suspended x86 thunk frames and active foreign frames from colliding
 // when runtime callees use deep stack frames beneath the x86 return cookie.
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x4000);
@@ -690,6 +695,12 @@ static bool bx_poly_u32_from_u64(Bit64u value, Bit32u *result)
     return false;
   *result = (Bit32u) value;
   return true;
+}
+
+static inline Bit64u bx_poly_auto_spill_estimated_cycles(Bit64u bytes)
+{
+  return BX_POLY_AUTO_SPILL_FIXED_CYCLES +
+    bytes * BX_POLY_AUTO_SPILL_BYTE_CYCLES;
 }
 
 static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
@@ -995,6 +1006,9 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u foreign_syscall_count;
   Bit64u foreign_break_count;
   Bit64u foreign_import_count;
+  Bit64u auto_spill_count;
+  Bit64u auto_spill_bytes;
+  Bit64u auto_spill_cycles;
   Bit32u last_syscall_mode;
   Bit64u last_syscall_number;
   Bit32u last_break_mode;
@@ -1087,6 +1101,12 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().foreign_break_count)
 #define bx_poly_foreign_import_count \
   (bx_poly_cpu_runtime_state().foreign_import_count)
+#define bx_poly_auto_spill_count \
+  (bx_poly_cpu_runtime_state().auto_spill_count)
+#define bx_poly_auto_spill_bytes \
+  (bx_poly_cpu_runtime_state().auto_spill_bytes)
+#define bx_poly_auto_spill_cycles \
+  (bx_poly_cpu_runtime_state().auto_spill_cycles)
 #define bx_poly_last_syscall_mode \
   (bx_poly_cpu_runtime_state().last_syscall_mode)
 #define bx_poly_last_syscall_number \
@@ -7626,15 +7646,22 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
       bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 24,
       vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0);
 
+    bx_poly_auto_spill_count++;
+    bx_poly_auto_spill_bytes += BX_POLY_STATE_XSAVE_BYTES_ARCH;
+    bx_poly_auto_spill_cycles +=
+      bx_poly_auto_spill_estimated_cycles(BX_POLY_STATE_XSAVE_BYTES_ARCH);
     bx_poly_save_current_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     bx_poly_current_mode = BX_POLY_MODE_X86;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
     bx_poly_loaded_reg_state_valid = false;
     RIP = bx_poly_spill_resume_rip;
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_DEBUG(("poly_raw: auto-spill enter mode=%u old_rip=%llx resume=%llx reason=%u vector=%u",
+    BX_DEBUG(("poly_raw: auto-spill enter mode=%u old_rip=%llx resume=%llx reason=%u vector=%u count=%llu bytes=%llu cycles=%llu",
       old_mode, (unsigned long long) old_rip,
-      (unsigned long long) RIP, spill_reason, vector));
+      (unsigned long long) RIP, spill_reason, vector,
+      (unsigned long long) bx_poly_auto_spill_count,
+      (unsigned long long) bx_poly_auto_spill_bytes,
+      (unsigned long long) bx_poly_auto_spill_cycles));
     return;
   }
 
@@ -16976,16 +17003,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           RAX = bx_poly_foreign_break_count;
         else if (op == BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS)
           RAX = bx_poly_foreign_import_count;
+        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS)
+          RAX = bx_poly_auto_spill_count;
+        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS)
+          RAX = bx_poly_auto_spill_bytes;
+        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS)
+          RAX = bx_poly_auto_spill_cycles;
         else
           RAX = 0;
         RIP = next_rip;
-        BX_INFO(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu imports=%llu",
+        BX_INFO(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu imports=%llu auto_spills=%llu auto_spill_bytes=%llu auto_spill_cycles=%llu",
           op, status_id, bx_poly_current_mode,
           (unsigned long long) bx_poly_mode_switch_count,
           (unsigned long long) bx_poly_foreign_insn_count,
           (unsigned long long) bx_poly_foreign_syscall_count,
           (unsigned long long) bx_poly_foreign_break_count,
-          (unsigned long long) bx_poly_foreign_import_count));
+          (unsigned long long) bx_poly_foreign_import_count,
+          (unsigned long long) bx_poly_auto_spill_count,
+          (unsigned long long) bx_poly_auto_spill_bytes,
+          (unsigned long long) bx_poly_auto_spill_cycles));
         return true;
       }
   }
@@ -17319,6 +17355,12 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
             BX_POLY_X86_OPCODE_FLAG_VENDOR_PROTOTYPE |
             BX_POLY_X86_OPCODE_FLAG_PRODUCTION_REASSIGNABLE;
       RCX = BX_POLY_X86_OPCODE_FAMILY_VENDOR_PROTOTYPE;
+      RDX = 0;
+    }
+    else if (ECX == 34) {
+      RAX = BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS;
+      RBX = BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS;
+      RCX = BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS;
       RDX = 0;
     }
     else {
