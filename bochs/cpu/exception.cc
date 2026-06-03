@@ -775,7 +775,7 @@ void BX_CPU_C::interrupt(Bit8u vector, unsigned type, bool push_error, Bit16u er
   BX_CPU_THIS_PTR debug_trap = 0;
   BX_CPU_THIS_PTR inhibit_mask = 0;
 
-  poly_interrupt_enter();
+  poly_interrupt_enter(vector, type, error_code);
 
 #if BX_SUPPORT_VMX || BX_SUPPORT_SVM
   BX_CPU_THIS_PTR in_event = true;

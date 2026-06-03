@@ -1531,7 +1531,7 @@ public: // for now...
     const Bit32u * = 0);
   BX_SMF bool return_poly_import_x86_call(void);
   BX_SMF bool handle_poly_x86_ret_cookie(bx_address);
-  BX_SMF void poly_interrupt_enter(void);
+  BX_SMF void poly_interrupt_enter(Bit8u, unsigned, Bit16u);
   BX_SMF void poly_restore_raw_return_to_user(const char *);
   BX_SMF void poly_iret_return_to_user(void);
   BX_SMF void poly_sysret_return_to_user(void);

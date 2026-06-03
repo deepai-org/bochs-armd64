@@ -55,7 +55,11 @@ enum {
   BX_POLY_TRAP_SYSCALL = 1,
   BX_POLY_TRAP_BREAK = 2,
   BX_POLY_TRAP_IMPORT = 3,
-  BX_POLY_TRAP_ILLEGAL = 4
+  BX_POLY_TRAP_ILLEGAL = 4,
+  BX_POLY_SPILL_REASON_NONE = 0,
+  BX_POLY_SPILL_REASON_INTERRUPT = 1,
+  BX_POLY_SPILL_REASON_PAGE_FAULT = 2,
+  BX_POLY_SPILL_REASON_FAULT = 3
 };
 
 static const unsigned BX_POLY_TRAP_SAVED_XMM_COUNT = 16;
@@ -262,6 +266,9 @@ static const Bit32u BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE = (1U << 17);
 static const Bit32u BX_POLY_CPUID_STATE_STATE_KEY_XSAVE = (1U << 18);
 static const Bit32u BX_POLY_CPUID_STATE_TRAP_RESTORE_XSAVE = (1U << 19);
 static const Bit32u BX_POLY_CPUID_STATE_NATIVE_RETURN_XSAVE = (1U << 20);
+static const Bit32u BX_POLY_CPUID_STATE_USER_SPILL = (1U << 21);
+static const Bit32u BX_POLY_CPUID_STATE_MONITOR_TRAMPOLINE = (1U << 22);
+static const Bit32u BX_POLY_CPUID_STATE_OS_XSAVE_NOT_REQUIRED = (1U << 23);
 static const Bit32u BX_POLY_STATE_XSAVE_MAGIC = 0x31594c50; // "PLY1"
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_NONE = 0;
 static const Bit32u BX_POLY_STATE_XSAVE_COMPONENT_ARCH = 20;
@@ -284,6 +291,9 @@ static const Bit32u BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY = (1U << 10);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_STATE_KEY = (1U << 11);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_TRAP_RESTORE = (1U << 12);
 static const Bit32u BX_POLY_STATE_XSAVE_FLAG_NATIVE_RETURN = (1U << 13);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_USER_SPILL = (1U << 14);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_MONITOR_TRAMPOLINE = (1U << 15);
+static const Bit32u BX_POLY_STATE_XSAVE_FLAG_OS_XSAVE_NOT_REQUIRED = (1U << 16);
 static const Bit32u BX_POLY_NATIVE_RETURN_FRAME_FLAG_SRET = (1U << 0);
 static const Bit32u BX_POLY_NATIVE_RETURN_FRAME_FLAGS_SUPPORTED =
   BX_POLY_NATIVE_RETURN_FRAME_FLAG_SRET;
@@ -566,6 +576,8 @@ static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_SET = 0x6b;
 static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_GET = 0x6c;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
+static const Bit32u BX_POLY_X86_CTRL_SPILL_PTR_SET = 0x6f;
+static const Bit32u BX_POLY_X86_CTRL_PRESTORE = 0x70;
 
 static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
     Bit32u *slot)
@@ -1014,6 +1026,11 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u landing_policy_flags;
   bx_address trap_vector;
   Bit32u trap_vector_mode;
+  bx_address spill_buffer;
+  bx_address spill_resume_rip;
+  bool prestore_target_valid;
+  Bit32u prestore_target_mode;
+  bx_address prestore_target_rip;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1126,6 +1143,16 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().trap_vector)
 #define bx_poly_trap_vector_mode \
   (bx_poly_cpu_runtime_state().trap_vector_mode)
+#define bx_poly_spill_buffer \
+  (bx_poly_cpu_runtime_state().spill_buffer)
+#define bx_poly_spill_resume_rip \
+  (bx_poly_cpu_runtime_state().spill_resume_rip)
+#define bx_poly_prestore_target_valid \
+  (bx_poly_cpu_runtime_state().prestore_target_valid)
+#define bx_poly_prestore_target_mode \
+  (bx_poly_cpu_runtime_state().prestore_target_mode)
+#define bx_poly_prestore_target_rip \
+  (bx_poly_cpu_runtime_state().prestore_target_rip)
 #define bx_poly_aarch64_x \
   (bx_poly_cpu_runtime_state().aarch64_x)
 #define bx_poly_aarch64_x_valid \
@@ -3590,6 +3617,11 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_landing_policy_flags = 0;
   bx_poly_trap_vector = 0;
   bx_poly_trap_vector_mode = BX_POLY_MODE_X86;
+  bx_poly_spill_buffer = 0;
+  bx_poly_spill_resume_rip = 0;
+  bx_poly_prestore_target_valid = false;
+  bx_poly_prestore_target_mode = BX_POLY_MODE_X86;
+  bx_poly_prestore_target_rip = 0;
   bx_poly_monitor_packet_addr = 0;
   bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
   bx_poly_last_syscall_number = 0;
@@ -4033,7 +4065,6 @@ static Bit32u bx_poly_state_contract_flags(void)
   return BX_POLY_CPUID_STATE_OVERLAP_GPRS |
     BX_POLY_CPUID_STATE_USER_RETURN_RESTORE |
     BX_POLY_CPUID_STATE_X86_TSO |
-    BX_POLY_CPUID_STATE_XSAVE_VISIBLE |
     BX_POLY_CPUID_STATE_KEY_EXPLICIT |
     BX_POLY_CPUID_STATE_TRANSITION_FRAME_32 |
     BX_POLY_CPUID_STATE_EXPLICIT_SAVE_RESTORE |
@@ -4046,14 +4077,15 @@ static Bit32u bx_poly_state_contract_flags(void)
     BX_POLY_CPUID_STATE_LANDING_POLICY_XSAVE |
     BX_POLY_CPUID_STATE_STATE_KEY_XSAVE |
     BX_POLY_CPUID_STATE_TRAP_RESTORE_XSAVE |
-    BX_POLY_CPUID_STATE_NATIVE_RETURN_XSAVE;
+    BX_POLY_CPUID_STATE_NATIVE_RETURN_XSAVE |
+    BX_POLY_CPUID_STATE_USER_SPILL |
+    BX_POLY_CPUID_STATE_MONITOR_TRAMPOLINE |
+    BX_POLY_CPUID_STATE_OS_XSAVE_NOT_REQUIRED;
 }
 
 static Bit32u bx_poly_xsave_arch_flags(void)
 {
-  return BX_POLY_STATE_XSAVE_FLAG_XCR0_USER |
-    BX_POLY_STATE_XSAVE_FLAG_OSXSAVE_REQUIRED |
-    BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME |
+  return BX_POLY_STATE_XSAVE_FLAG_INTERRUPT_RESUME |
     BX_POLY_STATE_XSAVE_FLAG_TRAP_STATE |
     BX_POLY_STATE_XSAVE_FLAG_COMPLETE_BANK_EXPORT |
     BX_POLY_STATE_XSAVE_FLAG_IMPORT_RETURN |
@@ -4064,7 +4096,10 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_LANDING_POLICY |
     BX_POLY_STATE_XSAVE_FLAG_STATE_KEY |
     BX_POLY_STATE_XSAVE_FLAG_TRAP_RESTORE |
-    BX_POLY_STATE_XSAVE_FLAG_NATIVE_RETURN;
+    BX_POLY_STATE_XSAVE_FLAG_NATIVE_RETURN |
+    BX_POLY_STATE_XSAVE_FLAG_USER_SPILL |
+    BX_POLY_STATE_XSAVE_FLAG_MONITOR_TRAMPOLINE |
+    BX_POLY_STATE_XSAVE_FLAG_OS_XSAVE_NOT_REQUIRED;
 }
 
 static Bit64u bx_poly_trap_packet_flags_for(const bx_poly_trap_packet *trap,
@@ -4459,7 +4494,7 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40,
     bx_poly_trap_vector);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48,
-    bx_poly_trap_vector_mode);
+    (Bit64u) bx_poly_trap_vector_mode);
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56,
     bx_poly_monitor_packet_addr);
 
@@ -4924,12 +4959,20 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         BX_POLY_STATE_XSAVE_STATE_KEY_BYTES,
         "pre-trap-restore"))
     return false;
-  Bit64u imported_trap_vector_mode = read_virtual_qword(seg,
+  Bit64u imported_trap_vector_mode_word = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48);
+  Bit64u imported_trap_vector_mode = imported_trap_vector_mode_word & 0xffffffff;
+  Bit32u imported_spill_reason =
+    (Bit32u) ((imported_trap_vector_mode_word >> 32) & 0xffffffff);
   Bit64u imported_trap_vector = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40);
   Bit64u imported_monitor_packet = read_virtual_qword(seg,
     base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56);
+  if (imported_spill_reason > BX_POLY_SPILL_REASON_FAULT) {
+    BX_INFO(("poly_state_import: reject spill reason=%u",
+      imported_spill_reason));
+    return false;
+  }
   if (imported_trap_vector_mode > 0xffffffff ||
       !bx_poly_valid_frontend_mode((Bit32u) imported_trap_vector_mode)) {
     BX_INFO(("poly_state_import: reject trap vector mode=%llu",
@@ -4986,13 +5029,15 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         (unsigned long long) imported_trap_flags));
       return false;
     }
-    for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++) {
-      Bit64u arg = read_virtual_qword(seg,
-        base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
-      if (arg != 0) {
-        BX_INFO(("poly_state_import: reject inactive trap arg%u=%llx",
-          n, (unsigned long long) arg));
-        return false;
+    if (imported_spill_reason == BX_POLY_SPILL_REASON_NONE) {
+      for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++) {
+        Bit64u arg = read_virtual_qword(seg,
+          base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
+        if (arg != 0) {
+          BX_INFO(("poly_state_import: reject inactive trap arg%u=%llx",
+            n, (unsigned long long) arg));
+          return false;
+        }
       }
     }
   }
@@ -5703,6 +5748,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   bx_poly_current_mode = BX_POLY_MODE_X86;
+  bx_poly_prestore_target_valid = false;
+  bx_poly_prestore_target_mode = BX_POLY_MODE_X86;
+  bx_poly_prestore_target_rip = 0;
   bx_poly_aarch64_tls_base = imported_aarch64_tls_base;
   bx_poly_riscv_tls_base = imported_riscv_tls_base;
   bx_poly_landing_policy_flags = imported_landing_policy;
@@ -7541,7 +7589,8 @@ bool BX_CPU_C::enter_poly_x86_direct_call(Bit32u mode, bx_address target_rip,
   return true;
 }
 
-void BX_CPU_C::poly_interrupt_enter(void)
+void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
+  Bit16u error_code)
 {
   if (!BX_CPU_THIS_PTR poly_feature_enabled || CPL != 3)
     return;
@@ -7550,6 +7599,44 @@ void BX_CPU_C::poly_interrupt_enter(void)
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   if (!bx_poly_is_raw_mode(bx_poly_current_mode))
     return;
+
+  if (bx_poly_spill_buffer != 0 && bx_poly_spill_resume_rip != 0) {
+    Bit32u old_mode = bx_poly_current_mode;
+    bx_address old_rip = RIP;
+    Bit32u spill_reason = BX_POLY_SPILL_REASON_FAULT;
+    if (type == BX_EXTERNAL_INTERRUPT)
+      spill_reason = BX_POLY_SPILL_REASON_INTERRUPT;
+    else if (vector == BX_PF_EXCEPTION)
+      spill_reason = BX_POLY_SPILL_REASON_PAGE_FAULT;
+
+    export_poly_xsave_state(BX_SEG_REG_DS, bx_poly_spill_buffer);
+    write_virtual_qword(BX_SEG_REG_DS,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48,
+      (Bit64u) bx_poly_trap_vector_mode | ((Bit64u) spill_reason << 32));
+    write_virtual_qword(BX_SEG_REG_DS,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET,
+      (Bit64u) vector);
+    write_virtual_qword(BX_SEG_REG_DS,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 8,
+      (Bit64u) type);
+    write_virtual_qword(BX_SEG_REG_DS,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 16,
+      (Bit64u) error_code);
+    write_virtual_qword(BX_SEG_REG_DS,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 24,
+      vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0);
+
+    bx_poly_save_current_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_current_mode = BX_POLY_MODE_X86;
+    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
+    bx_poly_loaded_reg_state_valid = false;
+    RIP = bx_poly_spill_resume_rip;
+    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+    BX_DEBUG(("poly_raw: auto-spill enter mode=%u old_rip=%llx resume=%llx reason=%u vector=%u",
+      old_mode, (unsigned long long) old_rip,
+      (unsigned long long) RIP, spill_reason, vector));
+    return;
+  }
 
   bx_poly_interrupted_raw_valid = true;
   bx_poly_interrupted_raw_mode = bx_poly_current_mode;
@@ -16416,19 +16503,29 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == BX_POLY_X86_CTRL_PENTER_MODE) {
         Bit32u target_mode = BX_POLY_MODE_X86;
         Bit32u frontend_id = 0;
+        bx_address target_rip = next_rip;
         if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
             !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
           BX_INFO(("poly_ud: reject generic frontend id=%llx",
             (unsigned long long) R15));
           return false;
         }
-        if (!bx_poly_valid_frontend_target(target_mode, next_rip,
+        if (bx_poly_prestore_target_valid) {
+          if (target_mode != bx_poly_prestore_target_mode) {
+            BX_INFO(("poly_ud: reject prestore enter mode=%u pending=%u",
+              target_mode, bx_poly_prestore_target_mode));
+            return false;
+          }
+          target_rip = bx_poly_prestore_target_rip;
+        }
+        if (!bx_poly_valid_frontend_target(target_mode, target_rip,
               BX_CPU_THIS_PTR linaddr_width)) {
           BX_INFO(("poly_ud: reject generic enter unaligned mode=%u target=%llx",
-            target_mode, (unsigned long long) next_rip));
+            target_mode, (unsigned long long) target_rip));
           return false;
         }
         bx_poly_current_mode = target_mode;
+        bx_poly_prestore_target_valid = false;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
         bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
@@ -16442,7 +16539,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
           bx_poly_current_state_key(RSP));
         BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-        RIP = next_rip;
+        RIP = target_rip;
         BX_DEBUG(("poly_op: x86 poly opcode op=0x%02x mode switch to %u",
           op, target_mode));
         return true;
@@ -16803,6 +16900,67 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) RAX));
         return true;
       }
+      if (op == BX_POLY_X86_CTRL_SPILL_PTR_SET) {
+        bx_address buffer = (bx_address) RAX;
+        bx_address resume_rip = (bx_address) RDX;
+        if (buffer == 0 && resume_rip == 0) {
+          bx_poly_spill_buffer = 0;
+          bx_poly_spill_resume_rip = 0;
+          RAX = 0;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: auto-spill disabled"));
+          return true;
+        }
+        if (buffer == 0 || resume_rip == 0 ||
+            !bx_poly_valid_xsave_state_buffer(buffer,
+              BX_CPU_THIS_PTR linaddr_width) ||
+            !bx_poly_valid_control_address(resume_rip,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject auto-spill setup buffer=%llx resume=%llx",
+            (unsigned long long) buffer, (unsigned long long) resume_rip));
+          return true;
+        }
+        bx_poly_spill_buffer = buffer;
+        bx_poly_spill_resume_rip = resume_rip;
+        RAX = 0;
+        RIP = next_rip;
+        BX_INFO(("poly_ud: auto-spill setup buffer=%llx resume=%llx",
+          (unsigned long long) buffer, (unsigned long long) resume_rip));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_PRESTORE) {
+        bx_address buffer = (bx_address) RAX;
+        if (buffer == 0)
+          buffer = bx_poly_spill_buffer;
+        if (buffer == 0 ||
+            !bx_poly_valid_xsave_state_buffer(buffer,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          exception(BX_UD_EXCEPTION, 0);
+          return true;
+        }
+        Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
+          buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
+        Bit32u saved_mode = (Bit32u) (header1 >> 32);
+        bx_address saved_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
+          buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+        if (!import_poly_xsave_state(BX_SEG_REG_DS, buffer)) {
+          exception(BX_UD_EXCEPTION, 0);
+          return true;
+        }
+        bx_poly_prestore_target_valid = bx_poly_is_raw_mode(saved_mode);
+        bx_poly_prestore_target_mode = saved_mode;
+        bx_poly_prestore_target_rip = saved_rip;
+        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        RIP = next_rip;
+        BX_INFO(("poly_ud: restored poly spill buffer=%llx",
+          (unsigned long long) buffer));
+        return true;
+      }
       if (op >= BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS &&
           op <= BX_POLY_X86_CTRL_STATUS_LAST) {
         Bit8u status_id = op - BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS;
@@ -17141,8 +17299,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 31) {
       RAX = BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS;
       RBX = BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS;
-      RCX = 0;
-      RDX = 0;
+      RCX = BX_POLY_X86_CTRL_SPILL_PTR_SET;
+      RDX = BX_POLY_X86_CTRL_PRESTORE;
     }
     else if (ECX == 32) {
       RAX = BX_POLY_X86_CTRL_PREFIX_0 |
