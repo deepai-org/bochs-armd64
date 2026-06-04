@@ -1616,6 +1616,30 @@ static Bit32u bx_poly_riscv_softfloat_rounding_mode(Bit32u rm)
   }
 }
 
+static bool bx_poly_riscv_is_nan32(Bit32u value)
+{
+  return (value & 0x7f800000) == 0x7f800000 &&
+    (value & 0x007fffff) != 0;
+}
+
+static bool bx_poly_riscv_is_nan64(Bit64u value)
+{
+  return (value & BX_CONST64(0x7ff0000000000000)) ==
+      BX_CONST64(0x7ff0000000000000) &&
+    (value & BX_CONST64(0x000fffffffffffff)) != 0;
+}
+
+static Bit32u bx_poly_riscv_canonicalize_fp32_nan(Bit32u value)
+{
+  return bx_poly_riscv_is_nan32(value) ? 0x7fc00000 : value;
+}
+
+static Bit64u bx_poly_riscv_canonicalize_fp64_nan(Bit64u value)
+{
+  return bx_poly_riscv_is_nan64(value) ?
+    BX_CONST64(0x7ff8000000000000) : value;
+}
+
 static Bit32u bx_poly_aarch64_softfloat_rounding_mode()
 {
   switch ((bx_poly_aarch64_fpcr >> 22) & 0x3) {
@@ -14557,6 +14581,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         Bit32u result = f32_mulAdd(product_left, product_right, addend, op,
           &status);
         bx_poly_riscv_accumulate_softfloat_fflags(&status);
+        result = bx_poly_riscv_canonicalize_fp32_nan(result);
         if (!write_poly_riscv_fp32_reg(rd, result))
           return false;
         RIP = next_rip;
@@ -14574,6 +14599,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         Bit64u result = f64_mulAdd(product_left, product_right, addend, op,
           &status);
         bx_poly_riscv_accumulate_softfloat_fflags(&status);
+        result = bx_poly_riscv_canonicalize_fp64_nan(result);
         if (!write_poly_riscv_fp64_reg(rd, result))
           return false;
         RIP = next_rip;
@@ -14598,6 +14624,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     Bit64u result_bits = 0;
     const char *op_name = 0;
     bool fp32_op = false;
+    bool canonicalize_nan_result = false;
 
     if (rm > 4 && rm != 7)
       return false;
@@ -14614,6 +14641,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_add(left32_bits, right32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x04) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14628,6 +14656,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_sub(left32_bits, right32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x08) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14642,6 +14671,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_mul(left32_bits, right32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x0c) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14656,6 +14686,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_div(left32_bits, right32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x14 && rm == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14667,6 +14698,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       result32_bits = f32_minmax(left32_bits, right32_bits, 0, 1, false,
         &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x14 && rm == 1) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14678,6 +14710,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       result32_bits = f32_minmax(left32_bits, right32_bits, 1, 1, false,
         &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x01) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14691,6 +14724,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_add(left_bits, right_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x05) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14704,6 +14738,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_sub(left_bits, right_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x09) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14717,6 +14752,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_mul(left_bits, right_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x0d) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14730,6 +14766,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_div(left_bits, right_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x15 && rm == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14739,6 +14776,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 0, 1, false, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x15 && rm == 1) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14748,6 +14786,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_minmax(left_bits, right_bits, 1, 1, false, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x2c && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14757,6 +14796,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f32_sqrt(left32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x2d && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14765,6 +14805,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f64_sqrt(left_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x20 && rs2 == 1) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -14778,6 +14819,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result32_bits = f64_to_f32(left_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if (funct7 == 0x21 && rs2 == 0) {
       softfloat_status_t status = bx_poly_softfloat_status();
@@ -14786,6 +14828,7 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
         return false;
       result_bits = f32_to_f64(left32_bits, &status);
       bx_poly_riscv_accumulate_softfloat_fflags(&status);
+      canonicalize_nan_result = true;
     }
     else if ((funct7 == 0x68 || funct7 == 0x69) && rs2 <= 3) {
       Bit32u rounding_mode = bx_poly_riscv_softfloat_rounding_mode(rm);
@@ -15038,11 +15081,17 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
       return false;
     }
     if (fp32_op) {
+      if (canonicalize_nan_result)
+        result32_bits = bx_poly_riscv_canonicalize_fp32_nan(result32_bits);
       if (!write_poly_riscv_fp32_reg(rd, result32_bits))
         return false;
     }
-    else if (!write_poly_riscv_fp64_reg(rd, result_bits))
-      return false;
+    else {
+      if (canonicalize_nan_result)
+        result_bits = bx_poly_riscv_canonicalize_fp64_nan(result_bits);
+      if (!write_poly_riscv_fp64_reg(rd, result_bits))
+        return false;
+    }
     RIP = next_rip;
     BX_DEBUG(("poly_raw: emulated riscv %s f%u,f%u,f%u", op_name, rd, rs1, rs2));
     return true;
