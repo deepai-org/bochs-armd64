@@ -1496,6 +1496,10 @@ public: // for now...
   BX_SMF bool return_poly_architectural_trap(void);
   BX_SMF bool commit_poly_raw_branch_target(Bit32u, Bit32u, Bit32u,
     bx_address, bx_address, bx_address, const char *);
+  BX_SMF void poly_snapshot_aliased_state(Bit32u);
+  BX_SMF void poly_restore_aliased_state(Bit32u);
+  BX_SMF bool poly_read_exchange_window(Bit32u, Bit64u *);
+  BX_SMF bool poly_write_exchange_window(Bit32u, Bit64u);
   BX_SMF bool read_poly_aarch64_reg(Bit32u, Bit64u *);
   BX_SMF bool write_poly_aarch64_reg(Bit32u, Bit64u);
   BX_SMF bool read_poly_riscv_reg(Bit32u, Bit64u *);
