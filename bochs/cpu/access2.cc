@@ -26,6 +26,71 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+static bool bx_poly_fast_watch_initialized = false;
+static bool bx_poly_fast_watch_enabled = false;
+static bx_address bx_poly_fast_watch_addr = 0;
+static bx_address bx_poly_fast_watch_end = 0;
+
+static void bx_poly_init_fast_watch()
+{
+  if (bx_poly_fast_watch_initialized)
+    return;
+  bx_poly_fast_watch_initialized = true;
+
+  const char *addr_env = getenv("POLY_AARCH64_WATCH_STORE_ADDR");
+  if (addr_env == NULL || *addr_env == '\0')
+    return;
+
+  char *endptr = NULL;
+  unsigned long long addr = strtoull(addr_env, &endptr, 0);
+  if (endptr == addr_env)
+    return;
+
+  unsigned long long size = 8;
+  const char *size_env = getenv("POLY_AARCH64_WATCH_STORE_SIZE");
+  if (size_env != NULL && *size_env != '\0') {
+    endptr = NULL;
+    unsigned long long parsed = strtoull(size_env, &endptr, 0);
+    if (endptr != size_env && parsed != 0)
+      size = parsed;
+  }
+
+  bx_poly_fast_watch_addr = (bx_address) addr;
+  bx_poly_fast_watch_end = (bx_address) (addr + size);
+  bx_poly_fast_watch_enabled = bx_poly_fast_watch_end > bx_poly_fast_watch_addr;
+}
+
+static void bx_poly_log_fast_watch(const char *op, bx_address laddr,
+    unsigned len, const void *data)
+{
+  bx_poly_init_fast_watch();
+  if (!bx_poly_fast_watch_enabled || len == 0)
+    return;
+  bx_address end = laddr + len;
+  if (end <= bx_poly_fast_watch_addr || laddr >= bx_poly_fast_watch_end)
+    return;
+
+  Bit64u lo = 0;
+  Bit64u hi = 0;
+  const Bit8u *bytes = (const Bit8u *) data;
+  unsigned preview_len = len < 16 ? len : 16;
+  for (unsigned n = 0; n < preview_len && n < 8; n++)
+    lo |= ((Bit64u) bytes[n]) << (n * 8);
+  for (unsigned n = 8; n < preview_len && n < 16; n++)
+    hi |= ((Bit64u) bytes[n]) << ((n - 8) * 8);
+  BX_INFO(("POLY_FAST_LINEAR_WATCH_WRITE op=%s rip=%llx laddr=%llx "
+    "len=%u data_lo=%llx data_hi=%llx watch=%llx-%llx rsp=%llx "
+    "rax=%llx rbx=%llx rcx=%llx rdx=%llx rsi=%llx rdi=%llx",
+    op, (unsigned long long) RIP, (unsigned long long) laddr, len,
+    (unsigned long long) lo, (unsigned long long) hi,
+    (unsigned long long) bx_poly_fast_watch_addr,
+    (unsigned long long) bx_poly_fast_watch_end,
+    (unsigned long long) RSP, (unsigned long long) RAX,
+    (unsigned long long) RBX, (unsigned long long) RCX,
+    (unsigned long long) RDX, (unsigned long long) RSI,
+    (unsigned long long) RDI));
+}
+
   void BX_CPP_AttrRegparmN(3)
 BX_CPU_C::write_linear_byte(unsigned s, bx_address laddr, Bit8u data)
 {
@@ -40,6 +105,7 @@ BX_CPU_C::write_linear_byte(unsigned s, bx_address laddr, Bit8u data)
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 1, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) &data);
       Bit8u *hostAddr = (Bit8u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 1);
+      bx_poly_log_fast_watch("byte", laddr, 1, &data);
       *hostAddr = data;
       return;
     }
@@ -67,6 +133,7 @@ BX_CPU_C::write_linear_word(unsigned s, bx_address laddr, Bit16u data)
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 2, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) &data);
       Bit16u *hostAddr = (Bit16u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 2);
+      bx_poly_log_fast_watch("word", laddr, 2, &data);
       WriteHostWordToLittleEndian(hostAddr, data);
       return;
     }
@@ -94,6 +161,7 @@ BX_CPU_C::write_linear_dword(unsigned s, bx_address laddr, Bit32u data)
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 4, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) &data);
       Bit32u *hostAddr = (Bit32u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 4);
+      bx_poly_log_fast_watch("dword", laddr, 4, &data);
       WriteHostDWordToLittleEndian(hostAddr, data);
       return;
     }
@@ -121,6 +189,7 @@ BX_CPU_C::write_linear_qword(unsigned s, bx_address laddr, Bit64u data)
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 8, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) &data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 8);
+      bx_poly_log_fast_watch("qword", laddr, 8, &data);
       WriteHostQWordToLittleEndian(hostAddr, data);
       return;
     }
@@ -146,6 +215,7 @@ BX_CPU_C::write_linear_xmmword(unsigned s, bx_address laddr, const BxPackedXmmRe
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 16, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 16);
+      bx_poly_log_fast_watch("xmm", laddr, 16, data);
       WriteHostQWordToLittleEndian(hostAddr,   data->xmm64u(0));
       WriteHostQWordToLittleEndian(hostAddr+1, data->xmm64u(1));
       return;
@@ -170,6 +240,7 @@ BX_CPU_C::write_linear_xmmword_aligned(unsigned s, bx_address laddr, const BxPac
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 16, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 16);
+      bx_poly_log_fast_watch("xmm-aligned", laddr, 16, data);
       WriteHostQWordToLittleEndian(hostAddr,   data->xmm64u(0));
       WriteHostQWordToLittleEndian(hostAddr+1, data->xmm64u(1));
       return;
@@ -199,6 +270,7 @@ BX_CPU_C::write_linear_ymmword(unsigned s, bx_address laddr, const BxPackedYmmRe
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 32, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 32);
+      bx_poly_log_fast_watch("ymm", laddr, 32, data);
       for (unsigned n = 0; n < 4; n++) {
         WriteHostQWordToLittleEndian(hostAddr+n, data->ymm64u(n));
       }
@@ -224,6 +296,7 @@ BX_CPU_C::write_linear_ymmword_aligned(unsigned s, bx_address laddr, const BxPac
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 32, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 32);
+      bx_poly_log_fast_watch("ymm-aligned", laddr, 32, data);
       for (unsigned n = 0; n < 4; n++) {
         WriteHostQWordToLittleEndian(hostAddr+n, data->ymm64u(n));
       }
@@ -254,6 +327,7 @@ BX_CPU_C::write_linear_zmmword(unsigned s, bx_address laddr, const BxPackedZmmRe
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 64, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 64);
+      bx_poly_log_fast_watch("zmm", laddr, 64, data);
       for (unsigned n = 0; n < 8; n++) {
         WriteHostQWordToLittleEndian(hostAddr+n, data->zmm64u(n));
       }
@@ -279,6 +353,7 @@ BX_CPU_C::write_linear_zmmword_aligned(unsigned s, bx_address laddr, const BxPac
       BX_NOTIFY_LIN_MEMORY_ACCESS(laddr, pAddr, 64, tlbEntry->get_memtype(), BX_WRITE, (Bit8u*) data);
       Bit64u *hostAddr = (Bit64u*) (hostPageAddr | pageOffset);
       pageWriteStampTable.decWriteStamp(pAddr, 64);
+      bx_poly_log_fast_watch("zmm-aligned", laddr, 64, data);
       for (unsigned n = 0; n < 8; n++) {
         WriteHostQWordToLittleEndian(hostAddr+n, data->zmm64u(n));
       }

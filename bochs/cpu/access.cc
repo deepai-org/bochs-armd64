@@ -25,6 +25,50 @@
 #include "cpu.h"
 #define LOG_THIS BX_CPU_THIS_PTR
 
+static bool bx_poly_linear_watch_initialized = false;
+static bool bx_poly_linear_watch_enabled = false;
+static bx_address bx_poly_linear_watch_addr = 0;
+static bx_address bx_poly_linear_watch_end = 0;
+
+static void bx_poly_init_linear_watch()
+{
+  if (bx_poly_linear_watch_initialized)
+    return;
+  bx_poly_linear_watch_initialized = true;
+
+  const char *addr_env = getenv("POLY_AARCH64_WATCH_STORE_ADDR");
+  if (addr_env == NULL || *addr_env == '\0')
+    return;
+
+  char *endptr = NULL;
+  unsigned long long addr = strtoull(addr_env, &endptr, 0);
+  if (endptr == addr_env)
+    return;
+
+  unsigned long long size = 8;
+  const char *size_env = getenv("POLY_AARCH64_WATCH_STORE_SIZE");
+  if (size_env != NULL && *size_env != '\0') {
+    endptr = NULL;
+    unsigned long long parsed = strtoull(size_env, &endptr, 0);
+    if (endptr != size_env && parsed != 0)
+      size = parsed;
+  }
+
+  bx_poly_linear_watch_addr = (bx_address) addr;
+  bx_poly_linear_watch_end = (bx_address) (addr + size);
+  bx_poly_linear_watch_enabled = bx_poly_linear_watch_end >
+    bx_poly_linear_watch_addr;
+}
+
+static bool bx_poly_linear_watch_overlaps(bx_address laddr, unsigned len)
+{
+  bx_poly_init_linear_watch();
+  if (!bx_poly_linear_watch_enabled || len == 0)
+    return false;
+  bx_address end = laddr + len;
+  return end > bx_poly_linear_watch_addr && laddr < bx_poly_linear_watch_end;
+}
+
 bx_address bx_asize_mask[] = {
   0xffff,                         // as16 (asize = '00)
   0xffffffff,                     // as32 (asize = '01)
@@ -445,6 +489,31 @@ int BX_CPU_C::access_write_linear(bx_address laddr, unsigned len, unsigned curr_
 #endif
 
   bool user = (curr_pl == 3);
+  bool poly_watch_hit = bx_poly_linear_watch_overlaps(laddr, len);
+  if (poly_watch_hit) {
+    Bit8u preview[16] = { 0 };
+    unsigned preview_len = len < sizeof(preview) ? len : sizeof(preview);
+    for (unsigned n = 0; n < preview_len; n++)
+      preview[n] = ((const Bit8u *) data)[n];
+    Bit64u lo = 0;
+    Bit64u hi = 0;
+    for (unsigned n = 0; n < preview_len && n < 8; n++)
+      lo |= ((Bit64u) preview[n]) << (n * 8);
+    for (unsigned n = 8; n < preview_len && n < 16; n++)
+      hi |= ((Bit64u) preview[n]) << ((n - 8) * 8);
+    BX_INFO(("POLY_LINEAR_WATCH_WRITE rip=%llx laddr=%llx len=%u "
+      "xlate=%u cpl=%u data_lo=%llx data_hi=%llx "
+      "watch=%llx-%llx rsp=%llx rax=%llx rbx=%llx rcx=%llx rdx=%llx "
+      "rsi=%llx rdi=%llx",
+      (unsigned long long) RIP, (unsigned long long) laddr, len,
+      xlate_rw, curr_pl, (unsigned long long) lo, (unsigned long long) hi,
+      (unsigned long long) bx_poly_linear_watch_addr,
+      (unsigned long long) bx_poly_linear_watch_end,
+      (unsigned long long) RSP, (unsigned long long) RAX,
+      (unsigned long long) RBX, (unsigned long long) RCX,
+      (unsigned long long) RDX, (unsigned long long) RSI,
+      (unsigned long long) RDI));
+  }
 
 #if BX_SUPPORT_X86_64
   if (! IsCanonicalAccess(laddr, xlate_rw, user)) {
