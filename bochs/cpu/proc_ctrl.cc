@@ -622,6 +622,19 @@ static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_STATE_ADDR = (1ULL << 0);
 static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_EVENT_ADDR = (1ULL << 1);
 static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_RESUME_RIP = (1ULL << 2);
 static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_RESUME_STACK = (1ULL << 3);
+static const Bit64u BX_POLY_V2_DEBUG_NOTE_MAGIC =
+  BX_CONST64(0x32474244594c4f50);
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_VERSION = 2;
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_BYTES = 9216;
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_ALIGN = 64;
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_HEADER_BYTES = 512;
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET = 512;
+static const Bit32u BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET = 1024;
+static const Bit64u BX_POLY_V2_DUMP_SELECTOR_LIVE = 0;
+static const Bit64u BX_POLY_V2_DUMP_SELECTOR_SPILL_DESCRIPTOR = 1;
+static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_EVENT = (1ULL << 0);
+static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_XSAVE = (1ULL << 1);
+static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_SPILLED = (1ULL << 2);
 static const Bit32u BX_POLY_CPUID_V2_ABI_VERSION = 2;
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_FRAME = (1U << 0);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_SPILL_DESCRIPTOR = (1U << 1);
@@ -632,7 +645,7 @@ static const Bit32u BX_POLY_CPUID_V2_FEATURE_SHARED_MEMORY_FENCE = (1U << 5);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_POLICY_PREFLIGHT = (1U << 6);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_ABI_DESCRIPTORS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DIAGNOSTIC_COUNTERS = (1U << 8);
-static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 5);
+static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 5);
 static const Bit32u BX_POLY_CPUID_V2_REQUIRED_FEATURES = (1U << 0) | (1U << 1) | (1U << 5);
 
 static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
@@ -1570,6 +1583,21 @@ static bool bx_poly_valid_v2_spill_descriptor(Bit64u descriptor, Bit64u bytes,
     return false;
   return bx_poly_valid_control_address(descriptor + last_byte,
     linaddr_width);
+}
+
+static bool bx_poly_valid_v2_debug_note(Bit64u note, Bit64u bytes,
+  unsigned linaddr_width)
+{
+  if (bytes != BX_POLY_V2_DEBUG_NOTE_BYTES)
+    return false;
+  if (!bx_poly_valid_control_address(note, linaddr_width))
+    return false;
+  if ((note & (BX_POLY_V2_DEBUG_NOTE_ALIGN - 1)) != 0)
+    return false;
+  const Bit64u last_byte = (Bit64u) BX_POLY_V2_DEBUG_NOTE_BYTES - 1;
+  if (note + last_byte < note)
+    return false;
+  return bx_poly_valid_control_address(note + last_byte, linaddr_width);
 }
 
 bool BX_CPU_C::bx_poly_target_has_landing_pad(unsigned seg, bx_address target,
@@ -5163,6 +5191,162 @@ bool BX_CPU_C::write_poly_riscv_fp32_reg(Bit32u reg, Bit32u value)
     return true;
   }
   return false;
+}
+
+bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
+  Bit64u selector)
+{
+  BX_POLY_SET_ACTIVE_CPU();
+  const bx_address event_dst = base + BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET;
+  const bx_address state_dst = base + BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET;
+  bx_address event_src = 0;
+  bx_address state_src = 0;
+  Bit64u flags = BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_XSAVE;
+  Bit64u spill_descriptor = 0;
+  Bit64u spill_generation = 0;
+
+  for (Bit32u offset = 0; offset < BX_POLY_V2_DEBUG_NOTE_BYTES; offset += 8)
+    write_virtual_qword(seg, base + offset, 0);
+
+  if (selector == BX_POLY_V2_DUMP_SELECTOR_LIVE) {
+    if (!export_poly_xsave_state(seg, state_dst))
+      return false;
+    if (bx_poly_event_frame_addr != 0 &&
+        bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
+          bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) &&
+        read_virtual_qword(seg, bx_poly_event_frame_addr) ==
+          BX_POLY_V2_EVENT_MAGIC) {
+      event_src = bx_poly_event_frame_addr;
+    }
+  }
+  else if (selector == BX_POLY_V2_DUMP_SELECTOR_SPILL_DESCRIPTOR) {
+    if (bx_poly_spill_descriptor_addr == 0 ||
+        bx_poly_spill_buffer == 0 ||
+        bx_poly_event_frame_addr == 0 ||
+        !bx_poly_valid_xsave_state_buffer(bx_poly_spill_buffer,
+          BX_CPU_THIS_PTR linaddr_width) ||
+        !bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
+          bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) ||
+        read_virtual_qword(seg, bx_poly_event_frame_addr) !=
+          BX_POLY_V2_EVENT_MAGIC) {
+      return false;
+    }
+    state_src = bx_poly_spill_buffer;
+    event_src = bx_poly_event_frame_addr;
+    flags |= BX_POLY_V2_DEBUG_NOTE_FLAG_SPILLED;
+    spill_descriptor = bx_poly_spill_descriptor_addr;
+    spill_generation = bx_poly_spill_descriptor_generation;
+  }
+  else {
+    return false;
+  }
+
+  if (state_src != 0) {
+    for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_BYTES_ARCH;
+         offset += 8) {
+      write_virtual_qword(seg, state_dst + offset,
+        read_virtual_qword(seg, state_src + offset));
+    }
+  }
+
+  if (event_src != 0) {
+    for (Bit32u offset = 0; offset < BX_POLY_V2_EVENT_BYTES; offset += 8) {
+      write_virtual_qword(seg, event_dst + offset,
+        read_virtual_qword(seg, event_src + offset));
+    }
+    flags |= BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_EVENT;
+  }
+
+  Bit64u header0 = read_virtual_qword(seg, state_dst);
+  Bit64u header1 = read_virtual_qword(seg, state_dst + 8);
+  Bit64u header_flags = read_virtual_qword(seg, state_dst + 16);
+  Bit32u mode = (Bit32u) (header1 >> 32);
+  Bit64u pc = read_virtual_qword(seg, state_dst + 24);
+  Bit64u tls = read_virtual_qword(seg, state_dst + 32);
+  Bit64u sp = 0;
+  Bit64u status0 = 0;
+  Bit64u status1 = 0;
+  Bit64u gpr_valid_mask = 0;
+  Bit64u fp_valid_mask = 0;
+  if ((Bit32u) header0 != BX_POLY_STATE_XSAVE_MAGIC ||
+      (Bit32u) (header0 >> 32) != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
+      (Bit32u) header1 != BX_POLY_STATE_XSAVE_BYTES_ARCH) {
+    return false;
+  }
+  if (mode == BX_POLY_MODE_RAW_AARCH64) {
+    sp = read_virtual_qword(seg, state_dst +
+      BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + 31 * 8);
+    status0 = read_virtual_qword(seg, state_dst +
+      BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET);
+    status1 = read_virtual_qword(seg, state_dst +
+      BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8);
+    gpr_valid_mask = BX_CONST64(0xffffffff);
+    fp_valid_mask = BX_CONST64(0xffffffff);
+  }
+  else if (mode == BX_POLY_MODE_RAW_RISCV) {
+    sp = read_virtual_qword(seg, state_dst +
+      BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 2 * 8);
+    status0 = read_virtual_qword(seg, state_dst +
+      BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET);
+    gpr_valid_mask = BX_CONST64(0xffffffff);
+    fp_valid_mask = BX_CONST64(0xffffffff);
+  }
+  else {
+    sp = RSP;
+  }
+
+  Bit64u event_sequence = 0;
+  Bit64u event_kind = 0;
+  Bit64u fault_address = 0;
+  Bit64u raw_syndrome = 0;
+  Bit64u state_key = read_virtual_qword(seg, state_dst +
+    BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 8);
+  if ((flags & BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_EVENT) != 0) {
+    event_sequence = read_virtual_qword(seg, event_dst + 16);
+    event_kind = read_virtual_qword(seg, event_dst + 24);
+    fault_address = read_virtual_qword(seg, event_dst + 184);
+    raw_syndrome = read_virtual_qword(seg, event_dst + 200);
+    state_key = read_virtual_qword(seg, event_dst + 272);
+  }
+
+  write_virtual_qword(seg, base, BX_POLY_V2_DEBUG_NOTE_MAGIC);
+  write_virtual_qword(seg, base + 8,
+    (Bit64u) BX_POLY_V2_DEBUG_NOTE_BYTES |
+    ((Bit64u) BX_POLY_V2_DEBUG_NOTE_VERSION << 32) |
+    ((Bit64u) BX_POLY_V2_DEBUG_NOTE_HEADER_BYTES << 48));
+  write_virtual_qword(seg, base + 16, selector);
+  write_virtual_qword(seg, base + 24, flags);
+  write_virtual_qword(seg, base + 32,
+    (Bit64u) mode | ((Bit64u) mode << 32));
+  write_virtual_qword(seg, base + 40,
+    (Bit64u) BX_POLY_STATE_XSAVE_LAYOUT_VERSION |
+    ((Bit64u) BX_POLY_STATE_XSAVE_BYTES_ARCH << 32));
+  write_virtual_qword(seg, base + 48, pc);
+  write_virtual_qword(seg, base + 56, sp);
+  write_virtual_qword(seg, base + 64, tls);
+  write_virtual_qword(seg, base + 72, status0);
+  write_virtual_qword(seg, base + 80, status1);
+  write_virtual_qword(seg, base + 88, event_sequence);
+  write_virtual_qword(seg, base + 96, event_kind);
+  write_virtual_qword(seg, base + 104, fault_address);
+  write_virtual_qword(seg, base + 112, raw_syndrome);
+  write_virtual_qword(seg, base + 120, gpr_valid_mask);
+  write_virtual_qword(seg, base + 128, fp_valid_mask);
+  write_virtual_qword(seg, base + 136,
+    read_virtual_qword(seg, state_dst + BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET));
+  write_virtual_qword(seg, base + 144,
+    read_virtual_qword(seg, state_dst + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24));
+  write_virtual_qword(seg, base + 152, state_key);
+  write_virtual_qword(seg, base + 160, spill_descriptor);
+  write_virtual_qword(seg, base + 168, spill_generation);
+  write_virtual_qword(seg, base + 176, BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET);
+  write_virtual_qword(seg, base + 184, BX_POLY_V2_EVENT_BYTES);
+  write_virtual_qword(seg, base + 192, BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET);
+  write_virtual_qword(seg, base + 200, BX_POLY_STATE_XSAVE_BYTES_ARCH);
+  BX_DEBUG(("poly_ud: exported v2 debug note selector=%llu flags=%llx mode=%u pc=%llx header_flags=%llx",
+    (unsigned long long) selector, (unsigned long long) flags, mode,
+    (unsigned long long) pc, (unsigned long long) header_flags));
+  return true;
 }
 
 bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
@@ -19757,6 +19941,26 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         RIP = next_rip;
         BX_DEBUG(("poly_ud: exported poly state buffer=%llx",
           (unsigned long long) buffer));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_DUMP_STATE) {
+        bx_address note = (bx_address) RAX;
+        Bit64u bytes = RDX;
+        Bit64u selector = RCX;
+        if (!bx_poly_valid_v2_debug_note(note, bytes,
+              BX_CPU_THIS_PTR linaddr_width) ||
+            !export_poly_v2_debug_note(BX_SEG_REG_DS, note, selector)) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject v2 debug note note=%llx bytes=%llx selector=%llx",
+            (unsigned long long) note, (unsigned long long) bytes,
+            (unsigned long long) selector));
+          return true;
+        }
+        RAX = 0;
+        RIP = next_rip;
+        BX_DEBUG(("poly_ud: exported v2 debug note note=%llx selector=%llx",
+          (unsigned long long) note, (unsigned long long) selector));
         return true;
       }
       if (op == BX_POLY_X86_CTRL_STATE_IMPORT) {
