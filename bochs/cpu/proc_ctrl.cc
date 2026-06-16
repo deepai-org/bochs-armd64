@@ -658,8 +658,26 @@ static const Bit32u BX_POLY_CPUID_V2_FEATURE_SHARED_MEMORY_FENCE = (1U << 5);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_POLICY_PREFLIGHT = (1U << 6);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_ABI_DESCRIPTORS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DIAGNOSTIC_COUNTERS = (1U << 8);
-static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 4) | (1U << 5);
+static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 3) | (1U << 4) | (1U << 5);
 static const Bit32u BX_POLY_CPUID_V2_REQUIRED_FEATURES = (1U << 0) | (1U << 1) | (1U << 5);
+static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_READ = (1ULL << 0);
+static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_WRITE = (1ULL << 1);
+static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_EXECUTE = (1ULL << 2);
+static const Bit64u BX_POLY_V2_MEM_PROBE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_CANONICAL = (1ULL << 0);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_PRESENT = (1ULL << 1);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_READABLE = (1ULL << 2);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_WRITABLE = (1ULL << 3);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_EXECUTABLE = (1ULL << 4);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_CROSSES_PAGE = (1ULL << 5);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_PAGE_ALIGNED = (1ULL << 6);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_UNMAPPED = (1ULL << 16);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_PERMISSION = (1ULL << 17);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_NONCANONICAL = (1ULL << 18);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_OVERFLOW = (1ULL << 19);
+static const Bit64u BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_UNSUPPORTED = (1ULL << 20);
+static const Bit64u BX_POLY_PAGE_DIRECTORY_NX_BIT = BX_CONST64(0x8000000000000000);
+static const Bit64u BX_POLY_CR3_PAGING_MASK = BX_CONST64(0x000ffffffffff000);
 
 static bool bx_poly_aarch64_ctrl_slot(Bit32u insn, Bit32u base_subop,
     Bit32u *slot)
@@ -5379,6 +5397,183 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
   BX_DEBUG(("poly_ud: exported v2 debug note selector=%llu flags=%llx mode=%u pc=%llx header_flags=%llx",
     (unsigned long long) selector, (unsigned long long) flags, mode,
     (unsigned long long) pc, (unsigned long long) header_flags));
+  return true;
+}
+
+bool BX_CPU_C::probe_poly_v2_memory_range(bx_address addr, Bit64u len,
+  Bit64u flags, Bit64u *status, Bit64u *failure, Bit64u *metadata)
+{
+  *status = 0;
+  *failure = addr;
+  *metadata = 0;
+
+  if ((flags & ~BX_POLY_V2_MEM_PROBE_FLAGS_SUPPORTED) != 0) {
+    *status = (Bit64u) -22;
+    *metadata = BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_UNSUPPORTED;
+    return true;
+  }
+
+  if (!bx_poly_valid_control_address(addr, BX_CPU_THIS_PTR linaddr_width)) {
+    *status = (Bit64u) -14;
+    *metadata = BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_NONCANONICAL;
+    return true;
+  }
+  *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_CANONICAL;
+  if ((addr & 0xfff) == 0 && (len & 0xfff) == 0)
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_PAGE_ALIGNED;
+  if (len == 0)
+    return true;
+
+  const Bit64u last = (Bit64u) addr + len - 1;
+  if (last < (Bit64u) addr) {
+    *status = (Bit64u) -14;
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_OVERFLOW;
+    return true;
+  }
+  if (!bx_poly_valid_control_address(last, BX_CPU_THIS_PTR linaddr_width)) {
+    *status = (Bit64u) -14;
+    *failure = last;
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_NONCANONICAL;
+    return true;
+  }
+  if (((Bit64u) addr & ~BX_CONST64(0xfff)) != (last & ~BX_CONST64(0xfff)))
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_CROSSES_PAGE;
+
+  const Bit64u requested_read =
+    flags & BX_POLY_V2_MEM_PROBE_FLAG_READ;
+  const Bit64u requested_write =
+    flags & BX_POLY_V2_MEM_PROBE_FLAG_WRITE;
+  const Bit64u requested_execute =
+    flags & BX_POLY_V2_MEM_PROBE_FLAG_EXECUTE;
+  bool all_readable = true;
+  bool all_writable = true;
+  bool all_executable = true;
+
+  auto probe_page = [&](bx_address page, bool *readable, bool *writable,
+      bool *executable) -> bool {
+    *readable = false;
+    *writable = false;
+    *executable = false;
+
+#if BX_SUPPORT_X86_64
+    if (!BX_CPU_THIS_PTR cr0.get_PG()) {
+      *readable = true;
+      *writable = true;
+      *executable = true;
+      return true;
+    }
+    if (!long_mode())
+      return false;
+#else
+    return false;
+#endif
+
+#if BX_SUPPORT_VMX >= 2
+    if (BX_CPU_THIS_PTR in_vmx_guest &&
+        BX_CPU_THIS_PTR vmcs.vmexec_ctrls2.EPT_ENABLE())
+      return false;
+#endif
+#if BX_SUPPORT_SVM
+    if (BX_CPU_THIS_PTR in_svm_guest && SVM_NESTED_PAGING_ENABLED)
+      return false;
+#endif
+
+    const int level_pml5 = 4;
+    const int level_pml4 = 3;
+    const int level_pdpte = 2;
+    const int level_pde = 1;
+    const int level_pte = 0;
+    const Bit64u paging_reserved =
+      BX_PHY_ADDRESS_RESERVED_BITS & BX_CONST64(0x000fffffffffffff);
+    Bit64u reserved = paging_reserved;
+#if BX_SUPPORT_X86_64
+    if (!BX_CPU_THIS_PTR efer.get_NXE())
+      reserved |= BX_POLY_PAGE_DIRECTORY_NX_BIT;
+#endif
+    Bit64u combined_access = BX_CONST64(0x6);
+    Bit64u curr_entry = BX_CPU_THIS_PTR cr3;
+    bx_phy_address ppf = curr_entry & BX_POLY_CR3_PAGING_MASK;
+    bool nx_page = false;
+    int leaf = BX_CPU_THIS_PTR cr4.get_LA57() ? level_pml5 : level_pml4;
+    for (;; --leaf) {
+      bx_phy_address entry_addr =
+        ppf + ((page >> (9 + 9 * leaf)) & 0xff8);
+      Bit64u entry = 0;
+      access_read_physical(entry_addr, 8, &entry);
+      if ((entry & 0x1) == 0)
+        return false;
+      if ((entry & reserved) != 0)
+        return false;
+      if ((entry & BX_POLY_PAGE_DIRECTORY_NX_BIT) != 0)
+        nx_page = true;
+
+      ppf = entry & BX_POLY_CR3_PAGING_MASK;
+      if (leaf == level_pte) {
+        combined_access &= entry;
+        break;
+      }
+      if ((entry & 0x80) != 0) {
+        if (leaf == level_pdpte &&
+            !is_cpu_extension_supported(BX_ISA_1G_PAGES))
+          return false;
+        if (leaf != level_pdpte && leaf != level_pde)
+          return false;
+        combined_access &= entry;
+        break;
+      }
+      combined_access &= entry;
+    }
+
+    const bool user_page = (combined_access & 0x4) != 0;
+    const bool write_page = (combined_access & 0x2) != 0;
+    *readable = user_page;
+    *writable = user_page && write_page;
+    *executable = user_page && !nx_page;
+    return true;
+  };
+
+  const Bit64u first_page = (Bit64u) addr & ~BX_CONST64(0xfff);
+  const Bit64u last_page = last & ~BX_CONST64(0xfff);
+  for (Bit64u page = first_page;; page += 0x1000) {
+    bool page_readable = false;
+    bool page_writable = false;
+    bool page_executable = false;
+    if (!probe_page((bx_address) page, &page_readable, &page_writable,
+          &page_executable)) {
+      *status = (Bit64u) -14;
+      *failure = page;
+      *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_UNMAPPED;
+      return true;
+    }
+    all_readable = all_readable && page_readable;
+    all_writable = all_writable && page_writable;
+    all_executable = all_executable && page_executable;
+    if ((requested_read != 0 && !page_readable) ||
+        (requested_write != 0 && !page_writable) ||
+        (requested_execute != 0 && !page_executable)) {
+      *status = (Bit64u) -13;
+      *failure = page;
+      *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_PRESENT |
+        BX_POLY_V2_MEM_PROBE_RESULT_FAILURE_PERMISSION;
+      if (all_readable)
+        *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_READABLE;
+      if (all_writable)
+        *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_WRITABLE;
+      if (all_executable)
+        *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_EXECUTABLE;
+      return true;
+    }
+    if (page == last_page)
+      break;
+  }
+
+  *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_PRESENT;
+  if (all_readable)
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_READABLE;
+  if (all_writable)
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_WRITABLE;
+  if (all_executable)
+    *metadata |= BX_POLY_V2_MEM_PROBE_RESULT_EXECUTABLE;
   return true;
 }
 
@@ -20109,6 +20304,25 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         RIP = next_rip;
         BX_DEBUG(("poly_ud: exported v2 debug note note=%llx selector=%llx",
           (unsigned long long) note, (unsigned long long) selector));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_MEM_PROBE_RANGE) {
+        bx_address addr = (bx_address) RAX;
+        Bit64u len = RDX;
+        Bit64u flags = RCX;
+        Bit64u status = 0;
+        Bit64u failure = addr;
+        Bit64u metadata = 0;
+        probe_poly_v2_memory_range(addr, len, flags, &status, &failure,
+          &metadata);
+        RAX = status;
+        RDX = failure;
+        RCX = metadata;
+        RIP = next_rip;
+        BX_DEBUG(("poly_ud: probed v2 memory addr=%llx len=%llx flags=%llx status=%lld failure=%llx metadata=%llx",
+          (unsigned long long) addr, (unsigned long long) len,
+          (unsigned long long) flags, (long long) status,
+          (unsigned long long) failure, (unsigned long long) metadata));
         return true;
       }
       if (op == BX_POLY_X86_CTRL_DERIVE_STATE) {

@@ -1517,6 +1517,8 @@ public: // for now...
   BX_SMF bool read_poly_riscv_fp32_reg(Bit32u, Bit32u *);
   BX_SMF bool write_poly_riscv_fp32_reg(Bit32u, Bit32u);
   BX_SMF bool export_poly_v2_debug_note(unsigned, bx_address, Bit64u);
+  BX_SMF bool probe_poly_v2_memory_range(bx_address, Bit64u, Bit64u,
+    Bit64u *, Bit64u *, Bit64u *);
   BX_SMF bool derive_poly_v2_state(unsigned, bx_address, bx_address,
     bx_address);
   BX_SMF bool export_poly_xsave_state(unsigned, bx_address);
