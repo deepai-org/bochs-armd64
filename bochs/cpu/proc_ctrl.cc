@@ -600,7 +600,6 @@ static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_SET = 0x6b;
 static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_GET = 0x6c;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
-static const Bit32u BX_POLY_X86_CTRL_SPILL_PTR_SET = 0x6f;
 static const Bit32u BX_POLY_X86_CTRL_PRESTORE = 0x70;
 static const Bit32u BX_POLY_X86_CTRL_EVENT_PTR_SET = 0x71;
 static const Bit32u BX_POLY_X86_CTRL_SPILL_DESC_SET = 0x72;
@@ -19997,36 +19996,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) event_addr, (unsigned long long) resume_rip));
         return true;
       }
-      if (op == BX_POLY_X86_CTRL_SPILL_PTR_SET) {
-        bx_address buffer = (bx_address) RAX;
-        bx_address resume_rip = (bx_address) RDX;
-        if (buffer == 0 && resume_rip == 0) {
-          bx_poly_spill_buffer = 0;
-          bx_poly_spill_resume_rip = 0;
-          RAX = 0;
-          RIP = next_rip;
-          BX_DEBUG(("poly_ud: auto-spill disabled"));
-          return true;
-        }
-        if (buffer == 0 || resume_rip == 0 ||
-            !bx_poly_valid_xsave_state_buffer(buffer,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            !bx_poly_valid_control_address(resume_rip,
-              BX_CPU_THIS_PTR linaddr_width)) {
-          RAX = (Bit64u) -22;
-          RIP = next_rip;
-          BX_INFO(("poly_ud: reject auto-spill setup buffer=%llx resume=%llx",
-            (unsigned long long) buffer, (unsigned long long) resume_rip));
-          return true;
-        }
-        bx_poly_spill_buffer = buffer;
-        bx_poly_spill_resume_rip = resume_rip;
-        RAX = 0;
-        RIP = next_rip;
-        BX_DEBUG(("poly_ud: auto-spill setup buffer=%llx resume=%llx",
-          (unsigned long long) buffer, (unsigned long long) resume_rip));
-        return true;
-      }
       if (op == BX_POLY_X86_CTRL_PRESTORE) {
         bx_address buffer = (bx_address) RAX;
         if (buffer == 0)
@@ -20406,8 +20375,8 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     else if (ECX == 31) {
       RAX = BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS;
       RBX = BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS;
-      RCX = BX_POLY_X86_CTRL_SPILL_PTR_SET;
-      RDX = BX_POLY_X86_CTRL_PRESTORE;
+      RCX = BX_POLY_X86_CTRL_EVENT_PTR_SET;
+      RDX = BX_POLY_X86_CTRL_SPILL_DESC_SET;
     }
     else if (ECX == 32) {
       RAX = BX_POLY_X86_CTRL_PREFIX_0 |
