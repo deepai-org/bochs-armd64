@@ -1521,6 +1521,7 @@ public: // for now...
     Bit64u *, Bit64u *, Bit64u *);
   BX_SMF bool derive_poly_v2_state(unsigned, bx_address, bx_address,
     bx_address);
+  BX_SMF bool complete_poly_v2_event(unsigned, bx_address, bx_address);
   BX_SMF bool export_poly_xsave_state(unsigned, bx_address);
   BX_SMF bool import_poly_xsave_state(unsigned, bx_address);
   BX_SMF bool bx_poly_target_has_landing_pad(unsigned, bx_address, Bit32u);

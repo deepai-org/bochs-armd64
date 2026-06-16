@@ -599,6 +599,7 @@ static const Bit32u BX_POLY_X86_CTRL_DUMP_STATE = 0x73;
 static const Bit32u BX_POLY_X86_CTRL_MEM_PROBE_RANGE = 0x74;
 static const Bit32u BX_POLY_X86_CTRL_DERIVE_STATE = 0x75;
 static const Bit32u BX_POLY_X86_CTRL_FENCE = 0x76;
+static const Bit32u BX_POLY_X86_CTRL_COMPLETE_EVENT = 0x77;
 
 static const Bit64u BX_POLY_V2_EVENT_MAGIC = BX_CONST64(0x32545645594c4f50);
 static const Bit32u BX_POLY_V2_EVENT_VERSION = 2;
@@ -640,6 +641,20 @@ static const Bit64u BX_POLY_V2_DERIVE_FLAG_PARENT_RETURN = (1ULL << 3);
 static const Bit64u BX_POLY_V2_DERIVE_FLAG_CLEAR_EVENT_STATE = (1ULL << 4);
 static const Bit64u BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY = (1ULL << 5);
 static const Bit64u BX_POLY_V2_DERIVE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5);
+static const Bit64u BX_POLY_V2_COMPLETE_DESC_MAGIC =
+  BX_CONST64(0x32504d43594c4f50);
+static const Bit32u BX_POLY_V2_COMPLETE_DESC_VERSION = 2;
+static const Bit32u BX_POLY_V2_COMPLETE_DESC_BYTES = 128;
+static const Bit32u BX_POLY_V2_COMPLETE_DESC_ALIGN = 64;
+static const Bit32u BX_POLY_V2_COMPLETE_DESC_HEADER_BYTES = 16;
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_SET_RESUME_PC = (1ULL << 0);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_USE_EVENT_RESUME_PC =
+  (1ULL << 1);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_RETRY_EVENT_PC = (1ULL << 2);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_SET_RESULT0 = (1ULL << 3);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_SET_RESULT1 = (1ULL << 4);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAG_CLEAR_EVENT = (1ULL << 5);
+static const Bit64u BX_POLY_V2_COMPLETE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5);
 static const Bit32u BX_POLY_CPUID_V2_ABI_VERSION = 2;
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_FRAME = (1U << 0);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_SPILL_DESCRIPTOR = (1U << 1);
@@ -650,7 +665,8 @@ static const Bit32u BX_POLY_CPUID_V2_FEATURE_SHARED_MEMORY_FENCE = (1U << 5);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_POLICY_PREFLIGHT = (1U << 6);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_ABI_DESCRIPTORS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DIAGNOSTIC_COUNTERS = (1U << 8);
-static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 3) | (1U << 4) | (1U << 5) | (1U << 6);
+static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_COMPLETE = (1U << 9);
+static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 1) | (1U << 2) | (1U << 3) | (1U << 4) | (1U << 5) | (1U << 6) | (1U << 9);
 static const Bit32u BX_POLY_CPUID_V2_REQUIRED_FEATURES = (1U << 0) | (1U << 1) | (1U << 5);
 static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_READ = (1ULL << 0);
 static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_WRITE = (1ULL << 1);
@@ -1607,6 +1623,20 @@ static bool bx_poly_valid_v2_derive_descriptor(Bit64u descriptor,
   if ((descriptor & (BX_POLY_V2_DERIVE_DESC_ALIGN - 1)) != 0)
     return false;
   const Bit64u last_byte = (Bit64u) BX_POLY_V2_DERIVE_DESC_BYTES - 1;
+  if (descriptor + last_byte < descriptor)
+    return false;
+  return bx_poly_valid_control_address(descriptor + last_byte,
+    linaddr_width);
+}
+
+static bool bx_poly_valid_v2_complete_descriptor(Bit64u descriptor,
+  unsigned linaddr_width)
+{
+  if (!bx_poly_valid_control_address(descriptor, linaddr_width))
+    return false;
+  if ((descriptor & (BX_POLY_V2_COMPLETE_DESC_ALIGN - 1)) != 0)
+    return false;
+  const Bit64u last_byte = (Bit64u) BX_POLY_V2_COMPLETE_DESC_BYTES - 1;
   if (descriptor + last_byte < descriptor)
     return false;
   return bx_poly_valid_control_address(descriptor + last_byte,
@@ -5649,6 +5679,103 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
       state_key);
     write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET + 16,
       BX_POLY_STATE_KEY_FLAG_EXPLICIT);
+  }
+
+  return true;
+}
+
+bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
+  bx_address descriptor)
+{
+  Bit64u magic = read_virtual_qword(seg, descriptor);
+  Bit64u header = read_virtual_qword(seg, descriptor + 8);
+  Bit32u desc_bytes = (Bit32u) header;
+  Bit32u desc_version = (Bit32u) ((header >> 32) & 0xffff);
+  Bit32u desc_header_bytes = (Bit32u) ((header >> 48) & 0xffff);
+  Bit64u flags = read_virtual_qword(seg, descriptor + 16);
+  Bit64u frontend_word = read_virtual_qword(seg, descriptor + 24);
+  Bit32u frontend = (Bit32u) frontend_word;
+  Bit64u resume_pc = read_virtual_qword(seg, descriptor + 32);
+  Bit64u result0 = read_virtual_qword(seg, descriptor + 40);
+  Bit64u result1 = read_virtual_qword(seg, descriptor + 48);
+  Bit64u state_header0 = read_virtual_qword(seg,
+    state + BX_POLY_STATE_XSAVE_HEADER_OFFSET);
+  Bit64u state_header1 = read_virtual_qword(seg,
+    state + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
+  Bit32u state_magic = (Bit32u) state_header0;
+  Bit32u state_layout = (Bit32u) ((state_header0 >> 32) & 0xffff);
+  Bit32u state_header_bytes = (Bit32u) ((state_header0 >> 48) & 0xffff);
+  Bit32u state_total_bytes = (Bit32u) state_header1;
+
+  if (magic != BX_POLY_V2_COMPLETE_DESC_MAGIC ||
+      desc_bytes != BX_POLY_V2_COMPLETE_DESC_BYTES ||
+      desc_version != BX_POLY_V2_COMPLETE_DESC_VERSION ||
+      desc_header_bytes != BX_POLY_V2_COMPLETE_DESC_HEADER_BYTES ||
+      (flags & ~BX_POLY_V2_COMPLETE_FLAGS_SUPPORTED) != 0 ||
+      (frontend_word >> 32) != 0 ||
+      !bx_poly_valid_v2_derive_frontend(frontend) ||
+      state_magic != BX_POLY_STATE_XSAVE_MAGIC ||
+      state_layout != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
+      state_header_bytes != BX_POLY_STATE_XSAVE_HEADER_BYTES ||
+      state_total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH)
+    return false;
+
+  const Bit64u event_trap_pc = read_virtual_qword(seg,
+    state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24);
+  const Bit64u event_resume_pc = read_virtual_qword(seg,
+    state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32);
+  if ((flags & BX_POLY_V2_COMPLETE_FLAG_USE_EVENT_RESUME_PC) != 0)
+    resume_pc = event_resume_pc;
+  else if ((flags & BX_POLY_V2_COMPLETE_FLAG_RETRY_EVENT_PC) != 0)
+    resume_pc = event_trap_pc;
+  if (((flags & (BX_POLY_V2_COMPLETE_FLAG_SET_RESUME_PC |
+                 BX_POLY_V2_COMPLETE_FLAG_USE_EVENT_RESUME_PC |
+                 BX_POLY_V2_COMPLETE_FLAG_RETRY_EVENT_PC)) != 0) &&
+      resume_pc != 0) {
+    if (!bx_poly_valid_control_address(resume_pc,
+          BX_CPU_THIS_PTR linaddr_width) ||
+        !bx_poly_frontend_target_aligned(frontend, (bx_address) resume_pc))
+      return false;
+    write_virtual_qword(seg, state + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24,
+      resume_pc);
+    write_virtual_qword(seg,
+      state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32, resume_pc);
+  }
+
+  bx_address gpr0_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+    BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET :
+    BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 10 * 8;
+  bx_address gpr1_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+    BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + 8 :
+    BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 11 * 8;
+  bx_address restore_gpr0_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+    BX_POLY_STATE_XSAVE_TRAP_RESTORE_AARCH64_GPR_OFFSET :
+    BX_POLY_STATE_XSAVE_TRAP_RESTORE_RISCV_GPR_OFFSET + 10 * 8;
+  bx_address restore_gpr1_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+    BX_POLY_STATE_XSAVE_TRAP_RESTORE_AARCH64_GPR_OFFSET + 8 :
+    BX_POLY_STATE_XSAVE_TRAP_RESTORE_RISCV_GPR_OFFSET + 11 * 8;
+  if ((flags & BX_POLY_V2_COMPLETE_FLAG_SET_RESULT0) != 0) {
+    write_virtual_qword(seg, state + gpr0_offset, result0);
+    write_virtual_qword(seg,
+      state + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET + restore_gpr0_offset,
+      result0);
+  }
+  if ((flags & BX_POLY_V2_COMPLETE_FLAG_SET_RESULT1) != 0) {
+    write_virtual_qword(seg, state + gpr1_offset, result1);
+    write_virtual_qword(seg,
+      state + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET + restore_gpr1_offset,
+      result1);
+  }
+
+  if ((flags & BX_POLY_V2_COMPLETE_FLAG_CLEAR_EVENT) != 0) {
+    for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_EVENT_RECORD_BYTES;
+         offset += 8)
+      write_virtual_qword(seg,
+        state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + offset, 0);
+    for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_EVENT_ARGS_BYTES;
+         offset += 8)
+      write_virtual_qword(seg,
+        state + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + offset, 0);
   }
 
   return true;
@@ -20196,6 +20323,30 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         RIP = next_rip;
         BX_DEBUG(("poly_ud: derived v2 state dst=%llx src=%llx descriptor=%llx",
           (unsigned long long) dst, (unsigned long long) src,
+          (unsigned long long) descriptor));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_COMPLETE_EVENT) {
+        bx_address state = (bx_address) RAX;
+        bx_address descriptor = (bx_address) RDX;
+        if (!bx_poly_valid_xsave_state_buffer(state,
+              BX_CPU_THIS_PTR linaddr_width) ||
+            !bx_poly_valid_v2_complete_descriptor(descriptor,
+              BX_CPU_THIS_PTR linaddr_width) ||
+            !complete_poly_v2_event(BX_SEG_REG_DS, state, descriptor)) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject v2 complete state=%llx descriptor=%llx",
+            (unsigned long long) state,
+            (unsigned long long) descriptor));
+          return true;
+        }
+        RAX = 0;
+        RDX = 0;
+        RCX = 0;
+        RIP = next_rip;
+        BX_DEBUG(("poly_ud: completed v2 event state=%llx descriptor=%llx",
+          (unsigned long long) state,
           (unsigned long long) descriptor));
         return true;
       }
