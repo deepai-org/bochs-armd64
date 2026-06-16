@@ -211,8 +211,6 @@ static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_SET = BX_POLY_AARCH64_CTRL(
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_GET = BX_POLY_AARCH64_CTRL(0x69);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_AARCH64_CTRL(0x6a);
 static const Bit32u BX_POLY_AARCH64_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_AARCH64_CTRL(0x6b);
-static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET = BX_POLY_AARCH64_CTRL(0x6c);
-static const Bit32u BX_POLY_AARCH64_CTRL_MONITOR_PACKET_GET = BX_POLY_AARCH64_CTRL(0x6d);
 static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_SET = BX_POLY_AARCH64_CTRL(0x6e);
 static const Bit32u BX_POLY_AARCH64_CTRL_STATE_KEY_GET = BX_POLY_AARCH64_CTRL(0x6f);
 static const Bit32u BX_POLY_RISCV_CTRL_SUBOP_CALL_SIG_IMM_BASE = 32;
@@ -230,8 +228,6 @@ static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_SET = BX_POLY_RISCV_CTRL(24);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_GET = BX_POLY_RISCV_CTRL(25);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_SET = BX_POLY_RISCV_CTRL(26);
 static const Bit32u BX_POLY_RISCV_CTRL_TRAP_VECTOR_MODE_GET = BX_POLY_RISCV_CTRL(27);
-static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET = BX_POLY_RISCV_CTRL(28);
-static const Bit32u BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET = BX_POLY_RISCV_CTRL(29);
 static const Bit32u BX_POLY_RISCV_CTRL_LANDING_POLICY_SET = BX_POLY_RISCV_CTRL(30);
 static const Bit32u BX_POLY_RISCV_CTRL_LANDING_POLICY_GET = BX_POLY_RISCV_CTRL(31);
 static const Bit32u BX_POLY_CPUID_BASE = 0x40000000;
@@ -594,8 +590,6 @@ static const Bit32u BX_POLY_X86_CTRL_STATE_EXPORT = 0x67;
 static const Bit32u BX_POLY_X86_CTRL_STATE_IMPORT = 0x68;
 static const Bit32u BX_POLY_X86_CTRL_ABI_SIGNATURE_SET = 0x69;
 static const Bit32u BX_POLY_X86_CTRL_ABI_SIGNATURE_GET = 0x6a;
-static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_SET = 0x6b;
-static const Bit32u BX_POLY_X86_CTRL_MONITOR_PACKET_GET = 0x6c;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
 static const Bit32u BX_POLY_X86_CTRL_PRESTORE = 0x70;
@@ -14879,36 +14873,6 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
     return true;
   }
 
-  if (insn == BX_POLY_AARCH64_CTRL_MONITOR_PACKET_SET) {
-    Bit64u packet = 0;
-    if (!read_poly_aarch64_reg(0, &packet))
-      return false;
-    if (!bx_poly_valid_monitor_packet_target(packet,
-          BX_CPU_THIS_PTR linaddr_width)) {
-      write_poly_aarch64_reg(0, (Bit64u) (Bit64s) -22);
-      RIP = next_rip;
-      return true;
-    }
-    bx_poly_monitor_packet_addr = (bx_address) packet;
-    bx_address stack_key = bx_poly_current_state_key(RSP);
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-      stack_key);
-    write_poly_aarch64_reg(0, 0);
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: aarch64 monitor packet set value=%llx",
-      (unsigned long long) packet));
-    return true;
-  }
-
-  if (insn == BX_POLY_AARCH64_CTRL_MONITOR_PACKET_GET) {
-    write_poly_aarch64_reg(0, bx_poly_monitor_packet_addr);
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: aarch64 monitor packet get value=%llx",
-      (unsigned long long) bx_poly_monitor_packet_addr));
-    return true;
-  }
-
   if (insn == BX_POLY_AARCH64_CTRL_STATE_KEY_SET) {
     Bit64u key = 0;
     if (!read_poly_aarch64_reg(0, &key))
@@ -16832,36 +16796,6 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
     RIP = next_rip;
     BX_DEBUG(("poly_raw: riscv trap vector mode get value=%u",
       bx_poly_trap_vector_mode));
-    return true;
-  }
-
-  if (insn == BX_POLY_RISCV_CTRL_MONITOR_PACKET_SET) {
-    Bit64u packet = 0;
-    if (!read_poly_riscv_reg(10, &packet))
-      return false;
-    if (!bx_poly_valid_monitor_packet_target(packet,
-          BX_CPU_THIS_PTR linaddr_width)) {
-      write_poly_riscv_reg(10, (Bit64u) (Bit64s) -22);
-      RIP = next_rip;
-      return true;
-    }
-    bx_poly_monitor_packet_addr = (bx_address) packet;
-    bx_address stack_key = bx_poly_current_state_key(RSP);
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-      stack_key);
-    write_poly_riscv_reg(10, 0);
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: riscv monitor packet set value=%llx",
-      (unsigned long long) packet));
-    return true;
-  }
-
-  if (insn == BX_POLY_RISCV_CTRL_MONITOR_PACKET_GET) {
-    write_poly_riscv_reg(10, bx_poly_monitor_packet_addr);
-    RIP = next_rip;
-    BX_DEBUG(("poly_raw: riscv monitor packet get value=%llx",
-      (unsigned long long) bx_poly_monitor_packet_addr));
     return true;
   }
 
@@ -20222,37 +20156,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         RAX = bx_poly_trap_vector_mode;
         RIP = next_rip;
         BX_DEBUG(("poly_ud: trap vector mode get value=%llu",
-          (unsigned long long) RAX));
-        return true;
-      }
-      if (op == BX_POLY_X86_CTRL_MONITOR_PACKET_SET) {
-        bx_address stack_key = bx_poly_current_state_key(RSP);
-        bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key,
-          false);
-        if (!bx_poly_valid_monitor_packet_target(RAX,
-              BX_CPU_THIS_PTR linaddr_width)) {
-          BX_INFO(("poly_ud: reject monitor packet address=%llx",
-            (unsigned long long) RAX));
-          RAX = (Bit64u) (Bit64s) -22;
-          RIP = next_rip;
-          return true;
-        }
-        bx_poly_monitor_packet_addr = (bx_address) RAX;
-        bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-          stack_key);
-        bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-          stack_key);
-        RIP = next_rip;
-        BX_DEBUG(("poly_ud: monitor packet address set to %llx",
-          (unsigned long long) bx_poly_monitor_packet_addr));
-        return true;
-      }
-      if (op == BX_POLY_X86_CTRL_MONITOR_PACKET_GET) {
-        bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-          bx_poly_current_state_key(RSP), false);
-        RAX = bx_poly_monitor_packet_addr;
-        RIP = next_rip;
-        BX_DEBUG(("poly_ud: monitor packet address get value=%llx",
           (unsigned long long) RAX));
         return true;
       }
