@@ -5260,8 +5260,11 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
     write_virtual_qword(seg, base + offset, 0);
 
   if (selector == BX_POLY_V2_DUMP_SELECTOR_LIVE) {
-    if (!export_poly_xsave_state(seg, state_dst))
+    if (!export_poly_xsave_state(seg, state_dst)) {
+      BX_INFO(("poly_ud: reject v2 debug note live xsave export base=%llx state=%llx",
+        (unsigned long long) base, (unsigned long long) state_dst));
       return false;
+    }
     if (bx_poly_event_frame_addr != 0 &&
         bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
           bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) &&
@@ -5320,8 +5323,12 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
   Bit64u gpr_valid_mask = 0;
   Bit64u fp_valid_mask = 0;
   if ((Bit32u) header0 != BX_POLY_STATE_XSAVE_MAGIC ||
-      (Bit32u) (header0 >> 32) != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
+      (Bit32u) ((header0 >> 32) & 0xffffU) !=
+        BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
       (Bit32u) header1 != BX_POLY_STATE_XSAVE_BYTES_ARCH) {
+    BX_INFO(("poly_ud: reject v2 debug note xsave header header0=%llx header1=%llx state=%llx",
+      (unsigned long long) header0, (unsigned long long) header1,
+      (unsigned long long) state_dst));
     return false;
   }
   if (mode == BX_POLY_MODE_RAW_AARCH64) {
@@ -19873,8 +19880,8 @@ bool BX_CPU_C::handle_poly_syscall_trap(Bit64u syscall_number,
   Bit64u arg4, Bit64u arg5, Bit64u arg6, Bit64u arg7, bx_address next_rip)
 {
   BX_POLY_SET_ACTIVE_CPU();
-  // Hardware/FPGA contract: capture an OS-neutral trap packet and hand it to
-  // the architectural trap path. Syscall translation is guest policy.
+  // Hardware/FPGA contract: capture an OS-neutral event and hand it to the
+  // architectural trap path. Syscall translation is guest policy.
   bx_poly_record_syscall_trap(bx_poly_current_mode, syscall_number, trap_selector,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -20443,6 +20450,14 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
       if (op == BX_POLY_X86_CTRL_EVENT_PTR_SET) {
         bx_address frame = (bx_address) RAX;
         Bit64u bytes = RDX;
+        if (frame == 0 && bytes == 0) {
+          bx_poly_event_frame_addr = 0;
+          bx_poly_event_frame_bytes = 0;
+          RAX = 0;
+          RIP = next_rip;
+          BX_DEBUG(("poly_ud: v2 event frame cleared"));
+          return true;
+        }
         if (!bx_poly_valid_v2_event_frame(frame, bytes,
               BX_CPU_THIS_PTR linaddr_width)) {
           RAX = (Bit64u) -22;
@@ -20514,8 +20529,10 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           descriptor + 96);
         bx_address resume_stack_top =
           (bx_address) read_virtual_qword(BX_SEG_REG_DS, descriptor + 104);
-        bx_address monitor_packet =
-          (bx_address) read_virtual_qword(BX_SEG_REG_DS, descriptor + 112);
+        Bit64u reserved_070_0 = read_virtual_qword(BX_SEG_REG_DS,
+          descriptor + 112);
+        Bit64u reserved_070_1 = read_virtual_qword(BX_SEG_REG_DS,
+          descriptor + 120);
         if (magic != BX_POLY_V2_SPILL_DESC_MAGIC ||
             desc_bytes != BX_POLY_V2_SPILL_DESC_BYTES ||
             desc_version != BX_POLY_V2_SPILL_DESC_VERSION ||
@@ -20546,9 +20563,8 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             resume_stack_bytes == 0 ||
             resume_stack_top < resume_stack_base ||
             resume_stack_top > resume_stack_base + resume_stack_bytes ||
-            (monitor_packet != 0 &&
-             !bx_poly_valid_monitor_packet_target(monitor_packet,
-               BX_CPU_THIS_PTR linaddr_width))) {
+            reserved_070_0 != 0 ||
+            reserved_070_1 != 0) {
           RAX = (Bit64u) -22;
           RIP = next_rip;
           BX_INFO(("poly_ud: reject v2 spill descriptor magic=%llx generation=%llx state=%llx event=%llx resume=%llx",
@@ -20566,8 +20582,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         bx_poly_spill_resume_stack_top = resume_stack_top;
         bx_poly_event_frame_addr = event_addr;
         bx_poly_event_frame_bytes = event_bytes;
-        if (monitor_packet != 0)
-          bx_poly_monitor_packet_addr = monitor_packet;
         RAX = 0;
         RIP = next_rip;
         BX_DEBUG(("poly_ud: v2 spill descriptor setup desc=%llx state=%llx event=%llx resume=%llx",
