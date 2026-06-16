@@ -79,7 +79,7 @@ enum {
 
 static const unsigned BX_POLY_TRAP_SAVED_XMM_COUNT = 16;
 
-struct bx_poly_trap_packet {
+struct bx_poly_event_record {
   Bit32u reason;
   Bit32u mode;
   Bit64u number;
@@ -174,7 +174,7 @@ static void bx_poly_clear_trap_saved_regs(bx_poly_trap_saved_regs_t *regs)
   }
 }
 
-static void bx_poly_clear_trap_packet(bx_poly_trap_packet *trap)
+static void bx_poly_clear_event_record(bx_poly_event_record *trap)
 {
   trap->reason = BX_POLY_TRAP_NONE;
   trap->mode = BX_POLY_MODE_X86;
@@ -320,10 +320,10 @@ static const Bit64u BX_POLY_TRAP_RESTORE_FLAGS_SUPPORTED =
   BX_POLY_TRAP_RESTORE_FLAG_RISCV_STATE_VALID;
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_OFFSET = 0x000;
 static const Bit32u BX_POLY_STATE_XSAVE_HEADER_BYTES = 0x40;
-static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET = 0x040;
-static const Bit32u BX_POLY_STATE_XSAVE_TRAP_PACKET_BYTES = 0x40;
-static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET = 0x080;
-static const Bit32u BX_POLY_STATE_XSAVE_TRAP_ARGS_BYTES = 0x40;
+static const Bit32u BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET = 0x040;
+static const Bit32u BX_POLY_STATE_XSAVE_EVENT_RECORD_BYTES = 0x40;
+static const Bit32u BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET = 0x080;
+static const Bit32u BX_POLY_STATE_XSAVE_EVENT_ARGS_BYTES = 0x40;
 static const Bit32u BX_POLY_STATE_XSAVE_TRANSITION_OFFSET = 0x0c0;
 static const Bit32u BX_POLY_STATE_XSAVE_TRANSITION_BYTES = 0x40;
 static const Bit32u BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET = 0x100;
@@ -395,16 +395,16 @@ static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_OFFSET = 0x1a80;
 static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_BYTES = 0x580;
 static const Bit32u BX_POLY_STATE_XSAVE_AUTO_SPILL_RESUME_STACK_OFFSET =
   BX_POLY_STATE_XSAVE_RESERVED_OFFSET;
-static const Bit32u BX_POLY_TRAP_PACKET_LAYOUT_VERSION = 2;
-static const Bit32u BX_POLY_TRAP_PACKET_HEADER_BYTES = 64;
-static const Bit32u BX_POLY_TRAP_PACKET_ARG_COUNT = 8;
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY = (1U << 0);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS = (1U << 1);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE = (1U << 2);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS = (1U << 3);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_OPAQUE_SYSCALLS = (1U << 4);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_RESERVED_BIT5 = (1U << 5);
-static const Bit32u BX_POLY_TRAP_PACKET_FLAG_OPAQUE_IMPORTS = (1U << 6);
+static const Bit32u BX_POLY_EVENT_RECORD_LAYOUT_VERSION = 2;
+static const Bit32u BX_POLY_EVENT_RECORD_HEADER_BYTES = 64;
+static const Bit32u BX_POLY_EVENT_RECORD_ARG_COUNT = 8;
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY = (1U << 0);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_NO_VECTOR_X86_EXCEPTIONS = (1U << 1);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE = (1U << 2);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_ALL_FRONTEND_HANDLERS = (1U << 3);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_OPAQUE_SYSCALLS = (1U << 4);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_RESERVED_BIT5 = (1U << 5);
+static const Bit32u BX_POLY_EVENT_RECORD_FLAG_OPAQUE_IMPORTS = (1U << 6);
 static const Bit32u BX_POLY_INTERRUPT_ABI_VERSION = 1;
 static const Bit32u BX_POLY_INTERRUPT_FLAG_RAW_CPL3_ONLY = (1U << 0);
 static const Bit32u BX_POLY_INTERRUPT_FLAG_STANDARD_X86_ENTRY = (1U << 1);
@@ -1103,7 +1103,7 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u last_syscall_number;
   Bit32u last_break_mode;
   Bit64u last_break_number;
-  bx_poly_trap_packet last_trap;
+  bx_poly_event_record last_trap;
   bx_poly_trap_saved_regs_t trap_saved_regs;
   bool return_cookie_valid;
   Bit32u return_cookie_mode;
@@ -1413,7 +1413,7 @@ struct bx_poly_reg_state_t {
   Bit64u last_syscall_number;
   Bit32u last_break_mode;
   Bit64u last_break_number;
-  bx_poly_trap_packet last_trap;
+  bx_poly_event_record last_trap;
   bx_poly_trap_saved_regs_t trap_saved_regs;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
@@ -4039,7 +4039,7 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_last_syscall_number = 0;
   bx_poly_last_break_mode = BX_POLY_MODE_X86;
   bx_poly_last_break_number = 0;
-  bx_poly_clear_trap_packet(&bx_poly_last_trap);
+  bx_poly_clear_event_record(&bx_poly_last_trap);
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   bx_poly_reset_aarch64_regs();
   bx_poly_reset_riscv_regs();
@@ -4082,10 +4082,10 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   Bit64u inherited_trap_vector_age = 0;
   bx_address inherited_trap_vector = 0;
   Bit32u inherited_trap_vector_mode = BX_POLY_MODE_X86;
-  bx_poly_trap_packet inherited_last_trap;
+  bx_poly_event_record inherited_last_trap;
   bx_poly_trap_saved_regs_t inherited_trap_saved_regs;
 
-  bx_poly_clear_trap_packet(&inherited_last_trap);
+  bx_poly_clear_event_record(&inherited_last_trap);
   bx_poly_clear_trap_saved_regs(&inherited_trap_saved_regs);
 
   for (unsigned n = 0; n < BX_POLY_REG_STATE_SLOTS; n++) {
@@ -4173,7 +4173,7 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
     bx_poly_reg_states[victim].trap_saved_regs = inherited_trap_saved_regs;
   }
   else {
-    bx_poly_clear_trap_packet(&bx_poly_reg_states[victim].last_trap);
+    bx_poly_clear_event_record(&bx_poly_reg_states[victim].last_trap);
     bx_poly_clear_trap_saved_regs(&bx_poly_reg_states[victim].trap_saved_regs);
   }
   bx_poly_reg_states[victim].aarch64_nzcv = 0;
@@ -4685,32 +4685,32 @@ static Bit32u bx_poly_xsave_arch_flags(void)
     BX_POLY_STATE_XSAVE_FLAG_OS_XSAVE_NOT_REQUIRED;
 }
 
-static Bit64u bx_poly_trap_packet_flags_for(const bx_poly_trap_packet *trap,
+static Bit64u bx_poly_event_record_flags_for(const bx_poly_event_record *trap,
   bool trap_return_restore)
 {
   if (trap->reason == BX_POLY_TRAP_NONE)
     return 0;
-  Bit64u flags = BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
-    BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS |
-    BX_POLY_TRAP_PACKET_FLAG_OPAQUE_SYSCALLS |
-    BX_POLY_TRAP_PACKET_FLAG_OPAQUE_IMPORTS;
+  Bit64u flags = BX_POLY_EVENT_RECORD_FLAG_NO_VECTOR_X86_EXCEPTIONS |
+    BX_POLY_EVENT_RECORD_FLAG_ALL_FRONTEND_HANDLERS |
+    BX_POLY_EVENT_RECORD_FLAG_OPAQUE_SYSCALLS |
+    BX_POLY_EVENT_RECORD_FLAG_OPAQUE_IMPORTS;
   if (bx_poly_trap_vector != 0 &&
       bx_poly_valid_frontend_mode(bx_poly_trap_vector_mode))
-    flags |= BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY;
+    flags |= BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY;
   if (trap_return_restore)
-    flags |= BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE;
+    flags |= BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE;
   return flags;
 }
 
-static Bit64u bx_poly_trap_packet_flags(void)
+static Bit64u bx_poly_event_record_flags(void)
 {
-  return bx_poly_trap_packet_flags_for(&bx_poly_last_trap,
+  return bx_poly_event_record_flags_for(&bx_poly_last_trap,
     bx_poly_trap_saved_regs.valid);
 }
 
-static Bit64u bx_poly_xsave_trap_packet_flags(void)
+static Bit64u bx_poly_xsave_event_record_flags(void)
 {
-  return bx_poly_trap_packet_flags_for(&bx_poly_last_trap,
+  return bx_poly_event_record_flags_for(&bx_poly_last_trap,
     bx_poly_trap_saved_regs.valid);
 }
 
@@ -5597,10 +5597,10 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
   };
 
   if ((flags & BX_POLY_V2_DERIVE_FLAG_CLEAR_EVENT_STATE) != 0) {
-    clear_qwords(dst + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET,
-      BX_POLY_STATE_XSAVE_TRAP_PACKET_BYTES);
-    clear_qwords(dst + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET,
-      BX_POLY_STATE_XSAVE_TRAP_ARGS_BYTES);
+    clear_qwords(dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET,
+      BX_POLY_STATE_XSAVE_EVENT_RECORD_BYTES);
+    clear_qwords(dst + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET,
+      BX_POLY_STATE_XSAVE_EVENT_ARGS_BYTES);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET,
       BX_POLY_STATE_XSAVE_TRANSITION_BYTES);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET,
@@ -5684,23 +5684,23 @@ bool BX_CPU_C::export_poly_xsave_state(unsigned seg, bx_address base)
   write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56,
     0);
 
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET,
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET,
     (Bit64u) bx_poly_last_trap.reason |
     ((Bit64u) bx_poly_last_trap.mode << 32));
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 8,
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 8,
     bx_poly_last_trap.number);
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 16,
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 16,
     bx_poly_last_trap.selector);
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 24,
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24,
     bx_poly_last_trap.pc);
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32,
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32,
     bx_poly_last_trap.next_pc);
-  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 40,
-    bx_poly_xsave_trap_packet_flags());
+  write_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 40,
+    bx_poly_xsave_event_record_flags());
 
-  for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
+  for (unsigned n = 0; n < BX_POLY_EVENT_RECORD_ARG_COUNT; n++)
     write_virtual_qword(seg,
-      base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8,
+      base + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + n * 8,
       bx_poly_last_trap.args[n]);
 
   if (bx_poly_interrupted_raw_valid) {
@@ -6133,7 +6133,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   }
   if (!reserved_qwords_are_zero(
-        BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 48, 16, "trap") ||
+        BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 48, 16, "trap") ||
       !reserved_qwords_are_zero(
         BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 32, 32, "transition") ||
       !reserved_qwords_are_zero(
@@ -6184,19 +6184,19 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   }
   Bit64u imported_trap0 =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET);
   Bit32u imported_trap_reason = (Bit32u) imported_trap0;
   Bit32u imported_trap_mode = (Bit32u) (imported_trap0 >> 32);
   Bit64u imported_trap_number =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 8);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 8);
   Bit64u imported_trap_selector =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 16);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 16);
   Bit64u imported_trap_pc =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 24);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24);
   Bit64u imported_trap_next_pc =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 32);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32);
   Bit64u imported_trap_flags =
-    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET + 40);
+    read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 40);
   if (!bx_poly_valid_trap_reason(imported_trap_reason) ||
       !bx_poly_valid_trap_source_mode(imported_trap_reason,
         imported_trap_mode)) {
@@ -6205,12 +6205,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     return false;
   }
   const Bit64u trap_flags_supported =
-    BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY |
-    BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
-    BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE |
-    BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS |
-    BX_POLY_TRAP_PACKET_FLAG_OPAQUE_SYSCALLS |
-    BX_POLY_TRAP_PACKET_FLAG_OPAQUE_IMPORTS;
+    BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY |
+    BX_POLY_EVENT_RECORD_FLAG_NO_VECTOR_X86_EXCEPTIONS |
+    BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE |
+    BX_POLY_EVENT_RECORD_FLAG_ALL_FRONTEND_HANDLERS |
+    BX_POLY_EVENT_RECORD_FLAG_OPAQUE_SYSCALLS |
+    BX_POLY_EVENT_RECORD_FLAG_OPAQUE_IMPORTS;
   if (imported_trap_reason == BX_POLY_TRAP_NONE) {
     if (imported_trap_number != 0 || imported_trap_selector != 0 ||
         imported_trap_pc != 0 || imported_trap_next_pc != 0 ||
@@ -6224,9 +6224,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       return false;
     }
     if (imported_spill_reason == BX_POLY_SPILL_REASON_NONE) {
-      for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++) {
+      for (unsigned n = 0; n < BX_POLY_EVENT_RECORD_ARG_COUNT; n++) {
         Bit64u arg = read_virtual_qword(seg,
-          base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
+          base + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + n * 8);
         if (arg != 0) {
           BX_INFO(("poly_state_import: reject inactive trap arg%u=%llx",
             n, (unsigned long long) arg));
@@ -6263,9 +6263,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       imported_trap_next_pc = bx_poly_last_trap.next_pc;
     }
     if ((imported_trap_flags & ~trap_flags_supported) != 0 ||
-        ((imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY) != 0 &&
+        ((imported_trap_flags & BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY) != 0 &&
          imported_trap_vector == 0) ||
-        (imported_trap_flags & BX_POLY_TRAP_PACKET_FLAG_RESERVED_BIT5) != 0) {
+        (imported_trap_flags & BX_POLY_EVENT_RECORD_FLAG_RESERVED_BIT5) != 0) {
       BX_INFO(("poly_state_import: reject trap packet flags=%llx",
         (unsigned long long) imported_trap_flags));
       return false;
@@ -6298,7 +6298,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       return false;
     }
     if ((imported_trap_flags &
-          BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE) != 0) {
+          BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE) != 0) {
       BX_INFO(("poly_state_import: reject trap restore flag without restore state"));
       return false;
     }
@@ -6308,7 +6308,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
         imported_trap_reason == BX_POLY_TRAP_NONE ||
         imported_trap_mode != restore_mode ||
         (imported_trap_flags &
-          BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE) == 0) {
+          BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE) == 0) {
       BX_INFO(("poly_state_import: reject trap restore shape reason=%u trap_mode=%u restore_mode=%u flags=%llx",
         imported_trap_reason, imported_trap_mode, restore_mode,
         (unsigned long long) imported_trap_flags));
@@ -7034,9 +7034,9 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     bx_poly_last_trap.selector = imported_trap_selector;
     bx_poly_last_trap.pc = (bx_address) imported_trap_pc;
     bx_poly_last_trap.next_pc = (bx_address) imported_trap_next_pc;
-    for (unsigned n = 0; n < BX_POLY_TRAP_PACKET_ARG_COUNT; n++)
+    for (unsigned n = 0; n < BX_POLY_EVENT_RECORD_ARG_COUNT; n++)
       bx_poly_last_trap.args[n] = read_virtual_qword(seg,
-        base + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + n * 8);
+        base + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + n * 8);
   }
 
   bx_poly_cross_return_top = 0;
@@ -8984,16 +8984,16 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
       bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48,
       (Bit64u) bx_poly_trap_vector_mode | ((Bit64u) spill_reason << 32));
     write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET,
       (Bit64u) vector);
     write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 8,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 8,
       (Bit64u) type);
     write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 16,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 16,
       (Bit64u) error_code);
     write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET + 24,
+      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 24,
       vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0);
 
     Bit64u event_args[BX_POLY_V2_EVENT_ARG_COUNT] = {
@@ -19440,7 +19440,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::POLYMODE(bxInstruction_c *i)
 bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
 {
   BX_POLY_SET_ACTIVE_CPU();
-  bx_poly_trap_packet delivered_trap = bx_poly_last_trap;
+  bx_poly_event_record delivered_trap = bx_poly_last_trap;
   Bit32u trap_mode = delivered_trap.mode;
   bx_address trap_vector = bx_poly_trap_vector;
   Bit32u trap_vector_mode = bx_poly_trap_vector_mode;
@@ -19455,7 +19455,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
       (unsigned long long) trap_vector, trap_vector_mode,
       (unsigned long long) RIP));
   }
-  bx_poly_clear_trap_packet(&bx_poly_last_trap);
+  bx_poly_clear_event_record(&bx_poly_last_trap);
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
   bx_poly_current_mode = BX_POLY_MODE_X86;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
@@ -20870,10 +20870,10 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RDX = BX_POLY_STATE_XSAVE_LAYOUT_VERSION;
     }
     else if (ECX == 2) {
-      RAX = BX_POLY_STATE_XSAVE_TRAP_PACKET_OFFSET;
-      RBX = BX_POLY_STATE_XSAVE_TRAP_PACKET_BYTES;
-      RCX = BX_POLY_STATE_XSAVE_TRAP_ARGS_OFFSET;
-      RDX = BX_POLY_STATE_XSAVE_TRAP_ARGS_BYTES;
+      RAX = BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET;
+      RBX = BX_POLY_STATE_XSAVE_EVENT_RECORD_BYTES;
+      RCX = BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET;
+      RDX = BX_POLY_STATE_XSAVE_EVENT_ARGS_BYTES;
     }
     else if (ECX == 3) {
       RAX = BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET;
@@ -20963,15 +20963,15 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     return;
   }
   if (BX_CPU_THIS_PTR poly_feature_enabled && EAX == BX_POLY_CPUID_BASE + 5) {
-    RAX = BX_POLY_TRAP_PACKET_LAYOUT_VERSION;
-    RBX = BX_POLY_TRAP_PACKET_HEADER_BYTES;
-    RCX = BX_POLY_TRAP_PACKET_ARG_COUNT;
-    RDX = BX_POLY_TRAP_PACKET_FLAG_VECTOR_DELIVERY |
-          BX_POLY_TRAP_PACKET_FLAG_NO_VECTOR_X86_EXCEPTIONS |
-          BX_POLY_TRAP_PACKET_FLAG_TRAP_RETURN_RESTORE |
-          BX_POLY_TRAP_PACKET_FLAG_ALL_FRONTEND_HANDLERS |
-          BX_POLY_TRAP_PACKET_FLAG_OPAQUE_SYSCALLS |
-          BX_POLY_TRAP_PACKET_FLAG_OPAQUE_IMPORTS;
+    RAX = BX_POLY_EVENT_RECORD_LAYOUT_VERSION;
+    RBX = BX_POLY_EVENT_RECORD_HEADER_BYTES;
+    RCX = BX_POLY_EVENT_RECORD_ARG_COUNT;
+    RDX = BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY |
+          BX_POLY_EVENT_RECORD_FLAG_NO_VECTOR_X86_EXCEPTIONS |
+          BX_POLY_EVENT_RECORD_FLAG_TRAP_RETURN_RESTORE |
+          BX_POLY_EVENT_RECORD_FLAG_ALL_FRONTEND_HANDLERS |
+          BX_POLY_EVENT_RECORD_FLAG_OPAQUE_SYSCALLS |
+          BX_POLY_EVENT_RECORD_FLAG_OPAQUE_IMPORTS;
     BX_NEXT_INSTR(i);
     return;
   }
