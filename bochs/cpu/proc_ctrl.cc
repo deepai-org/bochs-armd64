@@ -393,8 +393,6 @@ static const Bit32u BX_POLY_STATE_XSAVE_NATIVE_RETURN_FRAMES_OFFSET =
   BX_POLY_STATE_XSAVE_NATIVE_RETURN_FRAME_BYTES;
 static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_OFFSET = 0x1a80;
 static const Bit32u BX_POLY_STATE_XSAVE_RESERVED_BYTES = 0x580;
-static const Bit32u BX_POLY_STATE_XSAVE_AUTO_SPILL_RESUME_STACK_OFFSET =
-  BX_POLY_STATE_XSAVE_RESERVED_OFFSET;
 static const Bit32u BX_POLY_EVENT_RECORD_LAYOUT_VERSION = 2;
 static const Bit32u BX_POLY_EVENT_RECORD_HEADER_BYTES = 64;
 static const Bit32u BX_POLY_EVENT_RECORD_ARG_COUNT = 8;
@@ -575,10 +573,7 @@ static const Bit32u BX_POLY_X86_CTRL_FOREIGN_INSN_COUNT_STATUS = 0x42;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_SYSCALL_COUNT_STATUS = 0x43;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS = 0x44;
 static const Bit32u BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS = 0x45;
-static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS = 0x46;
-static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS = 0x47;
-static const Bit32u BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS = 0x48;
-static const Bit32u BX_POLY_X86_CTRL_STATUS_LAST = 0x48;
+static const Bit32u BX_POLY_X86_CTRL_STATUS_LAST = 0x45;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_SET = 0x60;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_VECTOR_GET = 0x61;
 static const Bit32u BX_POLY_X86_CTRL_TRAP_RETURN = 0x62;
@@ -593,7 +588,6 @@ static const Bit32u BX_POLY_X86_CTRL_ABI_SIGNATURE_GET = 0x6a;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_SET = 0x6d;
 static const Bit32u BX_POLY_X86_CTRL_LANDING_POLICY_GET = 0x6e;
 static const Bit32u BX_POLY_X86_CTRL_EVENT_PTR_SET = 0x71;
-static const Bit32u BX_POLY_X86_CTRL_SPILL_DESC_SET = 0x72;
 static const Bit32u BX_POLY_X86_CTRL_DUMP_STATE = 0x73;
 static const Bit32u BX_POLY_X86_CTRL_MEM_PROBE_RANGE = 0x74;
 static const Bit32u BX_POLY_X86_CTRL_DERIVE_STATE = 0x75;
@@ -605,15 +599,6 @@ static const Bit32u BX_POLY_V2_EVENT_VERSION = 2;
 static const Bit32u BX_POLY_V2_EVENT_BYTES = 512;
 static const Bit32u BX_POLY_V2_EVENT_ALIGN = 64;
 static const Bit32u BX_POLY_V2_EVENT_ARG_COUNT = 8;
-static const Bit64u BX_POLY_V2_SPILL_DESC_MAGIC =
-  BX_CONST64(0x32445053594c4f50);
-static const Bit32u BX_POLY_V2_SPILL_DESC_VERSION = 2;
-static const Bit32u BX_POLY_V2_SPILL_DESC_BYTES = 256;
-static const Bit32u BX_POLY_V2_SPILL_DESC_ALIGN = 64;
-static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_STATE_ADDR = (1ULL << 0);
-static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_EVENT_ADDR = (1ULL << 1);
-static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_RESUME_RIP = (1ULL << 2);
-static const Bit64u BX_POLY_V2_SPILL_DESC_VALID_RESUME_STACK = (1ULL << 3);
 static const Bit64u BX_POLY_V2_DEBUG_NOTE_MAGIC =
   BX_CONST64(0x32474244594c4f50);
 static const Bit32u BX_POLY_V2_DEBUG_NOTE_VERSION = 2;
@@ -623,7 +608,6 @@ static const Bit32u BX_POLY_V2_DEBUG_NOTE_HEADER_BYTES = 512;
 static const Bit32u BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET = 512;
 static const Bit32u BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET = 1024;
 static const Bit64u BX_POLY_V2_DUMP_SELECTOR_LIVE = 0;
-static const Bit64u BX_POLY_V2_DUMP_SELECTOR_SPILL_DESCRIPTOR = 1;
 static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_EVENT = (1ULL << 0);
 static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_XSAVE = (1ULL << 1);
 static const Bit64u BX_POLY_V2_DEBUG_NOTE_FLAG_SPILLED = (1ULL << 2);
@@ -657,7 +641,6 @@ static const Bit64u BX_POLY_V2_COMPLETE_FLAG_CLEAR_EVENT = (1ULL << 5);
 static const Bit64u BX_POLY_V2_COMPLETE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5);
 static const Bit32u BX_POLY_CPUID_V2_ABI_VERSION = 2;
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_FRAME = (1U << 0);
-static const Bit32u BX_POLY_CPUID_V2_FEATURE_SPILL_DESCRIPTOR = (1U << 1);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DEBUG_NOTE_EXPORT = (1U << 2);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_MEMORY_PROBE = (1U << 3);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_STATE_DERIVE = (1U << 4);
@@ -720,8 +703,6 @@ static const Bit64u BX_POLY_IMPORT_CALL_STRIDE = BX_CONST64(0x10);
 static const Bit32u BX_POLY_IMPORT_SELECTOR_COUNT = 256;
 static const Bit32u BX_POLY_IMPORT_TRAP_SLOT_COUNT = BX_POLY_IMPORT_SELECTOR_COUNT;
 static const Bit64u BX_POLY_DIRECT_X86_IMPORT_ID = BX_CONST64(0xffffffffffffffff);
-static const Bit64u BX_POLY_AUTO_SPILL_FIXED_CYCLES = 64;
-static const Bit64u BX_POLY_AUTO_SPILL_BYTE_CYCLES = 1;
 // Keep suspended x86 thunk frames and active foreign frames from colliding
 // when runtime callees use deep stack frames beneath the x86 return cookie.
 static const Bit64u BX_POLY_FOREIGN_STACK_GAP = BX_CONST64(0x4000);
@@ -800,12 +781,6 @@ static bool bx_poly_u32_from_u64(Bit64u value, Bit32u *result)
     return false;
   *result = (Bit32u) value;
   return true;
-}
-
-static inline Bit64u bx_poly_auto_spill_estimated_cycles(Bit64u bytes)
-{
-  return BX_POLY_AUTO_SPILL_FIXED_CYCLES +
-    bytes * BX_POLY_AUTO_SPILL_BYTE_CYCLES;
 }
 
 static Bit64u bx_poly_aarch64_size_mask(Bit32u size)
@@ -1111,9 +1086,6 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u foreign_syscall_count;
   Bit64u foreign_break_count;
   Bit64u foreign_import_count;
-  Bit64u auto_spill_count;
-  Bit64u auto_spill_bytes;
-  Bit64u auto_spill_cycles;
   bool poly_state_dirty;
   Bit32u last_syscall_mode;
   Bit64u last_syscall_number;
@@ -1149,13 +1121,6 @@ struct bx_poly_cpu_runtime_state_t {
   bx_address event_frame_addr;
   Bit64u event_frame_bytes;
   Bit64u event_sequence;
-  bx_address spill_descriptor_addr;
-  Bit64u spill_descriptor_bytes;
-  Bit64u spill_descriptor_generation;
-  Bit64u spill_descriptor_owner_cookie;
-  bx_address spill_resume_stack_top;
-  bx_address spill_buffer;
-  bx_address spill_resume_rip;
   bool derive_resume_target_valid;
   Bit32u derive_resume_target_mode;
   bx_address derive_resume_target_rip;
@@ -1225,12 +1190,6 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().foreign_break_count)
 #define bx_poly_foreign_import_count \
   (bx_poly_cpu_runtime_state().foreign_import_count)
-#define bx_poly_auto_spill_count \
-  (bx_poly_cpu_runtime_state().auto_spill_count)
-#define bx_poly_auto_spill_bytes \
-  (bx_poly_cpu_runtime_state().auto_spill_bytes)
-#define bx_poly_auto_spill_cycles \
-  (bx_poly_cpu_runtime_state().auto_spill_cycles)
 #define bx_poly_state_dirty \
   (bx_poly_cpu_runtime_state().poly_state_dirty)
 #define bx_poly_last_syscall_mode \
@@ -1295,20 +1254,6 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().event_frame_bytes)
 #define bx_poly_event_sequence \
   (bx_poly_cpu_runtime_state().event_sequence)
-#define bx_poly_spill_descriptor_addr \
-  (bx_poly_cpu_runtime_state().spill_descriptor_addr)
-#define bx_poly_spill_descriptor_bytes \
-  (bx_poly_cpu_runtime_state().spill_descriptor_bytes)
-#define bx_poly_spill_descriptor_generation \
-  (bx_poly_cpu_runtime_state().spill_descriptor_generation)
-#define bx_poly_spill_descriptor_owner_cookie \
-  (bx_poly_cpu_runtime_state().spill_descriptor_owner_cookie)
-#define bx_poly_spill_resume_stack_top \
-  (bx_poly_cpu_runtime_state().spill_resume_stack_top)
-#define bx_poly_spill_buffer \
-  (bx_poly_cpu_runtime_state().spill_buffer)
-#define bx_poly_spill_resume_rip \
-  (bx_poly_cpu_runtime_state().spill_resume_rip)
 #define bx_poly_derive_resume_target_valid \
   (bx_poly_cpu_runtime_state().derive_resume_target_valid)
 #define bx_poly_derive_resume_target_mode \
@@ -1418,13 +1363,6 @@ struct bx_poly_reg_state_t {
   bx_address event_frame_addr;
   Bit64u event_frame_bytes;
   Bit64u event_sequence;
-  bx_address spill_descriptor_addr;
-  Bit64u spill_descriptor_bytes;
-  Bit64u spill_descriptor_generation;
-  Bit64u spill_descriptor_owner_cookie;
-  bx_address spill_resume_stack_top;
-  bx_address spill_buffer;
-  bx_address spill_resume_rip;
   Bit32u last_syscall_mode;
   Bit64u last_syscall_number;
   Bit32u last_break_mode;
@@ -1580,24 +1518,6 @@ static bool bx_poly_valid_v2_event_frame(Bit64u frame, Bit64u bytes,
   if (frame + last_byte < frame)
     return false;
   return bx_poly_valid_control_address(frame + last_byte, linaddr_width);
-}
-
-static bool bx_poly_valid_v2_spill_descriptor(Bit64u descriptor, Bit64u bytes,
-  unsigned linaddr_width)
-{
-  if (descriptor == 0 && bytes == 0)
-    return true;
-  if (bytes != BX_POLY_V2_SPILL_DESC_BYTES)
-    return false;
-  if (!bx_poly_valid_control_address(descriptor, linaddr_width))
-    return false;
-  if ((descriptor & (BX_POLY_V2_SPILL_DESC_ALIGN - 1)) != 0)
-    return false;
-  const Bit64u last_byte = (Bit64u) BX_POLY_V2_SPILL_DESC_BYTES - 1;
-  if (descriptor + last_byte < descriptor)
-    return false;
-  return bx_poly_valid_control_address(descriptor + last_byte,
-    linaddr_width);
 }
 
 static bool bx_poly_valid_v2_debug_note(Bit64u note, Bit64u bytes,
@@ -3251,17 +3171,6 @@ static void bx_poly_trace_aarch64_pc_sample(Bit32u insn, bx_address pc,
     (unsigned long long) sp));
 }
 
-static bool bx_poly_trace_auto_spill_sp_enabled(void)
-{
-  static int trace_auto_spill_sp = -1;
-  if (trace_auto_spill_sp < 0) {
-    const char *enabled = getenv("POLY_TRACE_AUTO_SPILL_SP");
-    trace_auto_spill_sp =
-      enabled != NULL && enabled[0] != '\0' && strcmp(enabled, "0") != 0;
-  }
-  return trace_auto_spill_sp != 0;
-}
-
 static void bx_poly_clear_active_reservations();
 
 static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode,
@@ -4054,13 +3963,6 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_event_frame_addr = 0;
   bx_poly_event_frame_bytes = 0;
   bx_poly_event_sequence = 0;
-  bx_poly_spill_descriptor_addr = 0;
-  bx_poly_spill_descriptor_bytes = 0;
-  bx_poly_spill_descriptor_generation = 0;
-  bx_poly_spill_descriptor_owner_cookie = 0;
-  bx_poly_spill_resume_stack_top = 0;
-  bx_poly_spill_buffer = 0;
-  bx_poly_spill_resume_rip = 0;
   bx_poly_state_dirty = false;
   bx_poly_derive_resume_target_valid = false;
   bx_poly_derive_resume_target_mode = BX_POLY_MODE_X86;
@@ -4187,13 +4089,6 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].event_frame_addr = 0;
   bx_poly_reg_states[victim].event_frame_bytes = 0;
   bx_poly_reg_states[victim].event_sequence = 0;
-  bx_poly_reg_states[victim].spill_descriptor_addr = 0;
-  bx_poly_reg_states[victim].spill_descriptor_bytes = 0;
-  bx_poly_reg_states[victim].spill_descriptor_generation = 0;
-  bx_poly_reg_states[victim].spill_descriptor_owner_cookie = 0;
-  bx_poly_reg_states[victim].spill_resume_stack_top = 0;
-  bx_poly_reg_states[victim].spill_buffer = 0;
-  bx_poly_reg_states[victim].spill_resume_rip = 0;
   bx_poly_reg_states[victim].last_syscall_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].last_syscall_number = 0;
   bx_poly_reg_states[victim].last_break_mode = BX_POLY_MODE_X86;
@@ -4264,16 +4159,6 @@ static void bx_poly_propagate_trap_vector_state(bx_address cr3,
     bx_poly_reg_states[n].trap_vector_mode = bx_poly_trap_vector_mode;
     bx_poly_reg_states[n].event_frame_addr = bx_poly_event_frame_addr;
     bx_poly_reg_states[n].event_frame_bytes = bx_poly_event_frame_bytes;
-    bx_poly_reg_states[n].spill_descriptor_addr =
-      bx_poly_spill_descriptor_addr;
-    bx_poly_reg_states[n].spill_descriptor_bytes =
-      bx_poly_spill_descriptor_bytes;
-    bx_poly_reg_states[n].spill_descriptor_generation =
-      bx_poly_spill_descriptor_generation;
-    bx_poly_reg_states[n].spill_descriptor_owner_cookie =
-      bx_poly_spill_descriptor_owner_cookie;
-    bx_poly_reg_states[n].spill_resume_stack_top =
-      bx_poly_spill_resume_stack_top;
   }
 }
 
@@ -4402,18 +4287,6 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].event_frame_addr = bx_poly_event_frame_addr;
   bx_poly_reg_states[slot].event_frame_bytes = bx_poly_event_frame_bytes;
   bx_poly_reg_states[slot].event_sequence = bx_poly_event_sequence;
-  bx_poly_reg_states[slot].spill_descriptor_addr =
-    bx_poly_spill_descriptor_addr;
-  bx_poly_reg_states[slot].spill_descriptor_bytes =
-    bx_poly_spill_descriptor_bytes;
-  bx_poly_reg_states[slot].spill_descriptor_generation =
-    bx_poly_spill_descriptor_generation;
-  bx_poly_reg_states[slot].spill_descriptor_owner_cookie =
-    bx_poly_spill_descriptor_owner_cookie;
-  bx_poly_reg_states[slot].spill_resume_stack_top =
-    bx_poly_spill_resume_stack_top;
-  bx_poly_reg_states[slot].spill_buffer = bx_poly_spill_buffer;
-  bx_poly_reg_states[slot].spill_resume_rip = bx_poly_spill_resume_rip;
   bx_poly_reg_states[slot].last_syscall_mode = bx_poly_last_syscall_mode;
   bx_poly_reg_states[slot].last_syscall_number = bx_poly_last_syscall_number;
   bx_poly_reg_states[slot].last_break_mode = bx_poly_last_break_mode;
@@ -4485,18 +4358,6 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_event_frame_addr = bx_poly_reg_states[slot].event_frame_addr;
   bx_poly_event_frame_bytes = bx_poly_reg_states[slot].event_frame_bytes;
   bx_poly_event_sequence = bx_poly_reg_states[slot].event_sequence;
-  bx_poly_spill_descriptor_addr =
-    bx_poly_reg_states[slot].spill_descriptor_addr;
-  bx_poly_spill_descriptor_bytes =
-    bx_poly_reg_states[slot].spill_descriptor_bytes;
-  bx_poly_spill_descriptor_generation =
-    bx_poly_reg_states[slot].spill_descriptor_generation;
-  bx_poly_spill_descriptor_owner_cookie =
-    bx_poly_reg_states[slot].spill_descriptor_owner_cookie;
-  bx_poly_spill_resume_stack_top =
-    bx_poly_reg_states[slot].spill_resume_stack_top;
-  bx_poly_spill_buffer = bx_poly_reg_states[slot].spill_buffer;
-  bx_poly_spill_resume_rip = bx_poly_reg_states[slot].spill_resume_rip;
   bx_poly_last_syscall_mode = bx_poly_reg_states[slot].last_syscall_mode;
   bx_poly_last_syscall_number = bx_poly_reg_states[slot].last_syscall_number;
   bx_poly_last_break_mode = bx_poly_reg_states[slot].last_break_mode;
@@ -4828,12 +4689,9 @@ static void bx_poly_write_v2_event_frame(Bit32u event_kind,
   bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x0e0, 0);
   bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x0e8, 0);
   bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x0f0, 0);
-  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x0f8,
-    bx_poly_spill_descriptor_addr);
-  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x100,
-    bx_poly_spill_descriptor_generation);
-  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x108,
-    bx_poly_spill_descriptor_owner_cookie);
+  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x0f8, 0);
+  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x100, 0);
+  bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x108, 0);
   bx_poly_write_active_virtual_qword(BX_SEG_REG_DS, frame + 0x110,
     bx_poly_explicit_state_key_valid ? bx_poly_explicit_state_key : 0);
 }
@@ -5236,10 +5094,7 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
   const bx_address event_dst = base + BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET;
   const bx_address state_dst = base + BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET;
   bx_address event_src = 0;
-  bx_address state_src = 0;
   Bit64u flags = BX_POLY_V2_DEBUG_NOTE_FLAG_HAS_XSAVE;
-  Bit64u spill_descriptor = 0;
-  Bit64u spill_generation = 0;
 
   for (Bit32u offset = 0; offset < BX_POLY_V2_DEBUG_NOTE_BYTES; offset += 8)
     write_virtual_qword(seg, base + offset, 0);
@@ -5258,34 +5113,8 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
       event_src = bx_poly_event_frame_addr;
     }
   }
-  else if (selector == BX_POLY_V2_DUMP_SELECTOR_SPILL_DESCRIPTOR) {
-    if (bx_poly_spill_descriptor_addr == 0 ||
-        bx_poly_spill_buffer == 0 ||
-        bx_poly_event_frame_addr == 0 ||
-        !bx_poly_valid_xsave_state_buffer(bx_poly_spill_buffer,
-          BX_CPU_THIS_PTR linaddr_width) ||
-        !bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
-          bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) ||
-        read_virtual_qword(seg, bx_poly_event_frame_addr) !=
-          BX_POLY_V2_EVENT_MAGIC) {
-      return false;
-    }
-    state_src = bx_poly_spill_buffer;
-    event_src = bx_poly_event_frame_addr;
-    flags |= BX_POLY_V2_DEBUG_NOTE_FLAG_SPILLED;
-    spill_descriptor = bx_poly_spill_descriptor_addr;
-    spill_generation = bx_poly_spill_descriptor_generation;
-  }
   else {
     return false;
-  }
-
-  if (state_src != 0) {
-    for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_BYTES_ARCH;
-         offset += 8) {
-      write_virtual_qword(seg, state_dst + offset,
-        read_virtual_qword(seg, state_src + offset));
-    }
   }
 
   if (event_src != 0) {
@@ -5380,8 +5209,8 @@ bool BX_CPU_C::export_poly_v2_debug_note(unsigned seg, bx_address base,
   write_virtual_qword(seg, base + 144,
     read_virtual_qword(seg, state_dst + BX_POLY_STATE_XSAVE_TRANSITION_OFFSET + 24));
   write_virtual_qword(seg, base + 152, state_key);
-  write_virtual_qword(seg, base + 160, spill_descriptor);
-  write_virtual_qword(seg, base + 168, spill_generation);
+  write_virtual_qword(seg, base + 160, 0);
+  write_virtual_qword(seg, base + 168, 0);
   write_virtual_qword(seg, base + 176, BX_POLY_V2_DEBUG_NOTE_EVENT_OFFSET);
   write_virtual_qword(seg, base + 184, BX_POLY_V2_EVENT_BYTES);
   write_virtual_qword(seg, base + 192, BX_POLY_V2_DEBUG_NOTE_XSAVE_OFFSET);
@@ -9014,221 +8843,6 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
   bx_poly_bind_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
   if (!bx_poly_is_raw_mode(bx_poly_current_mode))
     return;
-
-  if (vector == BX_PF_EXCEPTION &&
-      bx_poly_spill_buffer != 0 && bx_poly_spill_resume_rip != 0) {
-    auto auto_spill_range_ready = [&](const char *name, bx_address addr,
-        Bit64u len, Bit64u flags) -> bool {
-      Bit64u status = 0;
-      Bit64u failure = 0;
-      Bit64u metadata = 0;
-      if (!probe_poly_v2_memory_range(addr, len, flags, &status, &failure,
-            &metadata) || status != 0) {
-        BX_INFO(("poly_raw: auto-spill disabled inaccessible %s addr=%llx len=%llx status=%lld failure=%llx metadata=%llx",
-          name, (unsigned long long) addr, (unsigned long long) len,
-          (long long) status, (unsigned long long) failure,
-          (unsigned long long) metadata));
-        return false;
-      }
-      return true;
-    };
-    const Bit64u rw_flags =
-      BX_POLY_V2_MEM_PROBE_FLAG_READ | BX_POLY_V2_MEM_PROBE_FLAG_WRITE;
-    bool auto_spill_memory_ready =
-      bx_poly_valid_xsave_state_buffer(bx_poly_spill_buffer,
-        BX_CPU_THIS_PTR linaddr_width) &&
-      auto_spill_range_ready("state", bx_poly_spill_buffer,
-        BX_POLY_STATE_XSAVE_BYTES_ARCH, rw_flags) &&
-      bx_poly_valid_control_address(bx_poly_spill_resume_rip,
-        BX_CPU_THIS_PTR linaddr_width);
-    if (auto_spill_memory_ready && bx_poly_event_frame_addr != 0) {
-      auto_spill_memory_ready =
-        bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
-          bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) &&
-        auto_spill_range_ready("event", bx_poly_event_frame_addr,
-          BX_POLY_V2_EVENT_BYTES, rw_flags);
-    }
-    if (auto_spill_memory_ready && bx_poly_spill_descriptor_addr != 0) {
-      auto_spill_memory_ready =
-        bx_poly_valid_v2_spill_descriptor(bx_poly_spill_descriptor_addr,
-          bx_poly_spill_descriptor_bytes, BX_CPU_THIS_PTR linaddr_width) &&
-        auto_spill_range_ready("descriptor", bx_poly_spill_descriptor_addr,
-          BX_POLY_V2_SPILL_DESC_BYTES, rw_flags);
-    }
-    if (auto_spill_memory_ready && bx_poly_spill_resume_stack_top != 0) {
-      auto_spill_memory_ready =
-        bx_poly_spill_resume_stack_top >= 8 &&
-        bx_poly_valid_control_address(bx_poly_spill_resume_stack_top - 8,
-          BX_CPU_THIS_PTR linaddr_width) &&
-        auto_spill_range_ready("resume-stack",
-          bx_poly_spill_resume_stack_top - 8, 8, rw_flags);
-    }
-    if (!auto_spill_memory_ready) {
-      BX_INFO(("poly_raw: auto-spill fallback mode=%u rip=%llx buffer=%llx resume=%llx",
-        bx_poly_current_mode, (unsigned long long) RIP,
-        (unsigned long long) bx_poly_spill_buffer,
-        (unsigned long long) bx_poly_spill_resume_rip));
-      bx_poly_spill_buffer = 0;
-      bx_poly_spill_resume_rip = 0;
-      bx_poly_spill_resume_stack_top = 0;
-    }
-  }
-
-  if (bx_poly_spill_buffer != 0 && bx_poly_spill_resume_rip != 0) {
-    Bit32u old_mode = bx_poly_current_mode;
-    bx_address old_rip = RIP;
-    Bit32u spill_reason = BX_POLY_SPILL_REASON_FAULT;
-    Bit64u resume_rsp = bx_poly_spill_resume_stack_top;
-    if (resume_rsp == 0) {
-      resume_rsp = read_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer +
-          BX_POLY_STATE_XSAVE_AUTO_SPILL_RESUME_STACK_OFFSET);
-    }
-    if (type == BX_EXTERNAL_INTERRUPT)
-      spill_reason = BX_POLY_SPILL_REASON_INTERRUPT;
-    else if (vector == BX_PF_EXCEPTION)
-      spill_reason = BX_POLY_SPILL_REASON_PAGE_FAULT;
-
-    bx_poly_clear_active_reservations();
-
-    bool spill_full_state = bx_poly_state_dirty;
-    if (!spill_full_state) {
-      Bit64u spill_header0 = read_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET);
-      Bit64u spill_header1 = read_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
-      Bit64u spill_header_flags = read_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 16);
-      Bit64u spill_tls_flags = read_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_FRONTEND_TLS_OFFSET);
-      Bit32u spill_magic = (Bit32u) spill_header0;
-      Bit32u spill_version = (Bit32u) ((spill_header0 >> 32) & 0xffff);
-      Bit32u spill_header_bytes = (Bit32u) ((spill_header0 >> 48) & 0xffff);
-      Bit32u spill_total_bytes = (Bit32u) spill_header1;
-      if (spill_magic != BX_POLY_STATE_XSAVE_MAGIC ||
-          spill_version != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
-          spill_header_bytes != BX_POLY_STATE_XSAVE_HEADER_BYTES ||
-          spill_total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH ||
-          spill_header_flags != bx_poly_xsave_arch_flags() ||
-          spill_tls_flags != 1)
-        spill_full_state = true;
-    }
-    Bit64u raw_sp = bx_poly_raw_stack_pointer_for_mode(bx_poly_current_mode);
-    if (bx_poly_trace_auto_spill_sp_enabled()) {
-      BX_INFO(("poly_raw: auto-spill sp mode=%u rsp=%llx raw_sp=%llx "
-        "a64_valid=%u a64_sp=%llx rv_valid=%u rv_sp=%llx full=%u "
-        "reason=%u vector=%u",
-        old_mode, (unsigned long long) RSP, (unsigned long long) raw_sp,
-        bx_poly_aarch64_x_valid[31] ? 1 : 0,
-        (unsigned long long) bx_poly_aarch64_x[31],
-        bx_poly_riscv_x_valid[2] ? 1 : 0,
-        (unsigned long long) bx_poly_riscv_x[2],
-        spill_full_state ? 1 : 0, spill_reason, vector));
-    }
-    if (spill_full_state) {
-      export_poly_xsave_state(BX_SEG_REG_DS, bx_poly_spill_buffer);
-    }
-    else {
-      bx_poly_capture_tls_base_for_mode(bx_poly_current_mode);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET,
-        (Bit64u) BX_POLY_STATE_XSAVE_MAGIC |
-        ((Bit64u) BX_POLY_STATE_XSAVE_LAYOUT_VERSION << 32) |
-        (BX_CONST64(0x40) << 48));
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8,
-        (Bit64u) BX_POLY_STATE_XSAVE_BYTES_ARCH |
-        ((Bit64u) bx_poly_current_mode << 32));
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 16,
-        bx_poly_xsave_arch_flags());
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24,
-        RIP);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 32,
-        bx_poly_tls_base_for_mode(bx_poly_current_mode));
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 40,
-        bx_poly_trap_vector);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 56, 0);
-      if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64) {
-        write_virtual_qword(BX_SEG_REG_DS,
-          bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET +
-            31 * 8,
-          raw_sp);
-      }
-      else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV) {
-        write_virtual_qword(BX_SEG_REG_DS,
-          bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 2 * 8,
-          raw_sp);
-      }
-    }
-    bx_poly_state_dirty = false;
-    write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 48,
-      (Bit64u) bx_poly_trap_vector_mode | ((Bit64u) spill_reason << 32));
-    write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET,
-      (Bit64u) vector);
-    write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 8,
-      (Bit64u) type);
-    write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 16,
-      (Bit64u) error_code);
-    write_virtual_qword(BX_SEG_REG_DS,
-      bx_poly_spill_buffer + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET + 24,
-      vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0);
-
-    Bit64u event_args[BX_POLY_V2_EVENT_ARG_COUNT] = {
-      (Bit64u) vector,
-      (Bit64u) type,
-      (Bit64u) error_code,
-      vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0,
-      0, 0, 0, 0
-    };
-    bx_poly_write_v2_event_frame(BX_POLY_V2_EVENT_KIND_ASYNC_SPILL,
-      spill_reason, old_mode, BX_POLY_V2_EVENT_COMPLETION_INTERRUPT_BOUNDARY,
-      old_rip, old_rip, old_rip, bx_poly_spill_resume_rip,
-      (Bit64u) spill_reason, event_args,
-      vector == BX_PF_EXCEPTION ? (Bit64u) BX_CPU_THIS_PTR cr2 : 0,
-      (Bit64u) error_code, (Bit64u) type, (Bit64u) vector,
-      BX_POLY_V2_EVENT_SIDE_EFFECT_NONE);
-
-    bx_poly_auto_spill_count++;
-    if (spill_full_state) {
-      bx_poly_auto_spill_bytes += BX_POLY_STATE_XSAVE_BYTES_ARCH;
-      bx_poly_auto_spill_cycles +=
-        bx_poly_auto_spill_estimated_cycles(BX_POLY_STATE_XSAVE_BYTES_ARCH);
-    }
-    if (bx_poly_spill_descriptor_addr != 0) {
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_descriptor_addr + 0x090, bx_poly_event_sequence);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_descriptor_addr + 0x098, spill_reason);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_descriptor_addr + 0x0a0, bx_poly_auto_spill_cycles);
-      write_virtual_qword(BX_SEG_REG_DS,
-        bx_poly_spill_descriptor_addr + 0x0a8, bx_poly_auto_spill_bytes);
-    }
-    bx_poly_save_current_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    bx_poly_current_mode = BX_POLY_MODE_X86;
-    bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE, stack_key);
-    if (resume_rsp != 0)
-      RSP = resume_rsp;
-    RIP = bx_poly_spill_resume_rip;
-    BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
-    BX_DEBUG(("poly_raw: auto-spill enter mode=%u old_rip=%llx resume=%llx reason=%u vector=%u count=%llu bytes=%llu cycles=%llu",
-      old_mode, (unsigned long long) old_rip,
-      (unsigned long long) RIP, spill_reason, vector,
-      (unsigned long long) bx_poly_auto_spill_count,
-      (unsigned long long) bx_poly_auto_spill_bytes,
-      (unsigned long long) bx_poly_auto_spill_cycles));
-    return;
-  }
 
   bx_poly_interrupted_raw_valid = true;
   bx_poly_interrupted_raw_mode = bx_poly_current_mode;
@@ -20572,121 +20186,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) frame, (unsigned long long) bytes));
         return true;
       }
-      if (op == BX_POLY_X86_CTRL_SPILL_DESC_SET) {
-        bx_address descriptor = (bx_address) RAX;
-        Bit64u bytes = RDX;
-        if (descriptor == 0 && bytes == 0) {
-          bx_poly_spill_descriptor_addr = 0;
-          bx_poly_spill_descriptor_bytes = 0;
-          bx_poly_spill_descriptor_generation = 0;
-          bx_poly_spill_descriptor_owner_cookie = 0;
-          bx_poly_spill_resume_stack_top = 0;
-          bx_poly_spill_buffer = 0;
-          bx_poly_spill_resume_rip = 0;
-          RAX = 0;
-          RIP = next_rip;
-          BX_DEBUG(("poly_ud: v2 spill descriptor disabled"));
-          return true;
-        }
-        if (!bx_poly_valid_v2_spill_descriptor(descriptor, bytes,
-              BX_CPU_THIS_PTR linaddr_width)) {
-          RAX = (Bit64u) -22;
-          RIP = next_rip;
-          BX_INFO(("poly_ud: reject v2 spill descriptor address=%llx bytes=%llx",
-            (unsigned long long) descriptor, (unsigned long long) bytes));
-          return true;
-        }
-        Bit64u magic = read_virtual_qword(BX_SEG_REG_DS, descriptor);
-        Bit64u header = read_virtual_qword(BX_SEG_REG_DS, descriptor + 8);
-        Bit32u desc_bytes = (Bit32u) header;
-        Bit32u desc_version = (Bit32u) ((header >> 32) & 0xffff);
-        Bit32u desc_header_bytes = (Bit32u) ((header >> 48) & 0xffff);
-        Bit64u owner_cookie = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 24);
-        Bit64u generation = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 32);
-        Bit64u valid_mask = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 40);
-        bx_address state_addr = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 48);
-        Bit64u state_meta = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 56);
-        Bit32u state_bytes = (Bit32u) state_meta;
-        Bit32u state_align = (Bit32u) ((state_meta >> 32) & 0xffff);
-        Bit32u state_layout = (Bit32u) ((state_meta >> 48) & 0xffff);
-        bx_address event_addr = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 64);
-        Bit64u event_meta = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 72);
-        Bit32u event_bytes = (Bit32u) event_meta;
-        bx_address resume_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 80);
-        bx_address resume_stack_base =
-          (bx_address) read_virtual_qword(BX_SEG_REG_DS, descriptor + 88);
-        Bit64u resume_stack_bytes = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 96);
-        bx_address resume_stack_top =
-          (bx_address) read_virtual_qword(BX_SEG_REG_DS, descriptor + 104);
-        Bit64u reserved_070_0 = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 112);
-        Bit64u reserved_070_1 = read_virtual_qword(BX_SEG_REG_DS,
-          descriptor + 120);
-        if (magic != BX_POLY_V2_SPILL_DESC_MAGIC ||
-            desc_bytes != BX_POLY_V2_SPILL_DESC_BYTES ||
-            desc_version != BX_POLY_V2_SPILL_DESC_VERSION ||
-            desc_header_bytes != 16 ||
-            generation == 0 ||
-            (valid_mask & (BX_POLY_V2_SPILL_DESC_VALID_STATE_ADDR |
-              BX_POLY_V2_SPILL_DESC_VALID_EVENT_ADDR |
-              BX_POLY_V2_SPILL_DESC_VALID_RESUME_RIP |
-              BX_POLY_V2_SPILL_DESC_VALID_RESUME_STACK)) !=
-                (BX_POLY_V2_SPILL_DESC_VALID_STATE_ADDR |
-                 BX_POLY_V2_SPILL_DESC_VALID_EVENT_ADDR |
-                 BX_POLY_V2_SPILL_DESC_VALID_RESUME_RIP |
-                 BX_POLY_V2_SPILL_DESC_VALID_RESUME_STACK) ||
-            state_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH ||
-            state_align != BX_POLY_STATE_XSAVE_ALIGN_ARCH ||
-            state_layout != BX_POLY_STATE_XSAVE_LAYOUT_VERSION ||
-            event_bytes != BX_POLY_V2_EVENT_BYTES ||
-            !bx_poly_valid_xsave_state_buffer(state_addr,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            !bx_poly_valid_v2_event_frame(event_addr, event_bytes,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            !bx_poly_valid_control_address(resume_rip,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            !bx_poly_valid_control_address(resume_stack_base,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            !bx_poly_valid_control_address(resume_stack_top,
-              BX_CPU_THIS_PTR linaddr_width) ||
-            resume_stack_bytes == 0 ||
-            resume_stack_top < resume_stack_base ||
-            resume_stack_top > resume_stack_base + resume_stack_bytes ||
-            reserved_070_0 != 0 ||
-            reserved_070_1 != 0) {
-          RAX = (Bit64u) -22;
-          RIP = next_rip;
-          BX_INFO(("poly_ud: reject v2 spill descriptor magic=%llx generation=%llx state=%llx event=%llx resume=%llx",
-            (unsigned long long) magic, (unsigned long long) generation,
-            (unsigned long long) state_addr, (unsigned long long) event_addr,
-            (unsigned long long) resume_rip));
-          return true;
-        }
-        bx_poly_spill_descriptor_addr = descriptor;
-        bx_poly_spill_descriptor_bytes = bytes;
-        bx_poly_spill_descriptor_generation = generation;
-        bx_poly_spill_descriptor_owner_cookie = owner_cookie;
-        bx_poly_spill_buffer = state_addr;
-        bx_poly_spill_resume_rip = resume_rip;
-        bx_poly_spill_resume_stack_top = resume_stack_top;
-        bx_poly_event_frame_addr = event_addr;
-        bx_poly_event_frame_bytes = event_bytes;
-        RAX = 0;
-        RIP = next_rip;
-        BX_DEBUG(("poly_ud: v2 spill descriptor setup desc=%llx state=%llx event=%llx resume=%llx",
-          (unsigned long long) descriptor, (unsigned long long) state_addr,
-          (unsigned long long) event_addr, (unsigned long long) resume_rip));
-        return true;
-      }
       if (op >= BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS &&
           op <= BX_POLY_X86_CTRL_STATUS_LAST) {
         Bit8u status_id = op - BX_POLY_X86_CTRL_SWITCH_COUNT_STATUS;
@@ -20702,25 +20201,16 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           RAX = bx_poly_foreign_break_count;
         else if (op == BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS)
           RAX = bx_poly_foreign_import_count;
-        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS)
-          RAX = bx_poly_auto_spill_count;
-        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS)
-          RAX = bx_poly_auto_spill_bytes;
-        else if (op == BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS)
-          RAX = bx_poly_auto_spill_cycles;
         else
           RAX = 0;
         RIP = next_rip;
-        BX_DEBUG(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu imports=%llu auto_spills=%llu auto_spill_bytes=%llu auto_spill_cycles=%llu",
+        BX_DEBUG(("poly_ud: switch status op=0x%02x id=%u mode=%u switches=%llu foreign_insns=%llu syscalls=%llu breaks=%llu imports=%llu",
           op, status_id, bx_poly_current_mode,
           (unsigned long long) bx_poly_mode_switch_count,
           (unsigned long long) bx_poly_foreign_insn_count,
           (unsigned long long) bx_poly_foreign_syscall_count,
           (unsigned long long) bx_poly_foreign_break_count,
-          (unsigned long long) bx_poly_foreign_import_count,
-          (unsigned long long) bx_poly_auto_spill_count,
-          (unsigned long long) bx_poly_auto_spill_bytes,
-          (unsigned long long) bx_poly_auto_spill_cycles));
+          (unsigned long long) bx_poly_foreign_import_count));
         return true;
       }
   }
@@ -21035,7 +20525,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RAX = BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS;
       RBX = BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS;
       RCX = BX_POLY_X86_CTRL_EVENT_PTR_SET;
-      RDX = BX_POLY_X86_CTRL_SPILL_DESC_SET;
+      RDX = 0;
     }
     else if (ECX == 32) {
       RAX = BX_POLY_X86_CTRL_PREFIX_0 |
@@ -21054,12 +20544,6 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
             BX_POLY_X86_OPCODE_FLAG_VENDOR_PROTOTYPE |
             BX_POLY_X86_OPCODE_FLAG_PRODUCTION_REASSIGNABLE;
       RCX = BX_POLY_X86_OPCODE_FAMILY_VENDOR_PROTOTYPE;
-      RDX = 0;
-    }
-    else if (ECX == 34) {
-      RAX = BX_POLY_X86_CTRL_AUTO_SPILL_COUNT_STATUS;
-      RBX = BX_POLY_X86_CTRL_AUTO_SPILL_BYTES_STATUS;
-      RCX = BX_POLY_X86_CTRL_AUTO_SPILL_CYCLES_STATUS;
       RDX = 0;
     }
     else {
@@ -21316,8 +20800,7 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
     RAX = BX_POLY_CPUID_V2_ABI_VERSION;
     RBX = BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES;
     RCX = BX_POLY_CPUID_V2_REQUIRED_FEATURES;
-    RDX = BX_POLY_V2_EVENT_BYTES |
-      (BX_POLY_V2_SPILL_DESC_BYTES << 16);
+    RDX = BX_POLY_V2_EVENT_BYTES;
     BX_NEXT_INSTR(i);
     return;
   }
