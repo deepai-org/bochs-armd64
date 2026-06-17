@@ -5821,7 +5821,15 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
       state_total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH)
     return false;
 
+  /*
+   * A nonzero live sequence is a strong guard against completing the wrong
+   * trap.  Imported XSAVE event records intentionally do not carry a sequence
+   * field, so a live sequence of zero means PCOMPLETE_EVENT must operate as a
+   * state-buffer completion and let the subsequent PDERIVE import validate the
+   * concrete trap/restore payload.
+   */
   if (event_sequence != 0 &&
+      bx_poly_last_trap.sequence != 0 &&
       bx_poly_last_trap.sequence != event_sequence) {
     BX_INFO(("poly_ud: reject v2 complete sequence=%llu live=%llu",
       (unsigned long long) event_sequence,
@@ -6574,6 +6582,14 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       imported_trap_selector = bx_poly_last_trap.selector;
       imported_trap_pc = bx_poly_last_trap.pc;
       imported_trap_next_pc = bx_poly_last_trap.next_pc;
+      imported_trap_sequence = bx_poly_last_trap.sequence;
+    }
+    else if (bx_poly_last_trap.reason == imported_trap_reason &&
+             bx_poly_last_trap.mode == imported_trap_mode &&
+             bx_poly_last_trap.number == imported_trap_number &&
+             bx_poly_last_trap.selector == imported_trap_selector &&
+             bx_poly_last_trap.pc == (bx_address) imported_trap_pc &&
+             bx_poly_last_trap.next_pc == (bx_address) imported_trap_next_pc) {
       imported_trap_sequence = bx_poly_last_trap.sequence;
     }
     if ((imported_trap_flags & ~trap_flags_supported) != 0 ||
