@@ -20469,21 +20469,6 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           return true;
         }
         if (activate_dst) {
-          const Bit64u native_rbx = RBX;
-          const Bit64u native_rcx = RCX;
-          const Bit64u native_rdx = RDX;
-          const Bit64u native_rbp = RBP;
-          const Bit64u native_rsi = RSI;
-          const Bit64u native_rdi = RDI;
-          const Bit64u native_r8 = R8;
-          const Bit64u native_r9 = R9;
-          const Bit64u native_r10 = R10;
-          const Bit64u native_r11 = R11;
-          const Bit64u native_r12 = R12;
-          const Bit64u native_r13 = R13;
-          const Bit64u native_r14 = R14;
-          const Bit64u native_r15 = R15;
-          const bx_address native_rsp = RSP;
           Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
             dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
           Bit32u saved_mode = (Bit32u) (header1 >> 32);
@@ -20502,29 +20487,24 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             return true;
           }
           saved_rsp = RSP;
-          bx_poly_derive_resume_target_valid = true;
-          bx_poly_derive_resume_target_mode = saved_mode;
-          bx_poly_derive_resume_target_rip = saved_rip;
-          bx_poly_derive_resume_target_rsp = saved_rsp;
-          RBX = native_rbx;
-          RCX = native_rcx;
-          RDX = native_rdx;
-          RBP = native_rbp;
-          RSI = native_rsi;
-          RDI = native_rdi;
-          R8 = native_r8;
-          R9 = native_r9;
-          R10 = native_r10;
-          R11 = native_r11;
-          R12 = native_r12;
-          R13 = native_r13;
-          R14 = native_r14;
-          R15 = native_r15;
-          RSP = native_rsp;
-          RAX = 0;
-          RIP = next_rip;
+          bx_poly_current_mode = saved_mode;
+          bx_poly_derive_resume_target_valid = false;
+          bx_poly_derive_resume_target_mode = BX_POLY_MODE_X86;
+          bx_poly_derive_resume_target_rip = 0;
+          bx_poly_derive_resume_target_rsp = 0;
           bx_poly_state_dirty = false;
-          BX_DEBUG(("poly_ud: derived v2 activation target dst=%llx mode=%u pc=%llx",
+          bx_poly_restore_aliased_state(saved_mode);
+          RSP = saved_rsp;
+          R13 = bx_poly_tls_base_for_mode(saved_mode);
+          bx_poly_mode_switch_count++;
+          bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+            bx_poly_current_state_key(RSP));
+          bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+            bx_poly_current_state_key(RSP));
+          BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
+          RIP = saved_rip;
+          bx_poly_state_dirty = false;
+          BX_DEBUG(("poly_ud: derived v2 activation enter dst=%llx mode=%u pc=%llx",
             (unsigned long long) dst, saved_mode,
             (unsigned long long) saved_rip));
           return true;
