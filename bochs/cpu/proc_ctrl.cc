@@ -9015,6 +9015,65 @@ void BX_CPU_C::poly_interrupt_enter(Bit8u vector, unsigned type,
   if (!bx_poly_is_raw_mode(bx_poly_current_mode))
     return;
 
+  if (vector == BX_PF_EXCEPTION &&
+      bx_poly_spill_buffer != 0 && bx_poly_spill_resume_rip != 0) {
+    auto auto_spill_range_ready = [&](const char *name, bx_address addr,
+        Bit64u len, Bit64u flags) -> bool {
+      Bit64u status = 0;
+      Bit64u failure = 0;
+      Bit64u metadata = 0;
+      if (!probe_poly_v2_memory_range(addr, len, flags, &status, &failure,
+            &metadata) || status != 0) {
+        BX_INFO(("poly_raw: auto-spill disabled inaccessible %s addr=%llx len=%llx status=%lld failure=%llx metadata=%llx",
+          name, (unsigned long long) addr, (unsigned long long) len,
+          (long long) status, (unsigned long long) failure,
+          (unsigned long long) metadata));
+        return false;
+      }
+      return true;
+    };
+    const Bit64u rw_flags =
+      BX_POLY_V2_MEM_PROBE_FLAG_READ | BX_POLY_V2_MEM_PROBE_FLAG_WRITE;
+    bool auto_spill_memory_ready =
+      bx_poly_valid_xsave_state_buffer(bx_poly_spill_buffer,
+        BX_CPU_THIS_PTR linaddr_width) &&
+      auto_spill_range_ready("state", bx_poly_spill_buffer,
+        BX_POLY_STATE_XSAVE_BYTES_ARCH, rw_flags) &&
+      bx_poly_valid_control_address(bx_poly_spill_resume_rip,
+        BX_CPU_THIS_PTR linaddr_width);
+    if (auto_spill_memory_ready && bx_poly_event_frame_addr != 0) {
+      auto_spill_memory_ready =
+        bx_poly_valid_v2_event_frame(bx_poly_event_frame_addr,
+          bx_poly_event_frame_bytes, BX_CPU_THIS_PTR linaddr_width) &&
+        auto_spill_range_ready("event", bx_poly_event_frame_addr,
+          BX_POLY_V2_EVENT_BYTES, rw_flags);
+    }
+    if (auto_spill_memory_ready && bx_poly_spill_descriptor_addr != 0) {
+      auto_spill_memory_ready =
+        bx_poly_valid_v2_spill_descriptor(bx_poly_spill_descriptor_addr,
+          bx_poly_spill_descriptor_bytes, BX_CPU_THIS_PTR linaddr_width) &&
+        auto_spill_range_ready("descriptor", bx_poly_spill_descriptor_addr,
+          BX_POLY_V2_SPILL_DESC_BYTES, rw_flags);
+    }
+    if (auto_spill_memory_ready && bx_poly_spill_resume_stack_top != 0) {
+      auto_spill_memory_ready =
+        bx_poly_spill_resume_stack_top >= 8 &&
+        bx_poly_valid_control_address(bx_poly_spill_resume_stack_top - 8,
+          BX_CPU_THIS_PTR linaddr_width) &&
+        auto_spill_range_ready("resume-stack",
+          bx_poly_spill_resume_stack_top - 8, 8, rw_flags);
+    }
+    if (!auto_spill_memory_ready) {
+      BX_INFO(("poly_raw: auto-spill fallback mode=%u rip=%llx buffer=%llx resume=%llx",
+        bx_poly_current_mode, (unsigned long long) RIP,
+        (unsigned long long) bx_poly_spill_buffer,
+        (unsigned long long) bx_poly_spill_resume_rip));
+      bx_poly_spill_buffer = 0;
+      bx_poly_spill_resume_rip = 0;
+      bx_poly_spill_resume_stack_top = 0;
+    }
+  }
+
   if (bx_poly_spill_buffer != 0 && bx_poly_spill_resume_rip != 0) {
     Bit32u old_mode = bx_poly_current_mode;
     bx_address old_rip = RIP;
