@@ -593,6 +593,7 @@ static const Bit32u BX_POLY_X86_CTRL_MEM_PROBE_RANGE = 0x74;
 static const Bit32u BX_POLY_X86_CTRL_DERIVE_STATE = 0x75;
 static const Bit32u BX_POLY_X86_CTRL_FENCE = 0x76;
 static const Bit32u BX_POLY_X86_CTRL_COMPLETE_EVENT = 0x77;
+static const Bit32u BX_POLY_X86_CTRL_MONITOR_ENTRY_SET = 0x78;
 
 static const Bit64u BX_POLY_V2_EVENT_MAGIC = BX_CONST64(0x32545645594c4f50);
 static const Bit32u BX_POLY_V2_EVENT_VERSION = 2;
@@ -624,7 +625,9 @@ static const Bit64u BX_POLY_V2_DERIVE_FLAG_PARENT_RETURN = (1ULL << 3);
 static const Bit64u BX_POLY_V2_DERIVE_FLAG_CLEAR_EVENT_STATE = (1ULL << 4);
 static const Bit64u BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY = (1ULL << 5);
 static const Bit64u BX_POLY_V2_DERIVE_FLAG_ACTIVATE_DST = (1ULL << 6);
-static const Bit64u BX_POLY_V2_DERIVE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6);
+static const Bit64u BX_POLY_V2_DERIVE_FLAG_CHILD_PC = (1ULL << 7);
+static const Bit64u BX_POLY_V2_DERIVE_FLAG_EVENT_RECORD = (1ULL << 8);
+static const Bit64u BX_POLY_V2_DERIVE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5) | (1ULL << 6) | (1ULL << 7) | (1ULL << 8);
 static const Bit64u BX_POLY_V2_COMPLETE_DESC_MAGIC =
   BX_CONST64(0x32504d43594c4f50);
 static const Bit32u BX_POLY_V2_COMPLETE_DESC_VERSION = 2;
@@ -639,6 +642,19 @@ static const Bit64u BX_POLY_V2_COMPLETE_FLAG_SET_RESULT0 = (1ULL << 3);
 static const Bit64u BX_POLY_V2_COMPLETE_FLAG_SET_RESULT1 = (1ULL << 4);
 static const Bit64u BX_POLY_V2_COMPLETE_FLAG_CLEAR_EVENT = (1ULL << 5);
 static const Bit64u BX_POLY_V2_COMPLETE_FLAGS_SUPPORTED = (1ULL << 0) | (1ULL << 1) | (1ULL << 2) | (1ULL << 3) | (1ULL << 4) | (1ULL << 5);
+static const Bit64u BX_POLY_V2_FENCE_SCOPE_RELEASE = 1;
+static const Bit64u BX_POLY_V2_FENCE_SCOPE_ACQUIRE = 2;
+static const Bit64u BX_POLY_V2_FENCE_SCOPE_FULL = 3;
+static const Bit64u BX_POLY_V2_MONITOR_ENTRY_DESC_MAGIC =
+  BX_CONST64(0x324e4f4d594c4f50);
+static const Bit32u BX_POLY_V2_MONITOR_ENTRY_DESC_VERSION = 1;
+static const Bit32u BX_POLY_V2_MONITOR_ENTRY_DESC_BYTES = 128;
+static const Bit32u BX_POLY_V2_MONITOR_ENTRY_DESC_ALIGN = 64;
+static const Bit32u BX_POLY_V2_MONITOR_ENTRY_DESC_HEADER_BYTES = 16;
+static const Bit64u BX_POLY_V2_MONITOR_ENTRY_FLAG_ENABLE = (1ULL << 0);
+static const Bit64u BX_POLY_V2_MONITOR_ENTRY_FLAG_X86_SYSV = (1ULL << 1);
+static const Bit64u BX_POLY_V2_MONITOR_ENTRY_FLAGS_SUPPORTED =
+  (1ULL << 0) | (1ULL << 1);
 static const Bit32u BX_POLY_CPUID_V2_ABI_VERSION = 2;
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_FRAME = (1U << 0);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DEBUG_NOTE_EXPORT = (1U << 2);
@@ -649,7 +665,8 @@ static const Bit32u BX_POLY_CPUID_V2_FEATURE_POLICY_PREFLIGHT = (1U << 6);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_ABI_DESCRIPTORS = (1U << 7);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_DIAGNOSTIC_COUNTERS = (1U << 8);
 static const Bit32u BX_POLY_CPUID_V2_FEATURE_EVENT_COMPLETE = (1U << 9);
-static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 2) | (1U << 3) | (1U << 4) | (1U << 6);
+static const Bit32u BX_POLY_CPUID_V2_FEATURE_MONITOR_ENTRY_FRAME = (1U << 10);
+static const Bit32u BX_POLY_CPUID_V2_IMPLEMENTED_FEATURES = (1U << 0) | (1U << 2) | (1U << 3) | (1U << 4) | (1U << 5) | (1U << 6) | (1U << 9) | (1U << 10);
 static const Bit32u BX_POLY_CPUID_V2_REQUIRED_FEATURES = (1U << 0);
 static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_READ = (1ULL << 0);
 static const Bit64u BX_POLY_V2_MEM_PROBE_FLAG_WRITE = (1ULL << 1);
@@ -1070,6 +1087,12 @@ struct bx_poly_cpu_runtime_state_t {
     last_trap.reason = BX_POLY_TRAP_NONE;
     last_trap.mode = BX_POLY_MODE_X86;
     trap_saved_regs.mode = BX_POLY_MODE_X86;
+    completed_trap_valid = false;
+    completed_trap_monitor_rsp = 0;
+    completed_trap.reason = BX_POLY_TRAP_NONE;
+    completed_trap.mode = BX_POLY_MODE_X86;
+    completed_trap_saved_regs.mode = BX_POLY_MODE_X86;
+    monitor_entry_target_mode = BX_POLY_MODE_X86;
     bx_poly_reset_abi_signature_slots(abi_signature_slots);
   }
 
@@ -1093,6 +1116,10 @@ struct bx_poly_cpu_runtime_state_t {
   Bit64u last_break_number;
   bx_poly_event_record last_trap;
   bx_poly_trap_saved_regs_t trap_saved_regs;
+  bool completed_trap_valid;
+  bx_address completed_trap_monitor_rsp;
+  bx_poly_event_record completed_trap;
+  bx_poly_trap_saved_regs_t completed_trap_saved_regs;
   bool return_cookie_valid;
   Bit32u return_cookie_mode;
   bx_address return_cookie_rip;
@@ -1121,6 +1148,12 @@ struct bx_poly_cpu_runtime_state_t {
   bx_address event_frame_addr;
   Bit64u event_frame_bytes;
   Bit64u event_sequence;
+  bool monitor_entry_enabled;
+  Bit32u monitor_entry_target_mode;
+  bx_address monitor_entry_pc;
+  bx_address monitor_entry_stack_base;
+  Bit64u monitor_entry_stack_bytes;
+  Bit64u monitor_entry_frame_bytes;
   bool derive_resume_target_valid;
   Bit32u derive_resume_target_mode;
   bx_address derive_resume_target_rip;
@@ -1204,6 +1237,14 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().last_trap)
 #define bx_poly_trap_saved_regs \
   (bx_poly_cpu_runtime_state().trap_saved_regs)
+#define bx_poly_completed_trap_valid \
+  (bx_poly_cpu_runtime_state().completed_trap_valid)
+#define bx_poly_completed_trap_monitor_rsp \
+  (bx_poly_cpu_runtime_state().completed_trap_monitor_rsp)
+#define bx_poly_completed_trap \
+  (bx_poly_cpu_runtime_state().completed_trap)
+#define bx_poly_completed_trap_saved_regs \
+  (bx_poly_cpu_runtime_state().completed_trap_saved_regs)
 #define bx_poly_return_cookie_valid \
   (bx_poly_cpu_runtime_state().return_cookie_valid)
 #define bx_poly_return_cookie_mode \
@@ -1254,6 +1295,18 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().event_frame_bytes)
 #define bx_poly_event_sequence \
   (bx_poly_cpu_runtime_state().event_sequence)
+#define bx_poly_monitor_entry_enabled \
+  (bx_poly_cpu_runtime_state().monitor_entry_enabled)
+#define bx_poly_monitor_entry_target_mode \
+  (bx_poly_cpu_runtime_state().monitor_entry_target_mode)
+#define bx_poly_monitor_entry_pc \
+  (bx_poly_cpu_runtime_state().monitor_entry_pc)
+#define bx_poly_monitor_entry_stack_base \
+  (bx_poly_cpu_runtime_state().monitor_entry_stack_base)
+#define bx_poly_monitor_entry_stack_bytes \
+  (bx_poly_cpu_runtime_state().monitor_entry_stack_bytes)
+#define bx_poly_monitor_entry_frame_bytes \
+  (bx_poly_cpu_runtime_state().monitor_entry_frame_bytes)
 #define bx_poly_derive_resume_target_valid \
   (bx_poly_cpu_runtime_state().derive_resume_target_valid)
 #define bx_poly_derive_resume_target_mode \
@@ -1363,6 +1416,12 @@ struct bx_poly_reg_state_t {
   bx_address event_frame_addr;
   Bit64u event_frame_bytes;
   Bit64u event_sequence;
+  bool monitor_entry_enabled;
+  Bit32u monitor_entry_target_mode;
+  bx_address monitor_entry_pc;
+  bx_address monitor_entry_stack_base;
+  Bit64u monitor_entry_stack_bytes;
+  Bit64u monitor_entry_frame_bytes;
   Bit32u last_syscall_mode;
   Bit64u last_syscall_number;
   Bit32u last_break_mode;
@@ -1557,6 +1616,21 @@ static bool bx_poly_valid_v2_complete_descriptor(Bit64u descriptor,
   if ((descriptor & (BX_POLY_V2_COMPLETE_DESC_ALIGN - 1)) != 0)
     return false;
   const Bit64u last_byte = (Bit64u) BX_POLY_V2_COMPLETE_DESC_BYTES - 1;
+  if (descriptor + last_byte < descriptor)
+    return false;
+  return bx_poly_valid_control_address(descriptor + last_byte,
+    linaddr_width);
+}
+
+static bool bx_poly_valid_v2_monitor_entry_descriptor(Bit64u descriptor,
+  unsigned linaddr_width)
+{
+  if (!bx_poly_valid_control_address(descriptor, linaddr_width))
+    return false;
+  if ((descriptor & (BX_POLY_V2_MONITOR_ENTRY_DESC_ALIGN - 1)) != 0)
+    return false;
+  const Bit64u last_byte =
+    (Bit64u) BX_POLY_V2_MONITOR_ENTRY_DESC_BYTES - 1;
   if (descriptor + last_byte < descriptor)
     return false;
   return bx_poly_valid_control_address(descriptor + last_byte,
@@ -3963,6 +4037,12 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_event_frame_addr = 0;
   bx_poly_event_frame_bytes = 0;
   bx_poly_event_sequence = 0;
+  bx_poly_monitor_entry_enabled = false;
+  bx_poly_monitor_entry_target_mode = BX_POLY_MODE_X86;
+  bx_poly_monitor_entry_pc = 0;
+  bx_poly_monitor_entry_stack_base = 0;
+  bx_poly_monitor_entry_stack_bytes = 0;
+  bx_poly_monitor_entry_frame_bytes = 0;
   bx_poly_state_dirty = false;
   bx_poly_derive_resume_target_valid = false;
   bx_poly_derive_resume_target_mode = BX_POLY_MODE_X86;
@@ -4014,6 +4094,12 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   Bit64u inherited_trap_vector_age = 0;
   bx_address inherited_trap_vector = 0;
   Bit32u inherited_trap_vector_mode = BX_POLY_MODE_X86;
+  bool inherited_monitor_entry_enabled = false;
+  Bit32u inherited_monitor_entry_target_mode = BX_POLY_MODE_X86;
+  bx_address inherited_monitor_entry_pc = 0;
+  bx_address inherited_monitor_entry_stack_base = 0;
+  Bit64u inherited_monitor_entry_stack_bytes = 0;
+  Bit64u inherited_monitor_entry_frame_bytes = 0;
   bx_poly_event_record inherited_last_trap;
   bx_poly_trap_saved_regs_t inherited_trap_saved_regs;
 
@@ -4038,6 +4124,17 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
         inherited_trap_vector_age = bx_poly_reg_states[n].age;
         inherited_trap_vector = bx_poly_reg_states[n].trap_vector;
         inherited_trap_vector_mode = bx_poly_reg_states[n].trap_vector_mode;
+        inherited_monitor_entry_enabled =
+          bx_poly_reg_states[n].monitor_entry_enabled;
+        inherited_monitor_entry_target_mode =
+          bx_poly_reg_states[n].monitor_entry_target_mode;
+        inherited_monitor_entry_pc = bx_poly_reg_states[n].monitor_entry_pc;
+        inherited_monitor_entry_stack_base =
+          bx_poly_reg_states[n].monitor_entry_stack_base;
+        inherited_monitor_entry_stack_bytes =
+          bx_poly_reg_states[n].monitor_entry_stack_bytes;
+        inherited_monitor_entry_frame_bytes =
+          bx_poly_reg_states[n].monitor_entry_frame_bytes;
         inherited_last_trap = bx_poly_reg_states[n].last_trap;
         inherited_trap_saved_regs = bx_poly_reg_states[n].trap_saved_regs;
       }
@@ -4089,6 +4186,19 @@ static unsigned bx_poly_find_or_alloc_reg_state(bx_address cr3,
   bx_poly_reg_states[victim].event_frame_addr = 0;
   bx_poly_reg_states[victim].event_frame_bytes = 0;
   bx_poly_reg_states[victim].event_sequence = 0;
+  bx_poly_reg_states[victim].monitor_entry_enabled =
+    inherited_trap_vector_valid ? inherited_monitor_entry_enabled : false;
+  bx_poly_reg_states[victim].monitor_entry_target_mode =
+    inherited_trap_vector_valid ? inherited_monitor_entry_target_mode :
+      BX_POLY_MODE_X86;
+  bx_poly_reg_states[victim].monitor_entry_pc =
+    inherited_trap_vector_valid ? inherited_monitor_entry_pc : 0;
+  bx_poly_reg_states[victim].monitor_entry_stack_base =
+    inherited_trap_vector_valid ? inherited_monitor_entry_stack_base : 0;
+  bx_poly_reg_states[victim].monitor_entry_stack_bytes =
+    inherited_trap_vector_valid ? inherited_monitor_entry_stack_bytes : 0;
+  bx_poly_reg_states[victim].monitor_entry_frame_bytes =
+    inherited_trap_vector_valid ? inherited_monitor_entry_frame_bytes : 0;
   bx_poly_reg_states[victim].last_syscall_mode = BX_POLY_MODE_X86;
   bx_poly_reg_states[victim].last_syscall_number = 0;
   bx_poly_reg_states[victim].last_break_mode = BX_POLY_MODE_X86;
@@ -4159,6 +4269,17 @@ static void bx_poly_propagate_trap_vector_state(bx_address cr3,
     bx_poly_reg_states[n].trap_vector_mode = bx_poly_trap_vector_mode;
     bx_poly_reg_states[n].event_frame_addr = bx_poly_event_frame_addr;
     bx_poly_reg_states[n].event_frame_bytes = bx_poly_event_frame_bytes;
+    bx_poly_reg_states[n].monitor_entry_enabled =
+      bx_poly_monitor_entry_enabled;
+    bx_poly_reg_states[n].monitor_entry_target_mode =
+      bx_poly_monitor_entry_target_mode;
+    bx_poly_reg_states[n].monitor_entry_pc = bx_poly_monitor_entry_pc;
+    bx_poly_reg_states[n].monitor_entry_stack_base =
+      bx_poly_monitor_entry_stack_base;
+    bx_poly_reg_states[n].monitor_entry_stack_bytes =
+      bx_poly_monitor_entry_stack_bytes;
+    bx_poly_reg_states[n].monitor_entry_frame_bytes =
+      bx_poly_monitor_entry_frame_bytes;
   }
 }
 
@@ -4287,6 +4408,17 @@ static void bx_poly_save_current_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_reg_states[slot].event_frame_addr = bx_poly_event_frame_addr;
   bx_poly_reg_states[slot].event_frame_bytes = bx_poly_event_frame_bytes;
   bx_poly_reg_states[slot].event_sequence = bx_poly_event_sequence;
+  bx_poly_reg_states[slot].monitor_entry_enabled =
+    bx_poly_monitor_entry_enabled;
+  bx_poly_reg_states[slot].monitor_entry_target_mode =
+    bx_poly_monitor_entry_target_mode;
+  bx_poly_reg_states[slot].monitor_entry_pc = bx_poly_monitor_entry_pc;
+  bx_poly_reg_states[slot].monitor_entry_stack_base =
+    bx_poly_monitor_entry_stack_base;
+  bx_poly_reg_states[slot].monitor_entry_stack_bytes =
+    bx_poly_monitor_entry_stack_bytes;
+  bx_poly_reg_states[slot].monitor_entry_frame_bytes =
+    bx_poly_monitor_entry_frame_bytes;
   bx_poly_reg_states[slot].last_syscall_mode = bx_poly_last_syscall_mode;
   bx_poly_reg_states[slot].last_syscall_number = bx_poly_last_syscall_number;
   bx_poly_reg_states[slot].last_break_mode = bx_poly_last_break_mode;
@@ -4358,6 +4490,17 @@ static void bx_poly_load_reg_state(bx_address cr3, bx_address fsbase,
   bx_poly_event_frame_addr = bx_poly_reg_states[slot].event_frame_addr;
   bx_poly_event_frame_bytes = bx_poly_reg_states[slot].event_frame_bytes;
   bx_poly_event_sequence = bx_poly_reg_states[slot].event_sequence;
+  bx_poly_monitor_entry_enabled =
+    bx_poly_reg_states[slot].monitor_entry_enabled;
+  bx_poly_monitor_entry_target_mode =
+    bx_poly_reg_states[slot].monitor_entry_target_mode;
+  bx_poly_monitor_entry_pc = bx_poly_reg_states[slot].monitor_entry_pc;
+  bx_poly_monitor_entry_stack_base =
+    bx_poly_reg_states[slot].monitor_entry_stack_base;
+  bx_poly_monitor_entry_stack_bytes =
+    bx_poly_reg_states[slot].monitor_entry_stack_bytes;
+  bx_poly_monitor_entry_frame_bytes =
+    bx_poly_reg_states[slot].monitor_entry_frame_bytes;
   bx_poly_last_syscall_mode = bx_poly_reg_states[slot].last_syscall_mode;
   bx_poly_last_syscall_number = bx_poly_reg_states[slot].last_syscall_number;
   bx_poly_last_break_mode = bx_poly_reg_states[slot].last_break_mode;
@@ -4622,6 +4765,53 @@ static void bx_poly_write_active_virtual_qword(unsigned seg,
   bx_address offset, Bit64u value)
 {
   BX_CPU(bx_poly_active_cpu_id)->write_virtual_qword(seg, offset, value);
+}
+
+static bool bx_poly_write_monitor_entry_qword(bx_address addr, Bit64u value)
+{
+  bx_phy_address phy = 0;
+  if (!BX_CPU(bx_poly_active_cpu_id)->dbg_xlate_linear2phy(addr, &phy))
+    return false;
+  BX_CPU(bx_poly_active_cpu_id)->access_write_physical(phy, 8, &value);
+  return true;
+}
+
+static bool bx_poly_write_monitor_entry_frame(
+  const bx_poly_event_record *trap, bx_address old_rsp, bx_address old_r11,
+  bx_address *entry_rsp_out)
+{
+  bx_address frame =
+    (bx_poly_monitor_entry_stack_base +
+     bx_poly_monitor_entry_stack_bytes -
+     bx_poly_monitor_entry_frame_bytes) & ~BX_CONST64(0xf);
+  bx_address entry_rsp = frame - 8;
+  if (!bx_poly_write_monitor_entry_qword(entry_rsp, 0) ||
+      !bx_poly_write_monitor_entry_qword(frame + 0,
+        BX_POLY_V2_MONITOR_ENTRY_DESC_MAGIC) ||
+      !bx_poly_write_monitor_entry_qword(frame + 8,
+        bx_poly_monitor_entry_frame_bytes) ||
+      !bx_poly_write_monitor_entry_qword(frame + 16,
+        bx_poly_event_sequence) ||
+      !bx_poly_write_monitor_entry_qword(frame + 24, old_rsp) ||
+      !bx_poly_write_monitor_entry_qword(frame + 32, old_r11) ||
+      !bx_poly_write_monitor_entry_qword(frame + 40,
+        (Bit64u) trap->reason | ((Bit64u) trap->mode << 32)) ||
+      !bx_poly_write_monitor_entry_qword(frame + 48, trap->number) ||
+      !bx_poly_write_monitor_entry_qword(frame + 56, trap->pc) ||
+      (bx_poly_monitor_entry_frame_bytes >= 160 &&
+        (!bx_poly_write_monitor_entry_qword(frame + 64, trap->next_pc) ||
+         !bx_poly_write_monitor_entry_qword(frame + 72, trap->selector) ||
+         !bx_poly_write_monitor_entry_qword(frame + 80, trap->args[0]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 88, trap->args[1]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 96, trap->args[2]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 104, trap->args[3]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 112, trap->args[4]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 120, trap->args[5]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 128, trap->args[6]) ||
+         !bx_poly_write_monitor_entry_qword(frame + 136, trap->args[7]))))
+    return false;
+  *entry_rsp_out = entry_rsp;
+  return true;
 }
 
 static void bx_poly_write_v2_event_frame(Bit32u event_kind,
@@ -5414,6 +5604,12 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
   Bit64u child_return = read_virtual_qword(seg, descriptor + 48);
   Bit64u parent_return = read_virtual_qword(seg, descriptor + 56);
   Bit64u state_key = read_virtual_qword(seg, descriptor + 64);
+  Bit64u child_pc = read_virtual_qword(seg, descriptor + 72);
+  Bit64u event_reason = read_virtual_qword(seg, descriptor + 80);
+  Bit64u event_number = read_virtual_qword(seg, descriptor + 88);
+  Bit64u event_selector = read_virtual_qword(seg, descriptor + 96);
+  Bit64u event_flags = read_virtual_qword(seg, descriptor + 104);
+  Bit64u event_args = read_virtual_qword(seg, descriptor + 112);
   Bit64u source_header0 = read_virtual_qword(seg,
     src + BX_POLY_STATE_XSAVE_HEADER_OFFSET);
   Bit64u source_header1 = read_virtual_qword(seg,
@@ -5445,6 +5641,24 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
   if ((flags & BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY) != 0 &&
       !bx_poly_valid_control_address(state_key, BX_CPU_THIS_PTR linaddr_width))
     return false;
+  if ((flags & BX_POLY_V2_DERIVE_FLAG_CHILD_PC) != 0 &&
+      (!bx_poly_valid_control_address(child_pc, BX_CPU_THIS_PTR linaddr_width) ||
+       !bx_poly_frontend_target_aligned(frontend, (bx_address) child_pc)))
+    return false;
+  if ((flags & BX_POLY_V2_DERIVE_FLAG_EVENT_RECORD) != 0 &&
+      (event_reason >> 32) != 0)
+    return false;
+  if ((flags & BX_POLY_V2_DERIVE_FLAG_EVENT_RECORD) != 0 &&
+      event_args != 0) {
+    const Bit64u last_event_arg =
+      (Bit64u) BX_POLY_V2_EVENT_ARG_COUNT * sizeof(Bit64u) - 1;
+    if (!bx_poly_valid_control_address(event_args,
+          BX_CPU_THIS_PTR linaddr_width) ||
+        event_args + last_event_arg < event_args ||
+        !bx_poly_valid_control_address(event_args + last_event_arg,
+          BX_CPU_THIS_PTR linaddr_width))
+      return false;
+  }
 
   for (Bit32u offset = 0; offset < BX_POLY_STATE_XSAVE_BYTES_ARCH; offset += 8)
     write_virtual_qword(seg, dst + offset,
@@ -5476,13 +5690,25 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
     bx_address sp_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
       BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + 31 * 8 :
       BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 2 * 8;
+    bx_address restore_sp_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+      BX_POLY_STATE_XSAVE_TRAP_RESTORE_AARCH64_GPR_OFFSET + 31 * 8 :
+      BX_POLY_STATE_XSAVE_TRAP_RESTORE_RISCV_GPR_OFFSET + 2 * 8;
     write_virtual_qword(seg, dst + sp_offset, child_sp);
+    write_virtual_qword(seg,
+      dst + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET + restore_sp_offset,
+      child_sp);
   }
   if ((flags & BX_POLY_V2_DERIVE_FLAG_CHILD_RETURN) != 0) {
     bx_address return_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
       BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET :
       BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + 10 * 8;
+    bx_address restore_return_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
+      BX_POLY_STATE_XSAVE_TRAP_RESTORE_AARCH64_GPR_OFFSET :
+      BX_POLY_STATE_XSAVE_TRAP_RESTORE_RISCV_GPR_OFFSET + 10 * 8;
     write_virtual_qword(seg, dst + return_offset, child_return);
+    write_virtual_qword(seg,
+      dst + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET + restore_return_offset,
+      child_return);
   }
   if ((flags & BX_POLY_V2_DERIVE_FLAG_PARENT_RETURN) != 0) {
     bx_address parent_offset = frontend == BX_POLY_MODE_RAW_AARCH64 ?
@@ -5500,6 +5726,36 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
     write_virtual_qword(seg, dst + tls_offset, child_tls);
     write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 32,
       child_tls);
+  }
+  if ((flags & BX_POLY_V2_DERIVE_FLAG_CHILD_PC) != 0)
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24,
+      child_pc);
+  if ((flags & BX_POLY_V2_DERIVE_FLAG_EVENT_RECORD) != 0) {
+    const Bit64u trap_pc =
+      ((flags & BX_POLY_V2_DERIVE_FLAG_CHILD_PC) != 0) ? child_pc :
+        read_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET,
+      (event_reason & 0xffffffffULL) | ((Bit64u) frontend << 32));
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 8,
+      event_number);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 16,
+      event_selector);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24,
+      trap_pc);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32,
+      trap_pc);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 40,
+      event_flags);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 48,
+      0);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 56,
+      0);
+    for (unsigned n = 0; n < BX_POLY_V2_EVENT_ARG_COUNT; n++) {
+      Bit64u arg = event_args != 0 ?
+        read_virtual_qword(seg, event_args + n * sizeof(Bit64u)) : 0;
+      write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_EVENT_ARGS_OFFSET +
+        n * sizeof(Bit64u), arg);
+    }
   }
   if ((flags & BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY) != 0) {
     write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_STATE_KEY_OFFSET,
@@ -5527,6 +5783,7 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
   Bit64u resume_pc = read_virtual_qword(seg, descriptor + 32);
   Bit64u result0 = read_virtual_qword(seg, descriptor + 40);
   Bit64u result1 = read_virtual_qword(seg, descriptor + 48);
+  Bit64u event_sequence = read_virtual_qword(seg, descriptor + 56);
   Bit64u state_header0 = read_virtual_qword(seg,
     state + BX_POLY_STATE_XSAVE_HEADER_OFFSET);
   Bit64u state_header1 = read_virtual_qword(seg,
@@ -5548,6 +5805,8 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
       state_header_bytes != BX_POLY_STATE_XSAVE_HEADER_BYTES ||
       state_total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH)
     return false;
+
+  (void) event_sequence;
 
   const Bit64u event_trap_pc = read_virtual_qword(seg,
     state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24);
@@ -5594,6 +5853,40 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
     write_virtual_qword(seg,
       state + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET + restore_gpr1_offset,
       result1);
+  }
+
+  if (event_sequence != 0 && bx_poly_trap_saved_regs.valid &&
+      bx_poly_last_trap.mode == frontend) {
+    if (((flags & (BX_POLY_V2_COMPLETE_FLAG_SET_RESUME_PC |
+                   BX_POLY_V2_COMPLETE_FLAG_USE_EVENT_RESUME_PC |
+                   BX_POLY_V2_COMPLETE_FLAG_RETRY_EVENT_PC)) != 0) &&
+        resume_pc != 0)
+      bx_poly_last_trap.next_pc = (bx_address) resume_pc;
+    if ((flags & BX_POLY_V2_COMPLETE_FLAG_SET_RESULT0) != 0) {
+      bx_poly_trap_saved_regs.rax = result0;
+      if (frontend == BX_POLY_MODE_RAW_AARCH64) {
+        bx_poly_trap_saved_regs.aarch64_x[0] = result0;
+        bx_poly_trap_saved_regs.aarch64_x_valid[0] = true;
+      }
+      else if (frontend == BX_POLY_MODE_RAW_RISCV) {
+        bx_poly_trap_saved_regs.riscv_x[10] = result0;
+        bx_poly_trap_saved_regs.riscv_x_valid[10] = true;
+      }
+    }
+    if ((flags & BX_POLY_V2_COMPLETE_FLAG_SET_RESULT1) != 0) {
+      if (frontend == BX_POLY_MODE_RAW_AARCH64) {
+        bx_poly_trap_saved_regs.aarch64_x[1] = result1;
+        bx_poly_trap_saved_regs.aarch64_x_valid[1] = true;
+      }
+      else if (frontend == BX_POLY_MODE_RAW_RISCV) {
+        bx_poly_trap_saved_regs.riscv_x[11] = result1;
+        bx_poly_trap_saved_regs.riscv_x_valid[11] = true;
+      }
+    }
+    bx_poly_completed_trap_valid = true;
+    bx_poly_completed_trap_monitor_rsp = RSP;
+    bx_poly_completed_trap = bx_poly_last_trap;
+    bx_poly_completed_trap_saved_regs = bx_poly_trap_saved_regs;
   }
 
   if ((flags & BX_POLY_V2_COMPLETE_FLAG_CLEAR_EVENT) != 0) {
@@ -14560,7 +14853,14 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_AARCH64_CTRL_TRAP_RETURN) {
     BX_DEBUG(("poly_raw: aarch64 polyctrl trap return"));
-    return return_poly_architectural_trap();
+    if (bx_poly_last_trap.reason != BX_POLY_TRAP_NONE &&
+        bx_poly_last_trap.mode != BX_POLY_MODE_X86 &&
+        bx_poly_last_trap.next_pc != 0 &&
+        bx_poly_trap_saved_regs.valid &&
+        bx_poly_trap_saved_regs.mode == bx_poly_last_trap.mode)
+      return return_poly_architectural_trap();
+    RIP = next_rip;
+    return true;
   }
 
   if (insn == BX_POLY_AARCH64_CTRL_LANDING) {
@@ -16486,7 +16786,14 @@ bool BX_CPU_C::execute_poly_raw_riscv(Bit32u insn, bx_address pc)
 
   if (insn == BX_POLY_RISCV_CTRL_TRAP_RETURN) {
     BX_DEBUG(("poly_raw: riscv polyctrl trap return"));
-    return return_poly_architectural_trap();
+    if (bx_poly_last_trap.reason != BX_POLY_TRAP_NONE &&
+        bx_poly_last_trap.mode != BX_POLY_MODE_X86 &&
+        bx_poly_last_trap.next_pc != 0 &&
+        bx_poly_trap_saved_regs.valid &&
+        bx_poly_trap_saved_regs.mode == bx_poly_last_trap.mode)
+      return return_poly_architectural_trap();
+    RIP = next_rip;
+    return true;
   }
 
   if (insn == BX_POLY_RISCV_CTRL_LANDING) {
@@ -19155,7 +19462,7 @@ void BX_CPU_C::execute_poly_raw_step(void)
     }
   }
 
-  if (handled)
+  if (handled && bx_poly_is_raw_mode(bx_poly_current_mode))
     bx_poly_state_dirty = true;
 
   if (!handled) {
@@ -19354,7 +19661,23 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
     bx_poly_current_mode = trap_vector_mode;
     bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
+    bx_address monitor_entry_frame_ptr = 0;
     if (trap_vector_mode == BX_POLY_MODE_X86) {
+      if (bx_poly_monitor_entry_enabled &&
+          bx_poly_monitor_entry_target_mode == BX_POLY_MODE_X86 &&
+          trap_vector == bx_poly_monitor_entry_pc) {
+        bx_address monitor_entry_rsp = 0;
+        if (!bx_poly_write_monitor_entry_frame(&delivered_trap, RSP, R11,
+              &monitor_entry_rsp)) {
+          BX_ERROR(("poly_v2: monitor entry frame write failed stack=%llx bytes=%llx frame=%llx",
+            (unsigned long long) bx_poly_monitor_entry_stack_base,
+            (unsigned long long) bx_poly_monitor_entry_stack_bytes,
+            (unsigned long long) bx_poly_monitor_entry_frame_bytes));
+          return false;
+        }
+        RSP = monitor_entry_rsp;
+        monitor_entry_frame_ptr = monitor_entry_rsp + 8;
+      }
       RAX = delivered_trap.reason;
       RBX = delivered_trap.mode;
       RCX = delivered_trap.number;
@@ -19368,6 +19691,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
       R12 = delivered_trap.args[5];
       R13 = delivered_trap.args[6];
       R14 = delivered_trap.args[7];
+      if (monitor_entry_frame_ptr != 0)
+        R15 = monitor_entry_frame_ptr;
     }
     else if (trap_vector_mode == BX_POLY_MODE_RAW_AARCH64) {
       write_poly_aarch64_reg(0, delivered_trap.reason);
@@ -19400,6 +19725,8 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
       write_poly_riscv_reg(29, delivered_trap.args[7]);
     }
     RIP = trap_vector;
+    bx_poly_state_dirty = false;
+    bx_poly_mode_switch_count++;
     bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
       bx_poly_current_state_key(RSP));
     BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
@@ -19436,6 +19763,22 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE ||
       bx_poly_last_trap.mode == BX_POLY_MODE_X86 ||
       bx_poly_last_trap.next_pc == 0) {
+    if (bx_poly_completed_trap_valid &&
+        bx_poly_completed_trap_monitor_rsp == RSP &&
+        bx_poly_completed_trap.reason != BX_POLY_TRAP_NONE &&
+        bx_poly_completed_trap.mode != BX_POLY_MODE_X86 &&
+        bx_poly_completed_trap.next_pc != 0 &&
+        bx_poly_completed_trap_saved_regs.valid &&
+        bx_poly_completed_trap_saved_regs.mode ==
+          bx_poly_completed_trap.mode) {
+      bx_poly_last_trap = bx_poly_completed_trap;
+      bx_poly_trap_saved_regs = bx_poly_completed_trap_saved_regs;
+      bx_poly_completed_trap_valid = false;
+    }
+  }
+  if (bx_poly_last_trap.reason == BX_POLY_TRAP_NONE ||
+      bx_poly_last_trap.mode == BX_POLY_MODE_X86 ||
+      bx_poly_last_trap.next_pc == 0) {
     BX_INFO(("poly_ud: reject trap return reason=%u mode=%u next=%llx",
       bx_poly_last_trap.reason, bx_poly_last_trap.mode,
       (unsigned long long) bx_poly_last_trap.next_pc));
@@ -19461,6 +19804,12 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   if (bx_poly_trap_saved_regs.valid &&
       bx_poly_trap_saved_regs.mode == bx_poly_current_mode) {
     Bit64u result = RAX;
+    if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 &&
+        bx_poly_trap_saved_regs.aarch64_x_valid[0])
+      result = bx_poly_trap_saved_regs.aarch64_x[0];
+    else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
+             bx_poly_trap_saved_regs.riscv_x_valid[10])
+      result = bx_poly_trap_saved_regs.riscv_x[10];
     RBX = bx_poly_trap_saved_regs.rbx;
     RBP = bx_poly_trap_saved_regs.rbp;
     RDI = bx_poly_trap_saved_regs.rdi;
@@ -19539,6 +19888,7 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
   Bit64u returned_rsp = RSP;
   RIP = returned_rip;
   bx_poly_clear_trap_saved_regs(&bx_poly_trap_saved_regs);
+  bx_poly_completed_trap_valid = false;
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
   BX_CPU_THIS_PTR async_event |= BX_ASYNC_EVENT_STOP_TRACE;
@@ -19559,7 +19909,8 @@ bool BX_CPU_C::handle_poly_syscall_trap(Bit64u syscall_number,
     RIP, next_rip, arg0, arg1, arg2, arg3, arg4, arg5, arg6, arg7);
   bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
-  return deliver_poly_architectural_trap(RIP);
+  bool delivered = deliver_poly_architectural_trap(RIP);
+  return delivered;
 }
 
 bool BX_CPU_C::handle_poly_break_trap(Bit32u break_id, Bit32u trap_selector,
@@ -19974,6 +20325,24 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           (unsigned long long) failure, (unsigned long long) metadata));
         return true;
       }
+      if (op == BX_POLY_X86_CTRL_FENCE) {
+        Bit64u scope = RAX;
+        if (scope != BX_POLY_V2_FENCE_SCOPE_RELEASE &&
+            scope != BX_POLY_V2_FENCE_SCOPE_ACQUIRE &&
+            scope != BX_POLY_V2_FENCE_SCOPE_FULL) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject v2 fence scope=%llu",
+            (unsigned long long) scope));
+          return true;
+        }
+        __sync_synchronize();
+        RAX = 0;
+        RIP = next_rip;
+        BX_DEBUG(("poly_ud: v2 fence scope=%llu",
+          (unsigned long long) scope));
+        return true;
+      }
       if (op == BX_POLY_X86_CTRL_DERIVE_STATE) {
         bx_address dst = (bx_address) RAX;
         bx_address src = (bx_address) RDX;
@@ -19989,7 +20358,9 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           BX_POLY_V2_DERIVE_FLAG_CHILD_RETURN |
           BX_POLY_V2_DERIVE_FLAG_PARENT_RETURN |
           BX_POLY_V2_DERIVE_FLAG_CLEAR_EVENT_STATE |
-          BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY;
+          BX_POLY_V2_DERIVE_FLAG_REPLACE_STATE_KEY |
+          BX_POLY_V2_DERIVE_FLAG_CHILD_PC |
+          BX_POLY_V2_DERIVE_FLAG_EVENT_RECORD;
         if (!bx_poly_valid_xsave_state_buffer(dst,
               BX_CPU_THIS_PTR linaddr_width) ||
             !bx_poly_valid_xsave_state_buffer(src,
@@ -20006,12 +20377,27 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             (unsigned long long) descriptor));
           return true;
         }
-        if (activate_dst) {
-          Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
-            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
-          Bit32u saved_mode = (Bit32u) (header1 >> 32);
-          bx_address saved_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+	        if (activate_dst) {
+	          const Bit64u native_rbx = RBX;
+	          const Bit64u native_rcx = RCX;
+	          const Bit64u native_rdx = RDX;
+	          const Bit64u native_rbp = RBP;
+	          const Bit64u native_rsi = RSI;
+	          const Bit64u native_rdi = RDI;
+	          const Bit64u native_r8 = R8;
+	          const Bit64u native_r9 = R9;
+	          const Bit64u native_r10 = R10;
+	          const Bit64u native_r11 = R11;
+	          const Bit64u native_r12 = R12;
+	          const Bit64u native_r13 = R13;
+	          const Bit64u native_r14 = R14;
+	          const Bit64u native_r15 = R15;
+	          const bx_address native_rsp = RSP;
+	          Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
+	            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
+	          Bit32u saved_mode = (Bit32u) (header1 >> 32);
+	          bx_address saved_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
+	            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
           if (!bx_poly_is_raw_mode(saved_mode) ||
               !bx_poly_valid_frontend_target(saved_mode, saved_rip,
                 BX_CPU_THIS_PTR linaddr_width) ||
@@ -20022,22 +20408,33 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
               saved_mode, (unsigned long long) saved_rip,
               (unsigned long long) dst));
             return true;
-          }
-          bx_poly_derive_resume_target_valid = true;
-          bx_poly_derive_resume_target_mode = saved_mode;
-          bx_poly_derive_resume_target_rip = saved_rip;
-          bx_poly_state_dirty = false;
-          bx_poly_commit_reg_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-            bx_poly_current_state_key(RSP));
-          bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
-            bx_poly_current_state_key(RSP));
-          RAX = 0;
-          RIP = next_rip;
-          BX_DEBUG(("poly_ud: derived and activated v2 state dst=%llx mode=%u pc=%llx",
-            (unsigned long long) dst, saved_mode,
-            (unsigned long long) saved_rip));
-          return true;
-        }
+	          }
+	          bx_poly_derive_resume_target_valid = true;
+	          bx_poly_derive_resume_target_mode = saved_mode;
+	          bx_poly_derive_resume_target_rip = saved_rip;
+	          RBX = native_rbx;
+	          RCX = native_rcx;
+	          RDX = native_rdx;
+	          RBP = native_rbp;
+	          RSI = native_rsi;
+	          RDI = native_rdi;
+	          R8 = native_r8;
+	          R9 = native_r9;
+	          R10 = native_r10;
+	          R11 = native_r11;
+	          R12 = native_r12;
+	          R13 = native_r13;
+	          R14 = native_r14;
+	          R15 = native_r15;
+	          RSP = native_rsp;
+	          RAX = 0;
+	          RIP = next_rip;
+	          bx_poly_state_dirty = false;
+	          BX_DEBUG(("poly_ud: derived v2 activation target dst=%llx mode=%u pc=%llx",
+	            (unsigned long long) dst, saved_mode,
+	            (unsigned long long) saved_rip));
+	          return true;
+	        }
         RAX = 0;
         RIP = next_rip;
         BX_DEBUG(("poly_ud: derived v2 state dst=%llx src=%llx descriptor=%llx",
@@ -20067,6 +20464,81 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         BX_DEBUG(("poly_ud: completed v2 event state=%llx descriptor=%llx",
           (unsigned long long) state,
           (unsigned long long) descriptor));
+        return true;
+      }
+      if (op == BX_POLY_X86_CTRL_MONITOR_ENTRY_SET) {
+        bx_address descriptor = (bx_address) RAX;
+        if (!bx_poly_valid_v2_monitor_entry_descriptor(descriptor,
+              BX_CPU_THIS_PTR linaddr_width)) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject v2 monitor entry descriptor=%llx",
+            (unsigned long long) descriptor));
+          return true;
+        }
+        Bit64u magic = read_virtual_qword(BX_SEG_REG_DS, descriptor);
+        Bit64u header = read_virtual_qword(BX_SEG_REG_DS, descriptor + 8);
+        Bit32u desc_bytes = (Bit32u) header;
+        Bit32u desc_version = (Bit32u) ((header >> 32) & 0xffff);
+        Bit32u desc_header_bytes = (Bit32u) ((header >> 48) & 0xffff);
+        Bit64u flags = read_virtual_qword(BX_SEG_REG_DS, descriptor + 16);
+        Bit64u target_word =
+          read_virtual_qword(BX_SEG_REG_DS, descriptor + 24);
+        Bit32u target_mode = (Bit32u) target_word;
+        Bit64u entry_pc = read_virtual_qword(BX_SEG_REG_DS, descriptor + 32);
+        Bit64u stack_base = read_virtual_qword(BX_SEG_REG_DS, descriptor + 40);
+        Bit64u stack_bytes = read_virtual_qword(BX_SEG_REG_DS, descriptor + 48);
+        Bit64u frame_bytes = read_virtual_qword(BX_SEG_REG_DS, descriptor + 56);
+        const bool enable =
+          (flags & BX_POLY_V2_MONITOR_ENTRY_FLAG_ENABLE) != 0;
+        if (magic != BX_POLY_V2_MONITOR_ENTRY_DESC_MAGIC ||
+            desc_bytes != BX_POLY_V2_MONITOR_ENTRY_DESC_BYTES ||
+            desc_version != BX_POLY_V2_MONITOR_ENTRY_DESC_VERSION ||
+            desc_header_bytes != BX_POLY_V2_MONITOR_ENTRY_DESC_HEADER_BYTES ||
+            (flags & ~BX_POLY_V2_MONITOR_ENTRY_FLAGS_SUPPORTED) != 0 ||
+            (enable &&
+              ((flags & BX_POLY_V2_MONITOR_ENTRY_FLAG_X86_SYSV) == 0 ||
+               (target_word >> 32) != 0 ||
+               target_mode != BX_POLY_MODE_X86 ||
+               !bx_poly_valid_control_address(entry_pc,
+                 BX_CPU_THIS_PTR linaddr_width) ||
+               !bx_poly_valid_control_address(stack_base,
+                 BX_CPU_THIS_PTR linaddr_width) ||
+               stack_bytes < 256 ||
+               frame_bytes < 64 ||
+               frame_bytes + 8 > stack_bytes ||
+               (frame_bytes & 15) != 0 ||
+               stack_base + stack_bytes - 1 < stack_base ||
+               !bx_poly_valid_control_address(stack_base + stack_bytes - 1,
+                 BX_CPU_THIS_PTR linaddr_width)))) {
+          RAX = (Bit64u) -22;
+          RIP = next_rip;
+          BX_INFO(("poly_ud: reject v2 monitor entry flags=%llx mode=%u entry=%llx stack=%llx bytes=%llx frame=%llx",
+            (unsigned long long) flags, target_mode,
+            (unsigned long long) entry_pc,
+            (unsigned long long) stack_base,
+            (unsigned long long) stack_bytes,
+            (unsigned long long) frame_bytes));
+          return true;
+        }
+        bx_poly_monitor_entry_enabled = enable;
+        bx_poly_monitor_entry_target_mode =
+          enable ? target_mode : BX_POLY_MODE_X86;
+        bx_poly_monitor_entry_pc = enable ? (bx_address) entry_pc : 0;
+        bx_poly_monitor_entry_stack_base =
+          enable ? (bx_address) stack_base : 0;
+        bx_poly_monitor_entry_stack_bytes = enable ? stack_bytes : 0;
+        bx_poly_monitor_entry_frame_bytes = enable ? frame_bytes : 0;
+        bx_poly_propagate_trap_vector_state(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
+          bx_poly_current_state_key(RSP));
+        RAX = 0;
+        RIP = next_rip;
+        BX_DEBUG(("poly_ud: v2 monitor entry %s entry=%llx stack=%llx bytes=%llx frame=%llx",
+          enable ? "enabled" : "disabled",
+          (unsigned long long) bx_poly_monitor_entry_pc,
+          (unsigned long long) bx_poly_monitor_entry_stack_base,
+          (unsigned long long) bx_poly_monitor_entry_stack_bytes,
+          (unsigned long long) bx_poly_monitor_entry_frame_bytes));
         return true;
       }
       if (op == BX_POLY_X86_CTRL_STATE_IMPORT) {
@@ -20525,7 +20997,9 @@ void BX_CPP_AttrRegparmN(1) BX_CPU_C::CPUID(bxInstruction_c *i)
       RAX = BX_POLY_X86_CTRL_FOREIGN_BREAK_COUNT_STATUS;
       RBX = BX_POLY_X86_CTRL_FOREIGN_IMPORT_COUNT_STATUS;
       RCX = BX_POLY_X86_CTRL_EVENT_PTR_SET;
-      RDX = 0;
+      RDX = BX_POLY_X86_CTRL_FENCE |
+            (BX_POLY_X86_CTRL_COMPLETE_EVENT << 8) |
+            (BX_POLY_X86_CTRL_MONITOR_ENTRY_SET << 16);
     }
     else if (ECX == 32) {
       RAX = BX_POLY_X86_CTRL_PREFIX_0 |
