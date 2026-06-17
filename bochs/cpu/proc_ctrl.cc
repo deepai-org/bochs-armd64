@@ -82,6 +82,7 @@ static const unsigned BX_POLY_TRAP_SAVED_XMM_COUNT = 16;
 struct bx_poly_event_record {
   Bit32u reason;
   Bit32u mode;
+  Bit64u sequence;
   Bit64u number;
   Bit64u selector;
   bx_address pc;
@@ -178,6 +179,7 @@ static void bx_poly_clear_event_record(bx_poly_event_record *trap)
 {
   trap->reason = BX_POLY_TRAP_NONE;
   trap->mode = BX_POLY_MODE_X86;
+  trap->sequence = 0;
   trap->number = 0;
   trap->selector = 0;
   trap->pc = 0;
@@ -1157,6 +1159,7 @@ struct bx_poly_cpu_runtime_state_t {
   bool derive_resume_target_valid;
   Bit32u derive_resume_target_mode;
   bx_address derive_resume_target_rip;
+  bx_address derive_resume_target_rsp;
   Bit64u aarch64_x[32];
   bool aarch64_x_valid[32];
   Bit64u aarch64_fp[32];
@@ -1313,6 +1316,8 @@ static inline bx_poly_cpu_runtime_state_t& bx_poly_cpu_runtime_state()
   (bx_poly_cpu_runtime_state().derive_resume_target_mode)
 #define bx_poly_derive_resume_target_rip \
   (bx_poly_cpu_runtime_state().derive_resume_target_rip)
+#define bx_poly_derive_resume_target_rsp \
+  (bx_poly_cpu_runtime_state().derive_resume_target_rsp)
 #define bx_poly_aarch64_x \
   (bx_poly_cpu_runtime_state().aarch64_x)
 #define bx_poly_aarch64_x_valid \
@@ -3255,6 +3260,7 @@ static void bx_poly_record_architectural_trap(Bit32u reason, Bit32u mode,
     bx_poly_clear_active_reservations();
   bx_poly_last_trap.reason = reason;
   bx_poly_last_trap.mode = mode;
+  bx_poly_last_trap.sequence = 0;
   bx_poly_last_trap.number = number;
   bx_poly_last_trap.selector = selector;
   bx_poly_last_trap.pc = pc;
@@ -4047,6 +4053,7 @@ static void bx_poly_reset_current_xstate(void)
   bx_poly_derive_resume_target_valid = false;
   bx_poly_derive_resume_target_mode = BX_POLY_MODE_X86;
   bx_poly_derive_resume_target_rip = 0;
+  bx_poly_derive_resume_target_rsp = 0;
   bx_poly_last_syscall_mode = BX_POLY_MODE_X86;
   bx_poly_last_syscall_number = 0;
   bx_poly_last_break_mode = BX_POLY_MODE_X86;
@@ -5678,12 +5685,20 @@ bool BX_CPU_C::derive_poly_v2_state(unsigned seg, bx_address dst,
       BX_POLY_STATE_XSAVE_TRANSITION_BYTES);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_IMPORT_RETURN_OFFSET,
       BX_POLY_STATE_XSAVE_IMPORT_RETURN_BYTES);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH_OFFSET,
+      BX_POLY_STATE_XSAVE_IMPORT_RETURN_DEPTH);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_CROSS_RETURN_OFFSET,
       BX_POLY_STATE_XSAVE_CROSS_RETURN_BYTES);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH_OFFSET,
+      BX_POLY_STATE_XSAVE_CROSS_RETURN_DEPTH);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_TRAP_RESTORE_OFFSET,
       BX_POLY_STATE_XSAVE_TRAP_RESTORE_BYTES);
     clear_qwords(dst + BX_POLY_STATE_XSAVE_NATIVE_RETURN_OFFSET,
       BX_POLY_STATE_XSAVE_NATIVE_RETURN_BYTES);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_NATIVE_RETURN_OFFSET + 16,
+      BX_POLY_STATE_XSAVE_NATIVE_RETURN_DEPTH);
+    write_virtual_qword(seg, dst + BX_POLY_STATE_XSAVE_NATIVE_RETURN_OFFSET + 24,
+      BX_POLY_NATIVE_RETURN_FRAME_FLAGS_SUPPORTED);
   }
 
   if ((flags & BX_POLY_V2_DERIVE_FLAG_CHILD_SP) != 0) {
@@ -5806,7 +5821,13 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
       state_total_bytes != BX_POLY_STATE_XSAVE_BYTES_ARCH)
     return false;
 
-  (void) event_sequence;
+  if (event_sequence != 0 &&
+      bx_poly_last_trap.sequence != event_sequence) {
+    BX_INFO(("poly_ud: reject v2 complete sequence=%llu live=%llu",
+      (unsigned long long) event_sequence,
+      (unsigned long long) bx_poly_last_trap.sequence));
+    return false;
+  }
 
   const Bit64u event_trap_pc = read_virtual_qword(seg,
     state + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 24);
@@ -5882,6 +5903,48 @@ bool BX_CPU_C::complete_poly_v2_event(unsigned seg, bx_address state,
         bx_poly_trap_saved_regs.riscv_x[11] = result1;
         bx_poly_trap_saved_regs.riscv_x_valid[11] = true;
       }
+    }
+    if (frontend == BX_POLY_MODE_RAW_AARCH64 &&
+        bx_poly_trap_saved_regs.aarch64_state_valid) {
+      for (unsigned n = 0; n < 32; n++) {
+        if (bx_poly_trap_saved_regs.aarch64_x_valid[n])
+          write_virtual_qword(seg,
+            state + BX_POLY_STATE_XSAVE_AARCH64_GPR_OFFSET + n * 8,
+            bx_poly_trap_saved_regs.aarch64_x[n]);
+        write_virtual_qword(seg,
+          state + BX_POLY_STATE_XSAVE_AARCH64_FP_OFFSET + n * 16,
+          bx_poly_trap_saved_regs.aarch64_fp[n]);
+        write_virtual_qword(seg,
+          state + BX_POLY_STATE_XSAVE_AARCH64_FP_OFFSET + n * 16 + 8,
+          bx_poly_trap_saved_regs.aarch64_fp_hi[n]);
+      }
+      write_virtual_qword(seg, state + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET,
+        bx_poly_trap_saved_regs.aarch64_nzcv);
+      write_virtual_qword(seg,
+        state + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 8,
+        bx_poly_trap_saved_regs.aarch64_fpcr);
+      write_virtual_qword(seg,
+        state + BX_POLY_STATE_XSAVE_AARCH64_STATUS_OFFSET + 16,
+        bx_poly_trap_saved_regs.aarch64_fpsr);
+    }
+    else if (frontend == BX_POLY_MODE_RAW_RISCV &&
+             bx_poly_trap_saved_regs.riscv_state_valid) {
+      for (unsigned n = 0; n < 32; n++) {
+        if (bx_poly_trap_saved_regs.riscv_x_valid[n])
+          write_virtual_qword(seg,
+            state + BX_POLY_STATE_XSAVE_RISCV_GPR_OFFSET + n * 8,
+            bx_poly_trap_saved_regs.riscv_x[n]);
+        write_virtual_qword(seg,
+          state + BX_POLY_STATE_XSAVE_RISCV_FP_OFFSET + n * 16,
+          bx_poly_trap_saved_regs.riscv_fp[n]);
+        write_virtual_qword(seg,
+          state + BX_POLY_STATE_XSAVE_RISCV_FP_OFFSET + n * 16 + 8,
+          bx_poly_trap_saved_regs.riscv_fp_hi[n]);
+      }
+      write_virtual_qword(seg, state + BX_POLY_STATE_XSAVE_RISCV_STATUS_OFFSET,
+        ((Bit64u) (bx_poly_trap_saved_regs.riscv_frm &
+          BX_POLY_RISCV_FRM_MASK) << 5) |
+        (bx_poly_trap_saved_regs.riscv_fflags & BX_POLY_RISCV_FFLAGS_MASK));
     }
     bx_poly_completed_trap_valid = true;
     bx_poly_completed_trap_monitor_rsp = RSP;
@@ -6446,6 +6509,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 32);
   Bit64u imported_trap_flags =
     read_virtual_qword(seg, base + BX_POLY_STATE_XSAVE_EVENT_RECORD_OFFSET + 40);
+  Bit64u imported_trap_sequence = 0;
   if (!bx_poly_valid_trap_reason(imported_trap_reason) ||
       !bx_poly_valid_trap_source_mode(imported_trap_reason,
         imported_trap_mode)) {
@@ -6510,6 +6574,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
       imported_trap_selector = bx_poly_last_trap.selector;
       imported_trap_pc = bx_poly_last_trap.pc;
       imported_trap_next_pc = bx_poly_last_trap.next_pc;
+      imported_trap_sequence = bx_poly_last_trap.sequence;
     }
     if ((imported_trap_flags & ~trap_flags_supported) != 0 ||
         ((imported_trap_flags & BX_POLY_EVENT_RECORD_FLAG_VECTOR_DELIVERY) != 0 &&
@@ -7228,6 +7293,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
   bx_poly_derive_resume_target_valid = false;
   bx_poly_derive_resume_target_mode = BX_POLY_MODE_X86;
   bx_poly_derive_resume_target_rip = 0;
+  bx_poly_derive_resume_target_rsp = 0;
   bx_poly_aarch64_tls_base = imported_aarch64_tls_base;
   bx_poly_riscv_tls_base = imported_riscv_tls_base;
   bx_poly_landing_policy_flags = imported_landing_policy;
@@ -7248,9 +7314,12 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
     imported_spill_reason == BX_POLY_SPILL_REASON_NONE &&
     imported_trap_reason == BX_POLY_TRAP_NONE &&
     !imported_trap_restore.valid;
+  const bool explicit_clean_raw_import =
+    inactive_nonspill_without_restore && bx_poly_is_raw_mode(saved_mode);
   const bool preserve_live_trap_state =
     inactive_spill_without_restore ||
-    (live_raw_trap_return_pending && inactive_nonspill_without_restore);
+    (live_raw_trap_return_pending && inactive_nonspill_without_restore &&
+     !explicit_clean_raw_import);
   const bool trace_trap_imports = bx_poly_trace_trap_imports_enabled();
   if (trace_trap_imports &&
       (inactive_spill_without_restore ||
@@ -7279,6 +7348,7 @@ bool BX_CPU_C::import_poly_xsave_state(unsigned seg, bx_address base)
 
     bx_poly_last_trap.reason = imported_trap_reason;
     bx_poly_last_trap.mode = imported_trap_mode;
+    bx_poly_last_trap.sequence = imported_trap_sequence;
     bx_poly_last_trap.number = imported_trap_number;
     bx_poly_last_trap.selector = imported_trap_selector;
     bx_poly_last_trap.pc = (bx_address) imported_trap_pc;
@@ -19654,6 +19724,7 @@ bool BX_CPU_C::deliver_poly_architectural_trap(bx_address fallback_pc)
     0, delivered_trap.reason == BX_POLY_TRAP_SYSCALL ?
       BX_POLY_V2_EVENT_SIDE_EFFECT_SYSCALL_LIKE :
       BX_POLY_V2_EVENT_SIDE_EFFECT_NONE);
+  delivered_trap.sequence = bx_poly_event_sequence;
 
   if (trap_vector != 0) {
     bx_poly_last_trap = delivered_trap;
@@ -19996,6 +20067,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         Bit32u target_mode = BX_POLY_MODE_X86;
         Bit32u frontend_id = 0;
         bx_address target_rip = next_rip;
+        bx_address target_rsp = RSP;
         if (!bx_poly_u32_from_u64(R15, &frontend_id) ||
             !bx_poly_frontend_id_to_mode(frontend_id, &target_mode)) {
           BX_INFO(("poly_ud: reject generic frontend id=%llx",
@@ -20010,6 +20082,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             return false;
           }
           target_rip = bx_poly_derive_resume_target_rip;
+          target_rsp = bx_poly_derive_resume_target_rsp;
         }
         if (!bx_poly_valid_frontend_target(target_mode, target_rip,
               BX_CPU_THIS_PTR linaddr_width)) {
@@ -20019,6 +20092,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
         }
         bx_poly_current_mode = target_mode;
         bx_poly_derive_resume_target_valid = false;
+        bx_poly_derive_resume_target_rsp = 0;
         bx_poly_state_dirty = false;
         if (target_mode == BX_POLY_MODE_X86)
           bx_poly_clear_cross_return_stack();
@@ -20026,6 +20100,7 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
           bx_poly_set_tls_base_for_mode(target_mode, (bx_address) R13);
         else if (bx_poly_is_raw_mode(target_mode)) {
           bx_poly_restore_aliased_state(target_mode);
+          RSP = target_rsp;
           R13 = bx_poly_tls_base_for_mode(target_mode);
         }
         bx_poly_mode_switch_count++;
@@ -20377,27 +20452,28 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
             (unsigned long long) descriptor));
           return true;
         }
-	        if (activate_dst) {
-	          const Bit64u native_rbx = RBX;
-	          const Bit64u native_rcx = RCX;
-	          const Bit64u native_rdx = RDX;
-	          const Bit64u native_rbp = RBP;
-	          const Bit64u native_rsi = RSI;
-	          const Bit64u native_rdi = RDI;
-	          const Bit64u native_r8 = R8;
-	          const Bit64u native_r9 = R9;
-	          const Bit64u native_r10 = R10;
-	          const Bit64u native_r11 = R11;
-	          const Bit64u native_r12 = R12;
-	          const Bit64u native_r13 = R13;
-	          const Bit64u native_r14 = R14;
-	          const Bit64u native_r15 = R15;
-	          const bx_address native_rsp = RSP;
-	          Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
-	            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
-	          Bit32u saved_mode = (Bit32u) (header1 >> 32);
-	          bx_address saved_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
-	            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+        if (activate_dst) {
+          const Bit64u native_rbx = RBX;
+          const Bit64u native_rcx = RCX;
+          const Bit64u native_rdx = RDX;
+          const Bit64u native_rbp = RBP;
+          const Bit64u native_rsi = RSI;
+          const Bit64u native_rdi = RDI;
+          const Bit64u native_r8 = R8;
+          const Bit64u native_r9 = R9;
+          const Bit64u native_r10 = R10;
+          const Bit64u native_r11 = R11;
+          const Bit64u native_r12 = R12;
+          const Bit64u native_r13 = R13;
+          const Bit64u native_r14 = R14;
+          const Bit64u native_r15 = R15;
+          const bx_address native_rsp = RSP;
+          Bit64u header1 = read_virtual_qword(BX_SEG_REG_DS,
+            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 8);
+          Bit32u saved_mode = (Bit32u) (header1 >> 32);
+          bx_address saved_rip = (bx_address) read_virtual_qword(BX_SEG_REG_DS,
+            dst + BX_POLY_STATE_XSAVE_HEADER_OFFSET + 24);
+          bx_address saved_rsp = 0;
           if (!bx_poly_is_raw_mode(saved_mode) ||
               !bx_poly_valid_frontend_target(saved_mode, saved_rip,
                 BX_CPU_THIS_PTR linaddr_width) ||
@@ -20408,33 +20484,35 @@ bool BX_CPP_AttrRegparmN(1) BX_CPU_C::handle_poly_opcode(bxInstruction_c *i)
               saved_mode, (unsigned long long) saved_rip,
               (unsigned long long) dst));
             return true;
-	          }
-	          bx_poly_derive_resume_target_valid = true;
-	          bx_poly_derive_resume_target_mode = saved_mode;
-	          bx_poly_derive_resume_target_rip = saved_rip;
-	          RBX = native_rbx;
-	          RCX = native_rcx;
-	          RDX = native_rdx;
-	          RBP = native_rbp;
-	          RSI = native_rsi;
-	          RDI = native_rdi;
-	          R8 = native_r8;
-	          R9 = native_r9;
-	          R10 = native_r10;
-	          R11 = native_r11;
-	          R12 = native_r12;
-	          R13 = native_r13;
-	          R14 = native_r14;
-	          R15 = native_r15;
-	          RSP = native_rsp;
-	          RAX = 0;
-	          RIP = next_rip;
-	          bx_poly_state_dirty = false;
-	          BX_DEBUG(("poly_ud: derived v2 activation target dst=%llx mode=%u pc=%llx",
-	            (unsigned long long) dst, saved_mode,
-	            (unsigned long long) saved_rip));
-	          return true;
-	        }
+          }
+          saved_rsp = RSP;
+          bx_poly_derive_resume_target_valid = true;
+          bx_poly_derive_resume_target_mode = saved_mode;
+          bx_poly_derive_resume_target_rip = saved_rip;
+          bx_poly_derive_resume_target_rsp = saved_rsp;
+          RBX = native_rbx;
+          RCX = native_rcx;
+          RDX = native_rdx;
+          RBP = native_rbp;
+          RSI = native_rsi;
+          RDI = native_rdi;
+          R8 = native_r8;
+          R9 = native_r9;
+          R10 = native_r10;
+          R11 = native_r11;
+          R12 = native_r12;
+          R13 = native_r13;
+          R14 = native_r14;
+          R15 = native_r15;
+          RSP = native_rsp;
+          RAX = 0;
+          RIP = next_rip;
+          bx_poly_state_dirty = false;
+          BX_DEBUG(("poly_ud: derived v2 activation target dst=%llx mode=%u pc=%llx",
+            (unsigned long long) dst, saved_mode,
+            (unsigned long long) saved_rip));
+          return true;
+        }
         RAX = 0;
         RIP = next_rip;
         BX_DEBUG(("poly_ud: derived v2 state dst=%llx src=%llx descriptor=%llx",
