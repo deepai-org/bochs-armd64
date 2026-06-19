@@ -12087,6 +12087,44 @@ bool BX_CPU_C::execute_poly_raw_aarch64(Bit32u insn, bx_address pc)
       result_bits = f32_to_f64(left32_bits, &status);
       bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
     }
+    else if ((insn & 0x7fbe0000) == 0x1e020000) {
+      bool input_64 = (insn & 0x80000000) != 0;
+      bool output_double = (insn & 0x00400000) != 0;
+      bool is_unsigned = (insn & 0x00010000) != 0;
+      Bit32u scale = (insn >> 10) & 0x3f;
+      Bit32u fbits = 64 - scale;
+      Bit64u value = 0;
+      softfloat_status_t status = bx_poly_softfloat_status();
+
+      if (fbits == 0 || (!input_64 && fbits > 32) ||
+          (input_64 && fbits > 64))
+        return false;
+      if (!read_poly_aarch64_reg(rn, &value))
+        return false;
+
+      if (output_double) {
+        Bit64u factor_bits = ((Bit64u) (1023 - fbits)) << 52;
+        result_bits = is_unsigned ?
+          (input_64 ? ui64_to_f64(value, &status) :
+            ui32_to_f64((Bit32u) value)) :
+          (input_64 ? i64_to_f64((Bit64s) value, &status) :
+            i32_to_f64((Bit32s) (Bit32u) value));
+        result_bits = f64_mul(result_bits, factor_bits, &status);
+      }
+      else {
+        Bit32u factor_bits = (127 - fbits) << 23;
+        fp32_op = true;
+        result32_bits = is_unsigned ?
+          (input_64 ? ui64_to_f32(value, &status) :
+            ui32_to_f32((Bit32u) value, &status)) :
+          (input_64 ? i64_to_f32((Bit64s) value, &status) :
+            i32_to_f32((Bit32s) (Bit32u) value, &status));
+        result32_bits = f32_mul(result32_bits, factor_bits, &status);
+      }
+
+      op_name = is_unsigned ? "ucvtf.fixed" : "scvtf.fixed";
+      bx_poly_aarch64_accumulate_softfloat_fpsr(&status);
+    }
     else if ((insn & 0xfffffc00) == 0x5e21d800 ||
              (insn & 0xfffffc00) == 0x7e21d800 ||
              (insn & 0xfffffc00) == 0x5e61d800 ||
