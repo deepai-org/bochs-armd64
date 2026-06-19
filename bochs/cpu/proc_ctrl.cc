@@ -19885,6 +19885,18 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     return false;
   }
 
+  const Bit32u trap_handler_mode = bx_poly_current_mode;
+  Bit64u trap_handler_result = RAX;
+  bool trap_handler_result_valid = false;
+  if (trap_handler_mode == BX_POLY_MODE_RAW_AARCH64) {
+    trap_handler_result_valid = read_poly_aarch64_reg(0,
+      &trap_handler_result);
+  }
+  else if (trap_handler_mode == BX_POLY_MODE_RAW_RISCV) {
+    trap_handler_result_valid = read_poly_riscv_reg(10,
+      &trap_handler_result);
+  }
+
   bx_poly_current_mode = bx_poly_last_trap.mode;
   bx_poly_update_raw_owner(BX_CPU_THIS_PTR cr3, MSR_FSBASE,
     bx_poly_current_state_key(RSP));
@@ -19897,6 +19909,8 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
              bx_poly_trap_saved_regs.riscv_x_valid[10])
       result = bx_poly_trap_saved_regs.riscv_x[10];
+    if (trap_handler_result_valid)
+      result = trap_handler_result;
     RBX = bx_poly_trap_saved_regs.rbx;
     RBP = bx_poly_trap_saved_regs.rbp;
     RDI = bx_poly_trap_saved_regs.rdi;
@@ -19925,6 +19939,7 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     }
     if (bx_poly_current_mode == BX_POLY_MODE_RAW_AARCH64 &&
         bx_poly_trap_saved_regs.aarch64_state_valid) {
+      write_poly_aarch64_reg(0, result);
       for (unsigned n = 1; n < 31; n++) {
         if (bx_poly_trap_saved_regs.aarch64_x_valid[n])
           write_poly_aarch64_reg(n, bx_poly_trap_saved_regs.aarch64_x[n]);
@@ -19944,6 +19959,7 @@ bool BX_CPU_C::return_poly_architectural_trap(void)
     }
     else if (bx_poly_current_mode == BX_POLY_MODE_RAW_RISCV &&
              bx_poly_trap_saved_regs.riscv_state_valid) {
+      write_poly_riscv_reg(10, result);
       for (unsigned n = 1; n < 32; n++) {
         if (n != 10 && bx_poly_trap_saved_regs.riscv_x_valid[n])
           write_poly_riscv_reg(n, bx_poly_trap_saved_regs.riscv_x[n]);
